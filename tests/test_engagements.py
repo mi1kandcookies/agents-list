@@ -306,8 +306,13 @@ def test_double_fund_is_rejected(client, approve, screener, agent_public_id):
     assert resp.status_code == 409 and resp.get_json()["code"] == "NOT_HIREABLE"
 
 
-def test_fund_executor_rejects_changed_terms(client, approve, screener, agent_public_id):
+def test_fund_executor_rejects_changed_terms(client, approve, screener, agent_public_id,
+                                            monkeypatch):
+    from app.approvals.executors import BEFORE_CONSUME
     from app.models import Agent
+    # A payee swap also voids the stamp, which the pre-consume check blocks
+    # (next test); switch that off to exercise the executor's own check.
+    monkeypatch.setitem(BEFORE_CONSUME, "engagement.fund", [])
     eid = _engagement(client, agent_public_id)["engagement_id"]
     apr = _hire(client, eid).get_json()
     agent = Agent.query.filter_by(public_id=agent_public_id).one()
@@ -315,6 +320,38 @@ def test_fund_executor_rejects_changed_terms(client, approve, screener, agent_pu
     _db.session.commit()
     row = approve(apr["approval_id"])
     assert row.state == "failed" and "payee" in row.failure_detail and not _ledger(eid)
+
+
+def test_agent_edited_during_approval_blocks_funding(client, approve, screener, agent_public_id):
+    """The stamp is re-checked at consume: an edit (or a ban) while the
+    approval is open stops funding before the executor runs."""
+    from app.models import Agent
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    apr = _hire(client, eid).get_json()
+    agent = Agent.query.filter_by(public_id=agent_public_id).one()
+    agent.payout_address = "0x" + "d" * 40          # not re-stamped
+    _db.session.commit()
+    row = approve(apr["approval_id"])
+    assert (row.state, row.failure_code) == ("blocked", "RESTAMP_REQUIRED")
+    assert row.consumed_at is None and not _ledger(eid)
+    assert client.get(f"/api/engagements/{eid}").get_json()["status"] == "scoped"
+
+
+def test_operator_banned_during_approval_blocks_funding(client, approve, screener,
+                                                        agent_public_id, human):
+    from app.humans import service as humans
+    from app.models import Agent, Screening
+    agent = Agent.query.filter_by(public_id=agent_public_id).one()
+    agent.manifest_stamp_sub = human.world_sub       # this human operates the agent,
+    _db.session.add(Screening(hop="payee.onboard", agent_id=agent.id,   # payee screened PAY
+                              chain_address=PAYEE, verdict="PAY"))
+    _db.session.commit()
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    apr = _hire(client, eid).get_json()
+    humans.ban(human, "fraud")                       # banned while the approval is open
+    _db.session.commit()
+    row = approve(apr["approval_id"], sub="0x" + "8" * 64)   # a different buyer approves
+    assert (row.state, row.failure_code) == ("blocked", "OPERATOR_BANNED") and not _ledger(eid)
 
 
 def test_rescreen_refusal_at_consume_blocks_funding(client, approve, screener, agent_public_id):
@@ -528,3 +565,105 @@ def test_jobs_page_shows_refusal(client, screener, agent, agent_public_id):
     screener.set(PAYEE, "REFUSE")
     page = client.post(f"/jobs/{eid}/hire")
     assert page.status_code == 403 and "refused by risk screening" in page.get_data(as_text=True)
+
+
+# ── fund approval ends without executing → job back to scoped ─────────────
+def _status(client, eid):
+    return client.get(f"/api/engagements/{eid}").get_json()["status"]
+
+
+def test_denied_fund_approval_returns_job_to_scoped(client, screener, agent_public_id,
+                                                    world_idp, approve):
+    from app.models import Approval
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    apr = _hire(client, eid).get_json()
+    assert _status(client, eid) == "awaiting_approval"
+    row = _db.session.get(Approval, apr["approval_id"])
+    world_idp.deny_device(row.device_code)
+    assert approvals.poll(row).state == "denied"
+    assert _status(client, eid) == "scoped"
+    # … and it can be hired again
+    again = _hire(client, eid).get_json()
+    assert approve(again["approval_id"]).state == "consumed"
+    assert _status(client, eid) == "funded"
+
+
+def test_cancelled_fund_approval_returns_job_to_scoped(client, world_idp, screener,
+                                                       agent_public_id):
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    apr = _hire(client, eid).get_json()
+    approvals.cancel(apr["approval_id"], "changed my mind")
+    assert _status(client, eid) == "scoped"
+
+
+def test_expired_fund_approval_returns_job_to_scoped_on_view(client, world_idp, screener,
+                                                             agent_public_id, monkeypatch):
+    import time
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    apr = _hire(client, eid).get_json()
+    later = time.time() + 3600
+    monkeypatch.setattr(approvals, "clock", lambda: later)
+    assert _status(client, eid) == "scoped"            # nobody polled the approval
+    assert approvals.get(apr["approval_id"]).state == "expired"
+
+
+def test_blocked_fund_approval_returns_job_to_scoped(client, approve, screener, agent_public_id):
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    apr = _hire(client, eid).get_json()
+    screener.set(PAYEE, "REFUSE")
+    assert approve(apr["approval_id"]).state == "blocked"
+    assert _status(client, eid) == "scoped"
+
+
+def test_ending_one_fund_approval_keeps_another_open_one(client, world_idp, screener,
+                                                       agent_public_id):
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    first = _hire(client, eid).get_json()
+    _hire(client, eid)                                 # a second, still pending
+    approvals.cancel(first["approval_id"], "superseded")
+    assert _status(client, eid) == "awaiting_approval"
+
+
+# ── root mandate retry ────────────────────────────────────────────────────
+def test_missing_root_mandate_is_retried_on_view(client, approve, screener, agent_public_id,
+                                                 monkeypatch):
+    from app.mandates import service as mandates
+    from app.models import Engagement, Mandate
+    real = mandates.issue_root
+
+    def down(*a, **kw):
+        raise RuntimeError("signing key unavailable")
+    monkeypatch.setattr(mandates, "issue_root", down)
+    eid = _funded(client, approve, agent_public_id)
+    assert _db.session.get(Engagement, eid).mandate_id is None
+    assert client.get(f"/api/engagements/{eid}").get_json()["mandate"] is None   # still failing
+
+    monkeypatch.setattr(mandates, "issue_root", real)
+    body = client.get(f"/api/engagements/{eid}").get_json()
+    assert body["status"] == "funded" and body["mandate"]["mandate_id"].startswith("MND-")
+    client.get(f"/api/engagements/{eid}")
+    assert client.get(f"/jobs/{eid}").status_code == 200
+    assert Mandate.query.filter_by(engagement_id=eid).count() == 1        # minted once
+
+
+def test_job_page_retries_the_root_mandate(client, approve, screener, agent_public_id,
+                                           monkeypatch):
+    from app.mandates import service as mandates
+    from app.models import Engagement
+    real = mandates.issue_root
+    monkeypatch.setattr(mandates, "issue_root",
+                        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("down")))
+    eid = _funded(client, approve, agent_public_id)
+    monkeypatch.setattr(mandates, "issue_root", real)
+    assert client.get(f"/jobs/{eid}").status_code == 200
+    _db.session.expire_all()
+    assert _db.session.get(Engagement, eid).mandate_id
+
+
+def test_no_mandate_retry_unless_funded(client, screener, agent_public_id, monkeypatch):
+    from app.engagements import service as svc
+    calls = []
+    monkeypatch.setattr(svc, "ensure_root_mandate", lambda eng: calls.append(eng.id))
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    client.get(f"/api/engagements/{eid}")
+    assert calls == []

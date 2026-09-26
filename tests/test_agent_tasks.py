@@ -264,3 +264,57 @@ def test_payee_mismatch_refuses_before_402(client, db, app, callee):
     app.extensions["ens_resolver"] = Resolver()
     resp = client.post(_url(callee), json={"task": "t"})
     assert resp.status_code == 403 and resp.get_json()["code"] == "PAYEE_MISMATCH"
+
+
+class _PendingThenFailed:
+    """On-chain escrow whose settlement is submitted (pending) and whose
+    receipt later reports the transaction failed."""
+    mode = "onchain"
+    escrow_address = vault_address = None
+
+    def __init__(self):
+        self.receipt = "pending"
+
+    def settle_authorization(self, permit, *, pay_to, ref=None):
+        from chain.escrow import TxResult
+        return TxResult(tx_hash="0x" + "ab" * 32, status="pending", explorer=None)
+
+    def receipt_status(self, tx_hash):
+        return self.receipt
+
+
+def test_settlement_failed_on_chain_refunds_the_mandate_once(client, db, app, callee, payer_key,
+                                                             mandate, screener):
+    from app.api.tasks import settlement_failed
+    from app.engagements import ledger
+    from app.models import Engagement
+    escrow = app.extensions["agents_list.escrow"] = _PendingThenFailed()
+    resp, _ = _pay(client, callee, payer_key, mandate)
+    assert resp.status_code == 200 and resp.get_json()["payment"]["status"] == "pending"
+    assert _spent(db, mandate) == PRICE
+
+    eid = mandate.engagement_id
+    assert client.get(f"/api/engagements/{eid}").status_code == 200    # still pending
+    assert _spent(db, mandate) == PRICE
+
+    escrow.receipt = "failed"
+    body = client.get(f"/api/engagements/{eid}").get_json()          # the poll path
+    assert [e["status"] for e in body["ledger"]] == ["failed"]
+    assert _spent(db, mandate) == 0
+    # polling again (or a racing poller) never refunds twice
+    client.get(f"/api/engagements/{eid}")
+    (entry,) = _ledger(eid)
+    assert ledger.refresh_receipts(db.session.get(Engagement, eid), escrow) == 0
+    assert settlement_failed(entry) is False
+    db.session.commit()
+    assert _spent(db, mandate) == 0
+
+
+def test_confirmed_settlement_keeps_the_charge(client, db, app, callee, payer_key, mandate,
+                                               screener):
+    escrow = app.extensions["agents_list.escrow"] = _PendingThenFailed()
+    _pay(client, callee, payer_key, mandate)
+    escrow.receipt = "confirmed"
+    body = client.get(f"/api/engagements/{mandate.engagement_id}").get_json()
+    assert [e["status"] for e in body["ledger"]] == ["confirmed"]
+    assert _spent(db, mandate) == PRICE
