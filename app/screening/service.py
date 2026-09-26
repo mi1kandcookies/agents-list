@@ -379,6 +379,48 @@ def verdict_from_row(row) -> Verdict:
     )
 
 
+_SANCTION_CODES = frozenset({"TRAIT_SANCTION_ADDRESS", "TRAIT_SANCTION_ADDRESS_COMMUNICATION"})
+
+
+def screen_listing_wallet(wallet: str, *, client: InterceptaClient | None = None) -> dict:
+    """Screen a wallet before it can list an agent (Quick Scan; no engagement
+    or agent id exists yet, so nothing is persisted - this is a pre-creation
+    gate, not a payment hop). Screened directly as given: a listing wallet is
+    not a Sepolia placeholder the way a demo payout address is, so there is
+    no address-map indirection here.
+
+    Returns {"ok": True} to proceed, or {"ok": False, "code", "message",
+    "reasons"} to refuse. A sanctions-related trait gets a specific message
+    (an operator whose wallet is OFAC-listed cannot list here); any other
+    REFUSE gets a generic one. Provider/config errors fail closed the same
+    as every other screening hop.
+    """
+    from app.screening import policy
+    client = client or InterceptaClient()
+    try:
+        address = client.quick_scan_address(wallet)
+    except InterceptaError as exc:
+        return {"ok": False, "code": _ERROR_REASONS.get(exc.code, "SCREENING_ERROR"),
+                "message": "Could not verify this wallet right now. Try again shortly.",
+                "reasons": [{"code": exc.code, "message": str(exc)}]}
+    try:
+        thresholds = policy.Thresholds.from_env()
+    except (ValueError, TypeError):
+        thresholds = policy.Thresholds()
+    findings = policy.assess_address_scan(address, "quick-scan", thresholds)
+    decision = policy.decide(findings, thresholds)
+    if decision.verdict != policy.REFUSE:
+        return {"ok": True}
+    codes = {r["code"] for r in decision.reasons}
+    if codes & _SANCTION_CODES:
+        message = ("This wallet is associated with an OFAC-sanctioned address or "
+                  "jurisdiction and cannot list an agent here.")
+    else:
+        message = "This wallet failed risk screening and cannot list an agent here."
+    return {"ok": False, "code": "LISTING_WALLET_REFUSED", "message": message,
+           "reasons": decision.reasons}
+
+
 def get_screener():
     """The app's screener: ``app.extensions["screener"]`` if set, else Intercepta."""
     from flask import current_app

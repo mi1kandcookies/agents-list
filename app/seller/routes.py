@@ -36,6 +36,12 @@ def seller_create():
             return jsonify({"error": "connect a wallet first (seller wallet required)",
                             "field": "wallet"}), 400
 
+        from app.screening.service import screen_listing_wallet
+        screening = screen_listing_wallet(wallet)
+        if not screening["ok"]:
+            return jsonify({"error": screening["message"], "code": screening["code"],
+                            "field": "wallet", "reasons": screening["reasons"]}), 403
+
         required = ["name", "description", "category", "billing"]
         missing = [k for k in required if not data.get(k)]
         if missing:

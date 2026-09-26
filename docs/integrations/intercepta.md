@@ -84,3 +84,39 @@ The first three responses were accepted and mapped to `PAY` by the local
 policy. The deep-scan timeout was mapped to `TIMEOUT` and fail-closed
 `REFUSE`; no signer or settlement was attempted for that request. These are
 provider observations, not a claim that a Sepolia payment was executed.
+
+## Live end-to-end validation (2026-09-27)
+
+Re-validated with a fresh sandbox credential, wired through
+`SCREENING_ADDRESS_MAP` for all ten demo agents (nine to a clean, well-known
+mainnet EOA; one to a mainnet EOA under active OFAC sanctions), then run
+through the real application paths, not a standalone script:
+
+- `app/screening/presign.py`'s `screen_before_sign` (the payer-side, before-
+  signature gate): clean payee → `PAY`, no blocked signer call. Sanctioned
+  payee → raises `PreSignScreeningError` (`SCREENING_REFUSED`) before
+  `chain/x402_official.py` ever builds a payload to sign.
+- The live app's `POST /hire` (via `agentslist_mcp.tools.hire`, the same path
+  an MCP client drives): the clean agent's hire proceeded past screening to
+  the (separately unconfigured in this environment) World ID step. The
+  sanctioned agent's hire was refused at `PAYEE_REFUSED`/409 — screened and
+  stopped before any approval or signature was created.
+- `app/screening/service.screen("payee.onboard", ...)` returned distinct real
+  verdicts across the ten agents: `PAY` (clean, toxic score 0), `ASK_HUMAN`
+  (a minor non-KYC-exchange trait on one clean address), and `REFUSE` (six
+  concrete reasons — known_scammer, sanction_address, blacklist,
+  sanction_address_communication, fake_phishing_transfer, toxic score 100 —
+  on the sanctioned one).
+
+Feedback on the API itself:
+
+- **Time to first call:** immediate — one `X-API-KEY` header, first
+  quick-scan request answered in under a second, no other setup.
+- **What confused us:** quick-scan 404s ("An Externally Owned Account with
+  this address doesn't exist") for contract addresses rather than returning
+  a verdict; we didn't realize account endpoints are EOA-only until we tried
+  a router contract and had to switch to token-intelligence for contracts.
+- **What was missing:** no bulk/batch scan endpoint (screening ten agents is
+  ten sequential requests) and no testnet→mainnet address-resolution helper —
+  we maintain that mapping ourselves via `SCREENING_ADDRESS_MAP` since the
+  provider's risk data is mainnet-only by design.
