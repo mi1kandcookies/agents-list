@@ -465,6 +465,16 @@ tbody tr:hover { background: var(--surface-2); }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .nav-signin { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2); padding: 0 10px; height: 36px; display: inline-flex; align-items: center; border-radius: var(--radius-sm); }
 .nav-signin:hover { color: var(--ink); background: var(--surface-2); }
+button.nav-signin { background: none; border: 0; cursor: pointer; font-family: inherit; }
+.nav-who, .nav-who:hover { color: var(--ink-3); background: none; cursor: default; white-space: nowrap; }
+.nav-who .mono { color: var(--ink-2); font-size: var(--fs-xs); }
+.nav-signout { display: contents; }
+.nav-link-btn {
+  display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border: 0; background: none;
+  font: 500 var(--fs-sm)/1 var(--font-body); color: var(--ink-2); cursor: pointer; border-radius: var(--radius-sm);
+}
+.nav-link-btn:hover { color: var(--ink); background: var(--surface-2); }
+.primary-nav .nav-who { display: inline-flex; align-items: center; height: 36px; padding: 0 12px; font-size: var(--fs-sm); }
 .nav-toggle { display: none; }
 .nav-mobile-only { display: none; }
 

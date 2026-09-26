@@ -29,7 +29,13 @@
       <li><a href="{{ url_for('catalog.marketplace') }}" {% if _on_browse %}aria-current="page"{% endif %}>Browse agents</a></li>
       <li><a href="{{ url_for('catalog.how_it_works') }}" {% if _path == '/how-it-works' %}aria-current="page"{% endif %}>How it works</a></li>
       <li><a href="{{ url_for('seller.seller_earnings') }}" {% if _on_operator %}aria-current="page"{% endif %}>For operators</a></li>
-      <li class="nav-mobile-only"><a href="/login">Sign in</a></li>
+      {% if nav_human %}
+      <li><a href="{{ url_for('engagements.jobs_list') }}" {% if _path.startswith('/jobs') %}aria-current="page"{% endif %}>Jobs</a></li>
+      <li class="nav-mobile-only"><span class="nav-who">Signed in · <span class="mono">{{ nav_human.short_id }}</span></span></li>
+      <li class="nav-mobile-only"><form method="post" action="{{ url_for('identity.logout_view') }}"><button type="submit" class="nav-link-btn">Sign out</button></form></li>
+      {% else %}
+      <li class="nav-mobile-only"><a href="{{ url_for('identity.login', next=_path) }}">Sign in</a></li>
+      {% endif %}
     </ul>
 
     <div class="nav-right">
@@ -50,7 +56,12 @@
           <button type="button" class="btn btn-ghost btn-sm btn-full" onclick="__disconnectWallet(event)">Disconnect</button>
         </div>
       </div>
-      <a href="/login" class="nav-signin">Sign in</a>
+      {% if nav_human %}
+      <span class="nav-signin nav-who" data-signed-in title="Your World ID session">Signed in · <span class="mono">{{ nav_human.short_id }}</span></span>
+      <form method="post" action="{{ url_for('identity.logout_view') }}" class="nav-signout"><button type="submit" class="nav-signin">Sign out</button></form>
+      {% else %}
+      <a href="{{ url_for('identity.login', next=_path) }}" class="nav-signin">Sign in</a>
+      {% endif %}
       <a href="{{ url_for('intake.new_job') }}" class="btn btn-primary btn-sm">Describe your job</a>
       <button class="nav-toggle" type="button" aria-controls="primary-nav" aria-expanded="false" aria-label="Menu"
               onclick="const n=document.getElementById('primary-nav'); const o=n.classList.toggle('is-open'); this.setAttribute('aria-expanded', o);">

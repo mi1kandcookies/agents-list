@@ -7,12 +7,25 @@ from flask import redirect, render_template, request, session, url_for
 from app.approvals import service
 from app.identity import bp
 from app.identity.session import (LOGIN_APPROVAL_KEY, LOGIN_NEXT_KEY, current_human, logout,
-                                  remember_web_state, safe_next, take_web_state)
+                                  remember_web_state, safe_next, short_id,
+                                  take_web_state)
 from app.identity.world import WorldError
 
 
 def _error_page(title: str, message: str, status: int):
     return render_template("approvals/error.html", title=title, message=message), status
+
+
+@bp.app_context_processor
+def _nav_identity():
+    """``nav_human`` for the header: {"short_id": …} when a human is signed
+    in, else None. Never breaks a page (e.g. the 500 page with the database
+    down)."""
+    try:
+        human = current_human()
+    except Exception:
+        human = None
+    return {"nav_human": {"short_id": short_id(human)} if human is not None else None}
 
 
 @bp.get("/login")
