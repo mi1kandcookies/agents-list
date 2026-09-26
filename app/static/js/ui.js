@@ -21,8 +21,8 @@
   var toggle = document.querySelector("[data-banner-toggle]");
   if (toggle) {
     toggle.addEventListener("click", function () {
-      var on = document.documentElement.classList.toggle("banner-surf");
-      try { localStorage.setItem("al-banner", on ? "surf" : "field"); } catch (e) {}
+      var field = document.documentElement.classList.toggle("banner-field");
+      try { localStorage.setItem("al-banner-v2", field ? "field" : "surf"); } catch (e) {}
     });
   }
 
