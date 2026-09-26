@@ -377,3 +377,43 @@ def test_chain_page_renders_the_tree(client, root, agents, screener, human):
     detail = client.get(f"/jobs/{b['engagement_id']}").get_data(as_text=True)
     assert f"/jobs/{b['engagement_id']}/chain" in detail and "Approve &amp; fund" not in detail
     assert client.get("/jobs/ENG-NOPE/chain").status_code == 404
+
+
+# ── MCP tool against the real endpoint ────────────────────────────────────
+class _FlaskSession:
+    """requests.Session stand-in that routes the MCP client into the app."""
+
+    def __init__(self, client):
+        self.client = client
+
+    def request(self, method, url, *, params=None, json=None, headers=None, timeout=None):
+        path = "/" + url.split("://", 1)[1].split("/", 1)[1]
+        resp = self.client.open(path, method=method, query_string=params, json=json,
+                                headers=headers)
+        body = resp.get_json(silent=True)
+
+        class _Response:
+            status_code = resp.status_code
+            text = resp.get_data(as_text=True)
+
+            def json(self):
+                if body is None:
+                    raise ValueError("no json")
+                return body
+        return _Response()
+
+
+def test_mcp_subhire_tool_uses_the_real_endpoint(client, root, agents, screener, monkeypatch):
+    from agentslist_mcp import tools
+    from agentslist_mcp.client import AgentListClient
+    eid, token = root
+    monkeypatch.setenv("MCP_API_TOKEN", "s3cret")
+    mcp = AgentListClient("http://app.test", "s3cret", session=_FlaskSession(client))
+    status = tools.get_engagement_status(mcp, eid)
+    assert status["mandate_token"] == token                 # the hired agent's authority
+    out = tools.subhire(mcp, eid, agents["B"], 7, "Development", status["mandate_token"],
+                        outcome="Write the export tests")
+    assert out["ok"] and out["status"] == "funded" and out["allocated_micro"] == 7_000_000
+    assert mandates.verify_chain(out["mandate_token"])["sub"] == agents["B"]
+    denied = tools.subhire(mcp, eid, agents["C"], 1, "Design", token)
+    assert denied["ok"] is False and denied["code"] == "CATEGORY_NOT_ALLOWED"

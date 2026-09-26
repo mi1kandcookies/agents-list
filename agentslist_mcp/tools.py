@@ -357,6 +357,9 @@ def _status_view(body, eng, approval, engagement_id, *, timed_out: bool) -> dict
         "money_moved_entries": moved,
         "settled_entries": _settled(ledger),
         "chain_url": body.get("chain_url") or eng.get("chain_url"),
+        # The hired agent's mandate (the API only sends it to API-token callers);
+        # pass it to subhire as mandate_token.
+        "mandate_token": body.get("mandate_token") or eng.get("mandate_token"),
         "message": message,
     }
 
@@ -372,6 +375,13 @@ def _nested(approval, engagement_id):
 
 def subhire(client, parent_engagement_id: str, agent_id: str, budget_usdc, category: str,
             mandate_token: str, outcome: str | None = None) -> dict:
+    """Sub-hire under the caller's mandate for ``parent_engagement_id``
+    (POST /api/engagements/<id>/subhire, ``Authorization: Mandate <jwt>``).
+
+    201: the child engagement was funded from the parent's escrow allocation
+    (ledger-only); the reply carries the child's own ``mandate_token`` for the
+    sub-agent. 202: screening asked for the root human, who approves on their
+    phone; poll the child engagement with get_engagement_status."""
     agent_id, err = _check_agent_id(agent_id)
     if err:
         return err
@@ -384,17 +394,31 @@ def subhire(client, parent_engagement_id: str, agent_id: str, budget_usdc, categ
     if err:
         return err
     payload = {"agent_id": agent_id, "outcome": (outcome or "").strip() or f"{category} work for {parent_engagement_id}",
-               "budget_usdc": budget_usdc, "category": category}
+               "budget_usdc": budget_usdc, "category": category.strip()}
     try:
         body = client.subhire(parent_engagement_id, payload, mandate_token=mandate_token.strip())
     except AgentListAPIError as exc:
         return _api_error(exc)
     if isinstance(body, dict) and body.get("approval_id"):
-        # 202: screening asked for a human (ASK_HUMAN).
-        return _approval_view(body, engagement_id=parent_engagement_id)
+        # 202: screening asked for the root human (ASK_HUMAN). The approval
+        # belongs to the new child engagement, so that is the one to poll.
+        child_id = body.get("child_engagement_id") or parent_engagement_id
+        view = _approval_view(body, engagement_id=child_id)
+        view.update(parent_engagement_id=parent_engagement_id, child_engagement_id=child_id)
+        return view
     child = _engagement(body)
+    capped = bool(body.get("capped"))
+    message = ("Sub-hire funded within your mandate (a ledger allocation from the parent escrow, "
+               "not an on-chain payment).")
+    if capped:
+        message += (f" Risk screening capped it: {body.get('allocated_micro')} of the requested "
+                    f"{body.get('requested_micro')} micro-USDC was allocated. Tell the human.")
+    message += " Give mandate_token only to the sub-hired agent; it is that agent's authority to sub-hire."
     return {"ok": True, "engagement_id": _engagement_id(child), "parent_engagement_id": parent_engagement_id,
             "agent_id": child.get("agent_id", agent_id), "status": child.get("status"),
-            "sow_hash": child.get("sow_hash"), "mandate": body.get("mandate") or child.get("mandate"),
-            "money_moved": False,
-            "message": "Sub-hire created within your mandate (a ledger allocation, not an on-chain payment)."}
+            "depth": child.get("depth"), "sow_hash": child.get("sow_hash"),
+            "allocated_micro": body.get("allocated_micro"), "requested_micro": body.get("requested_micro"),
+            "capped": capped, "screening": body.get("screening"),
+            "mandate": body.get("mandate") or child.get("mandate"),
+            "mandate_token": body.get("mandate_token"), "chain_page_url": body.get("chain_page_url"),
+            "money_moved": False, "message": message}
