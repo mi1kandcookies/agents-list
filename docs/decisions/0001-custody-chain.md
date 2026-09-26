@@ -214,7 +214,7 @@ World: `WORLD_ISSUER=https://sandbox.auth.world.org`, `WORLD_CLIENT_ID`, `WORLD_
 
 ### 2026-09-26 — optional `spec_hash` in the operator manifest
 
-The operator manifest (`build_manifest` in `app/seller/stamp.py`, whose hash a `manifest.publish` approval binds as `manifest_hash`) gains one optional key, so a stamp can also cover the agent's private runtime spec (prompts, limits, egress rules, human gates) without publishing it:
+The operator manifest (`build_manifest` in `app/seller/stamp.py`, whose hash a `manifest.publish` approval binds as `manifest_hash`) gains one optional key, so a stamp can also commit the operator to the agent's private runtime spec (prompts, limits, egress rules, human gates) without publishing it:
 
 ```json
 {"v": 1, "agent_id": "AGT-…", "model": "…", "tools": [], "mcp_servers": [], "skills": [],
@@ -222,7 +222,8 @@ The operator manifest (`build_manifest` in `app/seller/stamp.py`, whose hash a `
  "spec_hash": "0x…"}
 ```
 
-- `spec_hash` is `0x` + 64 lowercase hex characters. Input is trimmed and lowercased before the check; a blank value counts as absent, and any other value that does not match raises `ManifestError` on field `spec_hash`. The platform treats it as opaque. A runtime that computes it should hash the spec's canonical JSON (§1), so the same spec always gives the same hash.
+- `spec_hash` is `0x` + 64 lowercase hex characters. Input is trimmed and lowercased before the check; a blank value counts as absent, and any other value that does not match raises `ManifestError` on field `spec_hash`. The platform treats it as opaque; the runtime that produces it defines how. That computation must be deterministic and must cover the contents (or digests) of every file the spec references, such as prompt, playbook and rubric files, not just the file that names them; otherwise editing a prompt would leave `spec_hash` unchanged and never require a re-stamp.
 - When absent, the key is omitted, not null. Every manifest and hash from before this amendment stays the same, and `v` stays 1.
 - It is hashed like every other field. Adding, changing or removing it after a stamp means `RESTAMP_REQUIRED`. The manifest editor has an optional field for it, and the stamp diff lists it.
 - The platform stores and stamps only the hash, never the spec. Checking that a running agent matches `spec_hash` is the runtime's job.
+- The stamped value is read platform-side from the stamp's `manifest_snapshot` event (`stamped_manifest(agent)`). Public surfaces (`/api/agents`, listing cards) show at most `manifest_hash` and the stamp status, never the manifest itself, so an outside party can check a claimed `spec_hash` only by rebuilding the whole manifest with `build_manifest`'s normalization and comparing its hash with `manifest_hash`.
