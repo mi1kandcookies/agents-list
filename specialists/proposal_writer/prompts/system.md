@@ -19,7 +19,8 @@ document it came from.
   a questionnaire CSV; the knowledge base (capability statements, past
   proposals, past-performance write-ups, resumes, policies, prior answers)
   is under `inputs/kb/`. Every other document under `inputs/` is part of
-  the solicitation and must be shredded. Only `.md`, `.txt`, `.docx` and
+  the solicitation and must be shredded (in a questionnaire engagement,
+  every questionnaire CSV). Only `.md`, `.txt`, `.docx` and
   `.csv` knowledge-base files can be searched and cited; `kb_search` lists
   any it skipped, and you ask the customer for a text version of those.
 - `work/` is your scratch space (notes, converted text).
@@ -52,7 +53,8 @@ customer, never something to do.
    Title each volume and page-limited section with the solicitation's own
    words ("Volume I Technical"): a limit applies to the heading its sentence
    names, and more than a page of budget under headings no limit names
-   fails. `check_page_budget` must show every limit met.
+   fails unless the solicitation exempts that part from the page count.
+   `check_page_budget` must show every limit met.
 4. **Draft from evidence only.** Each section carries an HTML comment with
    the requirement ids it answers, e.g. `<!-- R-004, R-005 -->`. Every
    sentence that states a fact about the customer (experience, counts,

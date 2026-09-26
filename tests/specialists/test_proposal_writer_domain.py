@@ -963,3 +963,47 @@ def test_milestone_hours_fit_one_run_of_the_limits():
     for ms in m["milestones"]:
         assert ms["hours"][1] * m["estimate"]["usd_per_hour"] <= m["limits"]["max_usd"], ms["id"]
         assert ms["hours"][1] * 60 <= m["limits"]["max_wall_minutes"], ms["id"]
+
+
+def test_a_volume_the_solicitation_exempts_is_not_outside_prose(m1_ws):
+    draft = ("# Volume I Technical\n" + " ".join(["word"] * 3000) + "\n\n# Volume II Price\n"
+             + " ".join(["word"] * 1500) + "\n")
+    _reshred(m1_ws, "The Price Volume is limited to 3 pages.", "The Price Volume is not page limited.")
+    _write(m1_ws, T.DRAFT_PATH, draft)
+    assert _passes(C.draft_within_limits(m1_ws, {}))
+    _reshred(m1_ws, "The Price Volume is not page limited.", "The Price Volume follows the pricing template.")
+    result = C.draft_within_limits(m1_ws, {})
+    assert result["passed"] is False and "3 pages of prose sit outside" in result["details"]
+
+
+def test_questionnaire_needs_every_csv_but_not_its_cover_instructions(q_ws):
+    _write(q_ws, "inputs/instructions.md", "Return the completed questionnaire by email.\n")
+    assert _passes(C.shred_complete(q_ws, {}))
+    _write(q_ws, "inputs/privacy-questionnaire.csv", "ID,Question\nP-1,Do you sell personal data?\n")
+    details = C.shred_complete(q_ws, {})["details"]
+    assert "inputs/privacy-questionnaire.csv is not shredded" in details
+
+
+def test_malformed_inputs_fail_checks_instead_of_crashing(m1_ws):
+    _write(m1_ws, "work/ragged.csv", "a,b\n1,2,3,4\n")
+    assert T.read_csv_rows(m1_ws, "work/ragged.csv") == [{"a": "1", "b": "2", "": "3,4"}]
+    _edit_requirements(m1_ws, lambda d: d["requirements"].append("R-099"))
+    for name, fn in C.CHECK_DEFS.items():
+        result = fn(m1_ws, {})
+        assert result["passed"] is False and "string id" in result["details"], name
+
+
+def test_a_passage_denying_a_certification_does_not_ground_a_yes(q_ws):
+    _write(q_ws, "inputs/kb/attestations.md", "# Attestations\n\nLumen Fieldworks is not FedRAMP authorized "
+           "and is pursuing a SOC 2 Type II report. Its penetration test had no findings in its HIPAA scope.\n")
+    for qid, answer in (("Q-005", "Yes."), ("Q-004", "Yes, we hold a SOC 2 Type II report.")):
+        with pytest.raises(ToolError, match="affirms|not in the cited"):
+            T.set_answer(q_ws, question_id=qid, status="answered", answer=answer,
+                         citations=["attestations.md#p1"])
+    T.set_answer(q_ws, question_id="Q-005", status="answered",
+                 answer="No. Lumen Fieldworks is not FedRAMP authorized.", citations=["attestations.md#p1"])
+    assert C.questionnaire_answers_grounded(q_ws, {})["details"].startswith("1 answered")
+    passages = T.kb_passages(q_ws)
+    scan = T.scan_grounding("## S\nLumen Fieldworks is FedRAMP authorized [KB:attestations.md#p1]. "
+                            "It had no findings in its HIPAA scope [KB:attestations.md#p1].\n", passages, {})
+    assert [u["not_in_cited_text"] for u in scan["unsupported"]] == [["FedRAMP"]]

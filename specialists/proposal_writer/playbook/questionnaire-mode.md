@@ -26,8 +26,9 @@ of a security, privacy or vendor-risk questionnaire).
   question; every number and certification in the answer must appear in
   the cited passage, and so must every certification or standard the
   question names (a bare "Yes." to "Do you hold a SOC 2 Type II report?"
-  needs a passage that says SOC 2 Type II). `set_answer` refuses anything
-  else.
+  needs a passage that says SOC 2 Type II). A passage that denies or only
+  plans the certification ("is pursuing SOC 2") grounds a "No", never a
+  "Yes". `set_answer` refuses anything else.
 - When the knowledge base does not establish the fact, the answer is
   `needs_review` with the open question: "NEEDS REVIEW: no SOC 2 report in
   the knowledge base; confirm current attestation status."
