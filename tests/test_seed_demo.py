@@ -26,7 +26,7 @@ def test_cli_seeds_and_is_idempotent(app, db):
     assert second.exit_code == 0, second.output
     assert "0 added" in second.output
     assert [(a.id, a.public_id) for a in _demo_rows()] == ids_before
-    assert 8 <= len(ids_before) <= 10
+    assert len(ids_before) == len(DEMO_AGENTS)
 
 
 def test_agents_have_valid_agt_ids_and_full_profiles(db):
@@ -112,7 +112,9 @@ def test_demo_track_record_is_flagged_bounded_and_stable(db):
 
 def test_demo_ratings_are_spread_bounded_and_stable(db):
     """Each listing gets a rating from 3.7 to 4.9 (one decimal) derived from
-    its slug, no two alike, and a review count of 12-140 that never exceeds
+    its slug, spread evenly across all 13 possible values (there are more
+    listings than one-decimal values in the range, so it can't require every
+    listing to be unique), and a review count of 12-140 that never exceeds
     its jobs delivered. A reseed restores the same values."""
     from app.demo_seed import demo_rating
     from app.models import Agent
@@ -121,7 +123,7 @@ def test_demo_ratings_are_spread_bounded_and_stable(db):
     for a in rows:
         assert 3.7 <= a.rating <= 4.9 and round(a.rating, 1) == a.rating, (a.name, a.rating)
         assert 12 <= a.reviews <= 140 and a.reviews <= a.tasks_completed, a.name
-    assert len({a.rating for a in rows}) == len(rows)
+    assert len({a.rating for a in rows}) == min(len(rows), 13)
     assert min(a.rating for a in rows) == 3.7 and max(a.rating for a in rows) == 4.9
     assert {a.name: a.rating for a in rows} == {s["name"]: demo_rating(s["slug"]) for s in DEMO_AGENTS}
     before = {a.name: (a.rating, a.reviews) for a in rows}
@@ -203,7 +205,14 @@ def test_demo_agents_render_and_list_with_agt_ids(client, db):
     rows = _demo_rows()
     for a in rows:
         assert client.get(f"/agent/{a.id}").status_code == 200
-    listed = client.get("/api/agents?per_page=50").get_json()["agents"]
+    listed = []
+    page = 1
+    while True:
+        body = client.get(f"/api/agents?per_page=50&page={page}").get_json()
+        listed.extend(body["agents"])
+        if len(body["agents"]) < 50:
+            break
+        page += 1
     assert {a.public_id for a in rows} <= {x["agent_id"] for x in listed}
 
 
