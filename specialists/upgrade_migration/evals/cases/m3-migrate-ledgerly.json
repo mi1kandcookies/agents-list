@@ -1,12 +1,12 @@
 {
   "name": "Migrate ledgerly-api to Python 3.12 APIs",
   "milestone": "m3-migrate",
+  "fixture": "ledgerly-api",
   "brief": {
     "engagement_id": "eval-um-003",
     "specialist": "upgrade-migration",
     "objective": "Remove APIs retired or deprecated on Python 3.12 and quillhttp's legacy call.",
     "intake": {
-      "fixture": "ledgerly-api",
       "repository": "ledgerly-api (main)",
       "test_command": "python -m pytest -q",
       "targets": "Python 3.12"

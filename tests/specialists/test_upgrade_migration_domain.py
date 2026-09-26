@@ -731,24 +731,26 @@ def test_manifest_policy_matches_tool_needs():
     assert pricing["currency"] == "USDC" and pricing["typical_low"] < pricing["typical_high"]
 
 
-def test_eval_cases_reference_real_milestones_and_fixtures():
-    m = load_manifest()
-    ids = {ms["id"] for ms in m["milestones"]}
-    cases = sorted((PKG_DIR / "evals" / "cases").glob("*.json"))
-    assert cases
-    for path in cases:
-        case = json.loads(path.read_text(encoding="utf-8"))
-        assert {"name", "brief", "milestone", "notes"} <= set(case)
-        assert case["milestone"] in ids
-        fixture = case["brief"].get("intake", {}).get("fixture")
-        if fixture:
-            assert (PKG_DIR / "evals" / "fixtures" / fixture).is_dir(), fixture
+def test_eval_cases_reference_real_milestones_and_fixtures(tmp_path):
+    from agentkit.evals import case_brief, load_cases, prepare_workspace
+    from agentkit.registry import load_specialist
+
+    spec = load_specialist("upgrade-migration")
+    ids = {ms.id for ms in spec.manifest.milestones}
+    cases = load_cases(spec)                     # the kit's strict case schema
+    assert len(cases) == 3
+    for case in cases:
+        assert case.milestone in ids and case.notes and case.fixture == "ledgerly-api"
+        assert case_brief(spec, case).intake["test_command"]
+        ws = tmp_path / case.milestone
+        prepare_workspace(spec, case, ws)        # the fixture lands as repo/
+        assert (ws / "repo" / "requirements.txt").is_file() and not (ws / "inputs").exists()
 
 
 def test_fixture_repo_end_to_end_offline(tmp_path):
     """The shipped synthetic fixture drives the tools and the m1 checks."""
     import shutil
-    shutil.copytree(PKG_DIR / "evals" / "fixtures" / "ledgerly-api", tmp_path / "repo")
+    shutil.copytree(PKG_DIR / "evals" / "fixtures" / "ledgerly-api" / "repo", tmp_path / "repo")
     advisories = json.loads((PKG_DIR / "evals" / "fixtures" / "osv-advisories.json").read_text(encoding="utf-8"))
     T.inventory_dependencies(tmp_path, output="deliverables/m1-assess/inventory.json")
     T.osv_scan(tmp_path, fetch=FakeOSV(advisories))

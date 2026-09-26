@@ -2,7 +2,7 @@
 
 Fictional invoicing API of the fictional company Ledgerly Labs, used only to
 exercise the upgrade-migration specialist offline. Package names, versions
-and advisories in this fixture are invented (see ../osv-advisories.json).
+and advisories in this fixture are invented (see ../../osv-advisories.json).
 
 Known state on purpose:
 - quillhttp 1.8.2 has a HIGH advisory fixed in 1.9.1 (minor bump)
