@@ -1,0 +1,19 @@
+{
+  "name": "larkspur-m3-agent-config",
+  "brief": {
+    "engagement_id": "eval-larkspur-001",
+    "specialist": "support-automation",
+    "objective": "Deliver a support-agent configuration and measure its escalation behavior on held-out tickets.",
+    "intake": {
+      "ticket_export": "inputs/tickets.csv",
+      "help_center": "inputs/help_center/",
+      "policy_docs": "inputs/policies/",
+      "helpdesk_platform": "Markdown export",
+      "regulated_vertical": "no",
+      "must_escalate_categories": "food illness or allergic reaction"
+    }
+  },
+  "milestone": "m3-agent-config",
+  "fixtures": "evals/fixtures/larkspur/inputs",
+  "notes": "Must-escalate recall on the held-out split should be 1.0 (food illness, chargebacks, disputes, lawyer threat, account takeover, bereavement). The allergen question ticket is not must-escalate unless it reports a reaction."
+}

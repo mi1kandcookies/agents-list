@@ -1,0 +1,19 @@
+{
+  "name": "larkspur-m1-discovery",
+  "brief": {
+    "engagement_id": "eval-larkspur-001",
+    "specialist": "support-automation",
+    "objective": "Map what Larkspur Pantry customers contact support about and where the help center falls short.",
+    "intake": {
+      "ticket_export": "inputs/tickets.csv",
+      "help_center": "inputs/help_center/",
+      "policy_docs": "inputs/policies/",
+      "helpdesk_platform": "Markdown export",
+      "regulated_vertical": "no",
+      "top_n_gaps": 5
+    }
+  },
+  "milestone": "m1-discovery",
+  "fixtures": "evals/fixtures/larkspur/inputs",
+  "notes": "Expect at least 90% classified volume, all PII redacted, gaps including pause, cancel and delivery status, and the 30 vs 14 day refund contradiction reported with a question for the policy owner."
+}

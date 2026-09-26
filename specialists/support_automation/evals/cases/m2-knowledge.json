@@ -1,0 +1,20 @@
+{
+  "name": "larkspur-m2-knowledge",
+  "brief": {
+    "engagement_id": "eval-larkspur-001",
+    "specialist": "support-automation",
+    "objective": "Fill the five largest automatable knowledge gaps with grounded articles and macros.",
+    "intake": {
+      "ticket_export": "inputs/tickets.csv",
+      "help_center": "inputs/help_center/",
+      "policy_docs": "inputs/policies/",
+      "helpdesk_platform": "Markdown export",
+      "regulated_vertical": "no",
+      "top_n_gaps": 5
+    },
+    "answers": {"refund_window": "14 days is correct; the help-center article is outdated."}
+  },
+  "milestone": "m2-knowledge",
+  "fixtures": "evals/fixtures/larkspur/inputs",
+  "notes": "Articles must cite inputs/policies/*.md; refund wording must use 14 days only; the allergen article must never call a kit safe for an allergy; no article may present the $20 credit as a right."
+}
