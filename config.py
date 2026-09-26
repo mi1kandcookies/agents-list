@@ -1,5 +1,5 @@
 """
-config.py - Centralized configuration for AgentHire.
+config.py - Centralized configuration for Agent's List.
 
 Usage:
     from config import config
@@ -8,7 +8,7 @@ Usage:
 Environment variables:
     FLASK_ENV             development | production (default: development)
     SECRET_KEY            Flask secret key (required in production)
-    DATABASE_URL          SQLAlchemy DB URI (default: sqlite:///agenthire.db)
+    DATABASE_URL          SQLAlchemy DB URI (default: sqlite:///agents_list.db)
     API_KEY               API key for protected admin/seller mutation routes
     CORS_ORIGINS          Comma-separated allowed origins (default: *)
     RATELIMIT_DEFAULT     Default rate limit string (default: 60/minute)
@@ -33,7 +33,7 @@ class Config:
 
     # ── Database ───────────────────────────────────────────────────────────
     SQLALCHEMY_DATABASE_URI: str = os.environ.get(
-        "DATABASE_URL", "sqlite:///agenthire.db"
+        "DATABASE_URL", "sqlite:///agents_list.db"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     SQLALCHEMY_ECHO: bool = False  # Set True to log all SQL in development
@@ -139,7 +139,7 @@ def validate_runtime_config(app) -> None:
 
     if warnings:
         import logging
-        log = logging.getLogger("agenthire.config")
+        log = logging.getLogger("agents_list.config")
         for msg in warnings:
             log.warning("config warning: %s", msg)
 

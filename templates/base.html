@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}AgentHire{% endblock %} | AI Agent Marketplace</title>
+  <title>{% block title %}Agent's List{% endblock %} | Agent's List</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -16,8 +16,8 @@
 
 <!-- ── Navigation ────────────────────────────────────────────────────────── -->
 <nav class="nav">
-  <a href="/" class="nav-logo" style="gap:0;" aria-label="AgentHire">
-    <svg class="logo-lockup" width="100%" viewBox="0 0 580 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+  <a href="/" class="nav-logo" style="gap:0;" aria-label="Agent's List">
+    <svg class="logo-lockup" width="100%" viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
       <defs>
         <radialGradient id="ahBody" cx="48%" cy="30%" r="72%"><stop offset="0%" stop-color="#303030"/><stop offset="45%" stop-color="#141414"/><stop offset="100%" stop-color="#000000"/></radialGradient>
         <radialGradient id="ahHead" cx="50%" cy="30%" r="68%"><stop offset="0%" stop-color="#3A3A3A"/><stop offset="55%" stop-color="#141414"/><stop offset="100%" stop-color="#000000"/></radialGradient>
@@ -38,7 +38,7 @@
         <circle cx="80" cy="42" r="1.8" fill="#ffd4d4"/>
       </g>
       <text x="160" y="118" font-family="'DM Sans','Helvetica Neue',Arial,sans-serif" font-size="60" font-weight="700" letter-spacing="3">
-        <tspan class="logo-agent" fill="#ffffff">AGENT</tspan><tspan fill="#CE2E2E">HIRE</tspan>
+        <tspan class="logo-agent" fill="#ffffff">AGENT’S</tspan><tspan fill="#CE2E2E"> LIST</tspan>
       </text>
     </svg>
   </a>
@@ -105,9 +105,9 @@
 </nav>
 
 <!-- Wallet connect: picker pre-connect, account menu post-connect.
-     Chain metadata comes from window.AGENTHIRE_CHAIN (/config.js). -->
+     Chain metadata comes from window.AGENTSLIST_CHAIN (/config.js). -->
 <script>
-function __chain() { return window.AGENTHIRE_CHAIN || {}; }
+function __chain() { return window.AGENTSLIST_CHAIN || {}; }
 
 function __walletClick(e) {
   if (e && e.preventDefault) e.preventDefault();
@@ -137,8 +137,8 @@ function __disconnectWallet(e) {
   btn.dataset.addr = '';
   document.cookie = 'buyer_wallet=; path=/; max-age=0';
   document.cookie = 'seller_wallet=; path=/; max-age=0';
-  document.cookie = 'agenthire_wallet_active=; path=/; max-age=0';
-  if (window.AgentHire) { window.AgentHire.connected = false; window.AgentHire.address = null; }
+  document.cookie = 'agentslist_wallet_active=; path=/; max-age=0';
+  if (window.AgentsList) { window.AgentsList.connected = false; window.AgentsList.address = null; }
   if (location.search.includes('wallet=')) location.href = location.pathname;
 }
 
@@ -263,13 +263,13 @@ async function __connectProvider(w) {
 document.addEventListener('DOMContentLoaded', () => {
   __renderPickerOptions();
   // Restore nav-bar connected state only if the user explicitly connected.
-  if (document.cookie.match(/agenthire_wallet_active=1/)) {
+  if (document.cookie.match(/agentslist_wallet_active=1/)) {
     const m = document.cookie.match(/(?:^|;\s*)buyer_wallet=(0x[a-fA-F0-9]{40})/);
     if (m) __setWalletConnected(m[1], { silent: true });
   }
 });
 
-window.__agentHireConnect = function(e) { __walletClick(e); };
+window.__agentsListConnect = function(e) { __walletClick(e); };
 
 function __setWalletConnected(addr, opts) {
   const silent = !!(opts && opts.silent);
@@ -281,8 +281,8 @@ function __setWalletConnected(addr, opts) {
   }
   document.cookie = 'buyer_wallet='  + addr + '; path=/; max-age=604800; SameSite=Lax';
   document.cookie = 'seller_wallet=' + addr + '; path=/; max-age=604800; SameSite=Lax';
-  document.cookie = 'agenthire_wallet_active=1; path=/; max-age=604800; SameSite=Lax';
-  if (window.AgentHire) { window.AgentHire.address = addr; window.AgentHire.connected = true; }
+  document.cookie = 'agentslist_wallet_active=1; path=/; max-age=604800; SameSite=Lax';
+  if (window.AgentsList) { window.AgentsList.address = addr; window.AgentsList.connected = true; }
   const c = __chain();
   const ma = document.getElementById('wm-addr');
   const mk = document.getElementById('wm-kind');
@@ -290,7 +290,7 @@ function __setWalletConnected(addr, opts) {
   if (ma) { ma.textContent = short; ma.dataset.full = addr; ma.title = addr; }
   if (mk) { mk.textContent = 'Injected · ' + (c.name || '') + ' ' + (c.chainId || ''); }
   if (me && c.explorer) me.href = c.explorer + '/address/' + addr;
-  window.dispatchEvent(new CustomEvent('agenthire:connected', { detail: { address: addr } }));
+  window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address: addr } }));
   if (!silent) {
     const walletPages = ['/active-jobs', '/past-jobs', '/seller/earnings'];
     if (walletPages.includes(location.pathname) && !new URLSearchParams(location.search).get('wallet')) {
@@ -324,13 +324,12 @@ function __setWalletConnected(addr, opts) {
       <div class="footer-col">
         <h5>Resources</h5>
         <a href="/how-it-works" class="footer-link">Documentation</a>
-        <a href="https://github.com/shalpate/agenthire" target="_blank" rel="noopener" class="footer-link">API Reference</a>
+        <a href="/api/agents" target="_blank" rel="noopener" class="footer-link">API</a>
         <a href="/api/health" target="_blank" rel="noopener" class="footer-link">Status</a>
-        <a href="mailto:hello@agenthire.xyz" class="footer-link">Contact</a>
       </div>
     </div>
     <div class="footer-bottom">
-      <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">© 2026 AgentHire</p>
+      <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">© 2026 Agent's List · derived from AgentHire (Apache-2.0)</p>
       <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">x402 PAYMENTS · ERC-8004 IDENTITY · AVALANCHE C-CHAIN</p>
     </div>
   </div>
@@ -378,7 +377,7 @@ function __setWalletConnected(addr, opts) {
 <div class="modal-overlay" id="how-it-works-modal">
   <div class="modal" style="max-width:520px;">
     <div class="modal-header">
-      <h3>How AgentHire Works</h3>
+      <h3>How Agent's List Works</h3>
       <button class="modal-close">✕</button>
     </div>
     <div class="modal-body">
@@ -450,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Submitting...';
-      await AgentHireAPI.post(`/api/agents/${agentId}/rate`, { rating: ratingVal, feedback });
+      await AgentsListAPI.post(`/api/agents/${agentId}/rate`, { rating: ratingVal, feedback });
       showToast('Rating submitted - thank you!', 'success');
       closeModal('rating-modal');
     } catch (e) {

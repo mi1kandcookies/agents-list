@@ -180,7 +180,7 @@
     if (statusEl) statusEl.textContent = 'Submitting...';
 
     try {
-      const res = await AgentHireAPI.post('/admin/review/{{ entry.id }}', { action, notes });
+      const res = await AgentsListAPI.post('/admin/review/{{ entry.id }}', { action, notes });
       if (statusEl) statusEl.textContent = action === 'approve' ? '✓ Approved - badge applied.' : '✕ Rejected.';
       showToast(action === 'approve' ? 'Agent approved and verified.' : 'Agent rejected.', action === 'approve' ? 'success' : 'warning');
       setTimeout(() => window.location = '/admin/verification-queue', 2000);

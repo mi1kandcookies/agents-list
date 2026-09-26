@@ -7,25 +7,25 @@
 
   function short(a) { return a ? a.slice(0,6) + '...' + a.slice(-4) : ''; }
   function usdc(n) { return (Number(n)/1e6).toFixed(2); }
-  function snowtraceTx(hash) { return window.AGENTHIRE_CHAIN.explorer + '/tx/' + hash; }
+  function snowtraceTx(hash) { return window.AGENTSLIST_CHAIN.explorer + '/tx/' + hash; }
 
   async function pollEvents() {
     const feed = document.getElementById('live-tx-feed');
     if (!feed) return;
     try {
-      const provider = new ethers.JsonRpcProvider(window.AGENTHIRE_CHAIN.rpcUrl);
+      const provider = new ethers.JsonRpcProvider(window.AGENTSLIST_CHAIN.rpcUrl);
       const latest = await provider.getBlockNumber();
       const fromBlock = latest - 1500; // ~50min of Fuji blocks
 
-      const esc = new ethers.Contract(window.AGENTHIRE_ADDRESSES.EscrowPayment, [
+      const esc = new ethers.Contract(window.AGENTSLIST_ADDRESSES.EscrowPayment, [
         'event PaymentSettled(uint256 indexed sessionId, address indexed agent, uint256 amount)',
         'event FundsDeposited(uint256 indexed sessionId, uint256 indexed agentId, address indexed user, uint256 amount, uint256 pricePerToken, uint256 categoryId, uint64 expiresAt)',
       ], provider);
-      const rep = new ethers.Contract(window.AGENTHIRE_ADDRESSES.ReputationContract, [
+      const rep = new ethers.Contract(window.AGENTSLIST_ADDRESSES.ReputationContract, [
         'event TaskCompleted(uint256 indexed agentId, uint256 indexed sessionId, uint256 tokensUsed, uint256 volume, uint256 categoryId, uint256 pointsAwarded)',
         'event IncidentRecorded(uint256 indexed agentId, address indexed affectedUser, uint8 severity)',
       ], provider);
-      const auc = new ethers.Contract(window.AGENTHIRE_ADDRESSES.AuctionMarket, [
+      const auc = new ethers.Contract(window.AGENTSLIST_ADDRESSES.AuctionMarket, [
         'event BidPosted(uint256 indexed bidId, address indexed user, uint256 depositAmount, uint256 tokenBudget, uint256 maxPricePerToken, uint256 categoryId, uint8 minTier, uint64 expiresAt)',
         'event BidClaimed(uint256 indexed bidId, uint256 indexed agentId, uint256 tokensUsed, uint256 agentPayment)',
       ], provider);

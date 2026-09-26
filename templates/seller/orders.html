@@ -83,7 +83,7 @@ document.addEventListener('click', async (e) => {
   btn.disabled = true;
   btn.textContent = 'Starting...';
   try {
-    await AgentHireAPI.post('/api/orders/' + orderId + '/start', {});
+    await AgentsListAPI.post('/api/orders/' + orderId + '/start', {});
     showToast(orderId + ' is now in progress.', 'success');
     setTimeout(() => window.location.reload(), 900);
   } catch (err) {

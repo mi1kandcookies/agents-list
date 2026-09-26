@@ -1,5 +1,5 @@
 """
-models.py: SQLAlchemy ORM models for AgentHire.
+models.py: SQLAlchemy ORM models for Agent's List.
 
 Tables
 ------

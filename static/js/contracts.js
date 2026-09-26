@@ -1,15 +1,15 @@
-// AgentHire - on-chain ABIs only.
+// Agent's List - on-chain ABIs only.
 //
 // Addresses and chain metadata come from the backend at /config.js (rendered
 // from server env by the Flask app). base.html loads /config.js BEFORE this
-// file, so window.AGENTHIRE_CHAIN and window.AGENTHIRE_ADDRESSES are already
+// file, so window.AGENTSLIST_CHAIN and window.AGENTSLIST_ADDRESSES are already
 // populated when the script below runs.
 //
 // To point the UI at a different deployment, export the *_ADDRESS env vars
 // documented in .env.example and restart Flask - no code changes needed.
 
 // Minimal ABIs - only what the UI actually calls. Full ABIs are in the backend repo.
-window.AGENTHIRE_ABIS = {
+window.AGENTSLIST_ABIS = {
   MockUSDC: [
     'function balanceOf(address) view returns (uint256)',
     'function approve(address,uint256) returns (bool)',

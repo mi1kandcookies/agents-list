@@ -83,7 +83,7 @@
     document.getElementById('checkout-wallet-desc').textContent = 'Connected. Ready to pay.';
   }
   document.addEventListener('DOMContentLoaded', sync);
-  window.addEventListener('agenthire:connected', sync);
+  window.addEventListener('agentslist:connected', sync);
 
   const task = () => document.getElementById('task-description').value.trim();
   const amount = () => parseFloat(document.getElementById('amount-usdc').value || '0');
@@ -95,7 +95,7 @@
     btn.disabled = true; btn.textContent = 'Waiting for signature…';
     try {
       log('Signing EIP-3009 authorization for ' + amount().toFixed(2) + ' USDC…');
-      const res = await window.AgentHire.payWithX402({ agentId, depositUSDC: amount(), task: task() });
+      const res = await window.AgentsList.payWithX402({ agentId, depositUSDC: amount(), task: task() });
       log('Payment response: ' + JSON.stringify(res));
       const oid = res.orderId || res.sessionId;
       if (oid) window.location = '/order/' + oid;
@@ -108,10 +108,10 @@
   });
 
   document.getElementById('request-only').addEventListener('click', async () => {
-    const buyer = (window.AgentHire && window.AgentHire.address) || buyerFromCookie();
+    const buyer = (window.AgentsList && window.AgentsList.address) || buyerFromCookie();
     if (!buyer) { showToast('Connect a wallet first.', 'warning'); return; }
     try {
-      const res = await AgentHireAPI.post('/checkout/' + agentId, { task: task(), amount: amount(), buyer });
+      const res = await AgentsListAPI.post('/checkout/' + agentId, { task: task(), amount: amount(), buyer });
       window.location = '/order/' + res.orderId;
     } catch (e) {
       showToast('Could not create request: ' + e.message, 'error');

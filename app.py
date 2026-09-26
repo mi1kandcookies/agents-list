@@ -27,7 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
-log = logging.getLogger("agenthire")
+log = logging.getLogger("agents_list")
 
 # ── App factory ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -1404,7 +1404,7 @@ def api_onchain_info():
     return jsonify(get_deployment())
 
 
-# /config.js - populates window.AGENTHIRE_CHAIN + window.AGENTHIRE_ADDRESSES
+# /config.js - populates window.AGENTSLIST_CHAIN + window.AGENTSLIST_ADDRESSES
 # from the active deployment so the frontend never carries hardcoded addresses.
 # Loaded in base.html BEFORE static/js/contracts.js (which now only ships ABIs).
 @app.route("/config.js")
@@ -1415,7 +1415,7 @@ def config_js():
     d = get_deployment()
     js = (
         "// Auto-generated from server env. Do not edit.\n"
-        "window.AGENTHIRE_CHAIN = " + json.dumps({
+        "window.AGENTSLIST_CHAIN = " + json.dumps({
             "chainId":    d["chainId"],
             "chainIdHex": d["chainIdHex"],
             "name":       d["chain"],
@@ -1423,7 +1423,7 @@ def config_js():
             "explorer":   d["explorer"],
             "nativeCurrency": {"name": "AVAX", "symbol": "AVAX", "decimals": 18},
         }) + ";\n"
-        "window.AGENTHIRE_ADDRESSES = " + json.dumps(d["contracts"]) + ";\n"
+        "window.AGENTSLIST_ADDRESSES = " + json.dumps(d["contracts"]) + ";\n"
     )
     return Response(js, mimetype="application/javascript")
 
@@ -1881,7 +1881,7 @@ def api_search():
 @app.route("/api/health")
 def api_health():
     """Liveness probe - always returns 200 if the process is alive."""
-    return jsonify({"status": "ok", "service": "agenthire", "ts": int(time.time())})
+    return jsonify({"status": "ok", "service": "agents-list", "ts": int(time.time())})
 
 
 @app.route("/api/ready")
@@ -2058,7 +2058,7 @@ if __name__ == "__main__":
     # On macOS, AirPlay Receiver often binds 5000 — use 8080 unless PORT is set.
     default_port = 8080 if sys.platform == "darwin" else 5000
     port = int(os.environ.get("PORT", default_port))
-    print(f"\n  AgentHire -> http://127.0.0.1:{port}/\n", flush=True)
+    print(f"\n  Agent's List -> http://127.0.0.1:{port}/\n", flush=True)
     # Debug only in development so Werkzeug debugger / tracebacks don't leak
     # if someone ever runs this in a shared or exposed environment.
     debug_mode = os.environ.get("FLASK_ENV", "development") == "development"

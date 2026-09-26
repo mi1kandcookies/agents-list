@@ -1,5 +1,5 @@
 """
-auth.py - Authentication scaffolding for AgentHire.
+auth.py - Authentication scaffolding for Agent's List.
 
 require_api_key
 ---------------

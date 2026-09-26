@@ -1,4 +1,4 @@
-/* ── AgentHire - Main JS ────────────────────────────────────────────────────── */
+/* ── Agent's List - Main JS ────────────────────────────────────────────────────── */
 
 // ── Scroll-reveal: fades in .anim-on-scroll elements as they enter viewport ──
 (function initScrollReveal() {
@@ -29,12 +29,12 @@
   }
 })();
 
-// ── AgentHireAPI - shared fetch utility ──────────────────────────────────────
+// ── AgentsListAPI - shared fetch utility ──────────────────────────────────────
 // Usage:
-//   AgentHireAPI.get('/api/agents')           → Promise<Object>
-//   AgentHireAPI.post('/api/x402/pay', body)  → Promise<Object>
+//   AgentsListAPI.get('/api/agents')           → Promise<Object>
+//   AgentsListAPI.post('/api/x402/pay', body)  → Promise<Object>
 // Errors are thrown with a readable message so callers can showToast on catch.
-const AgentHireAPI = (() => {
+const AgentsListAPI = (() => {
   async function request(method, url, body) {
     const opts = {
       method,
@@ -58,7 +58,7 @@ const AgentHireAPI = (() => {
   };
 })();
 // Expose globally so inline <script> blocks can use it.
-window.AgentHireAPI = AgentHireAPI;
+window.AgentsListAPI = AgentsListAPI;
 
 // ── Toasts ───────────────────────────────────────────────────────────────────
 function showToast(message, type = 'info', duration = 3500) {
@@ -140,11 +140,11 @@ document.querySelectorAll('.role-btn').forEach(btn => {
   });
 });
 
-// ── Wallet Connect (delegates to web3.js AgentHire object) ───────────────────
+// ── Wallet Connect (delegates to web3.js AgentsList object) ───────────────────
 // web3.js already handles the wallet-btn click via its own DOMContentLoaded
 // listener. This block syncs the nav button state when the wallet connects
 // through OTHER means (e.g. checkout page, auto-reconnect).
-window.addEventListener('agenthire:connected', (e) => {
+window.addEventListener('agentslist:connected', (e) => {
   const btn = document.getElementById('wallet-btn');
   if (btn && e.detail && e.detail.address) {
     const short = e.detail.address.slice(0, 6) + '\u2026' + e.detail.address.slice(-4);
@@ -243,7 +243,7 @@ async function _adminAction(btn, url, successMsg, errorMsg, onSuccess) {
   btn.disabled = true;
   btn.innerHTML = 'Working...';
   try {
-    const res = await AgentHireAPI.post(url, {});
+    const res = await AgentsListAPI.post(url, {});
     showToast(successMsg, 'success');
     if (typeof onSuccess === 'function') onSuccess(btn, res);
   } catch (err) {

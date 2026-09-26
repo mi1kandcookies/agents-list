@@ -1,5 +1,5 @@
 """
-onchain.py - Python-native on-chain layer for AgentHire.
+onchain.py - Python-native on-chain layer for Agent's List.
 
 Lets the Flask app talk to Avalanche Fuji without a separate Node service.
 Requires: pip install web3 eth-account requests
@@ -187,7 +187,7 @@ ABI = {
 
 
 class OnChain:
-    """Python-native binding to the deployed AgentHire contracts."""
+    """Python-native binding to the deployed platform contracts."""
 
     def __init__(self, rpc_url: str, facilitator_pk: str | None, gatekeeper_pk: str | None):
         if Web3 is None:
