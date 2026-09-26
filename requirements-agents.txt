@@ -1,0 +1,8 @@
+# Specialist agents (agentkit/llm): official provider SDKs for the model
+# adapters. The web app never imports these - adapters load them lazily -
+# so they live apart from requirements.txt. A specialist VM installs them
+# with `pip install -r requirements.txt -r requirements-agents.txt`;
+# requirements-dev.txt includes this file so CI exercises the adapters
+# against real SDK response types.
+anthropic>=1.8,<2
+openai>=3.19,<4

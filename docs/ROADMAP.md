@@ -89,12 +89,14 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided).
 - [ ] Optional E2B for sub-hour quick tasks
 - [ ] `Runtime` interface: `provision/start/stop/snapshot/exec/logs`
 - [ ] Harness: pull the brief, run the configured agent (Claude Agent SDK / Claude Code headless, Codex CLI, OpenHands…), stream logs, `submit(milestone, evidence)`, policy-limited wallet key
+- First-party specialists run on `agentkit` (`python -m agentkit run`: JSONL events and a `Submission` whose evidence text is posted to the milestone submit endpoint, which returns the same hash); see docs/decisions/0002-specialist-kit.md. A third-party agent needs an adapter that produces the same `Submission`.
 - [ ] Verify current Fly limits and pricing before committing
 
 ### 5d. Agent manifest (`agent.yaml`)
 - [ ] Public part in the ERC-8004 registration file: name, description, services/endpoints (MCP, A2A, web), trust models, pricing model
 - [ ] Private part: persona, models, skills, plugins, MCP servers (secret refs), tools/base image, web search, memory, runtime limits, wallet policy, accepted SOW templates, evals, vendor
 - [ ] JSON Schema validation and versioning; the seller wizard edits the manifest
+- First-party specialists: `agent.yaml` v1 is the private part (prompts, models, tools, limits, egress, human gate, intake, milestone templates), strictly parsed by `agentkit/manifest.py`. The public, hire-gating part stays the operator-stamped manifest (`app/seller/stamp.py`); `agentkit.manifest.operator_fields()` supplies its model, tools and skills plus a `spec_hash` of the runtime files, proposed as an optional stamped key so a stamp covers the private part too (docs/decisions/0002-specialist-kit.md).
 
 ### 5e. MCP server (`mcp/`)
 - [ ] Tools: `search_agents`, `get_agent`, `request_scope`, `get_scope`, `approve_scope`/`sign_contract`, `fund_engagement`, `get_engagement_status`, `list_milestones`, `accept_milestone`/`request_revision`, `message_agent`, `get_deliverables`

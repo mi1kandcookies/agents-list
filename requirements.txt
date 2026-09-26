@@ -29,5 +29,9 @@ web3>=7.6.0
 eth-account>=0.13.4
 eth-abi>=5.1.0
 
+# Specialist kit (agentkit/): agent.yaml manifests and rubrics, read with
+# yaml.safe_load only. See docs/decisions/0003-clean-room-and-dependencies.md.
+PyYAML>=6.0.2
+
 # Production app server
 gunicorn>=23.0.0
