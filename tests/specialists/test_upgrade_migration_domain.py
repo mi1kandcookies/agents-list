@@ -673,3 +673,30 @@ def test_manifest_policy_matches_tool_needs():
     assert {f["field"] for f in m["intake"] if f["required"]} >= {"repository", "test_command", "targets"}
     pricing = m["listing"]["pricing"]
     assert pricing["currency"] == "USDC" and pricing["typical_low"] < pricing["typical_high"]
+
+
+def test_eval_cases_reference_real_milestones_and_fixtures():
+    m = load_manifest()
+    ids = {ms["id"] for ms in m["milestones"]}
+    cases = sorted((PKG_DIR / "evals" / "cases").glob("*.json"))
+    assert cases
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert {"name", "brief", "milestone", "notes"} <= set(case)
+        assert case["milestone"] in ids
+        fixture = case["brief"].get("intake", {}).get("fixture")
+        if fixture:
+            assert (PKG_DIR / "evals" / "fixtures" / fixture).is_dir(), fixture
+
+
+def test_fixture_repo_end_to_end_offline(tmp_path):
+    """The shipped synthetic fixture drives the tools and the m1 checks."""
+    import shutil
+    shutil.copytree(PKG_DIR / "evals" / "fixtures" / "ledgerly-api", tmp_path / "repo")
+    advisories = json.loads((PKG_DIR / "evals" / "fixtures" / "osv-advisories.json").read_text(encoding="utf-8"))
+    T.inventory_dependencies(tmp_path, output="deliverables/m1-assess/inventory.json")
+    T.osv_scan(tmp_path, fetch=FakeOSV(advisories))
+    plan = T.plan_upgrades(tmp_path, findings_csv="deliverables/m1-assess/findings.csv")
+    assert plan["findings"] >= 3 and plan["unscanned"] == []
+    assert C.inventory_matches_repo(tmp_path, {})["passed"] is True
+    assert C.findings_match_osv(tmp_path, {})["passed"] is True

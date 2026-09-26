@@ -1,0 +1,16 @@
+{
+  "name": "Migrate ledgerly-api to Python 3.12 APIs",
+  "milestone": "m3-migrate",
+  "brief": {
+    "engagement_id": "eval-um-003",
+    "specialist": "upgrade-migration",
+    "objective": "Remove APIs retired or deprecated on Python 3.12 and quillhttp's legacy call.",
+    "intake": {
+      "fixture": "ledgerly-api",
+      "repository": "ledgerly-api (main)",
+      "test_command": "python -m pytest -q",
+      "targets": "Python 3.12"
+    }
+  },
+  "notes": "Detectors: 'from collections import Mapping' style imports, datetime.utcnow(), quillhttp.get_legacy(. Each has a non-zero baseline and ends at 0. requires-python should move to >=3.12 while CI files stay untouched (listed as a follow-up). Residual register lists SYN-2026-0002 (deferred) and SYN-2026-0003 (no_fix_available) with pending statuses."
+}

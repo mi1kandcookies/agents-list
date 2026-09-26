@@ -1,0 +1,21 @@
+[
+  {"id": "SYN-2026-0001", "summary": "quillhttp forwards auth headers across redirects (synthetic)",
+   "aliases": ["CVE-2099-10001"],
+   "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"}],
+   "affected": [{"package": {"ecosystem": "PyPI", "name": "quillhttp"},
+                 "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.9.1"}]}]}]},
+  {"id": "SYN-2026-0002", "summary": "tabulon formula injection in CSV export (synthetic)",
+   "aliases": ["CVE-2099-10002"], "database_specific": {"severity": "MODERATE"},
+   "affected": [{"package": {"ecosystem": "PyPI", "name": "tabulon"},
+                 "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "3.0.0"}, {"fixed": "4.0.0"}]}]}]},
+  {"id": "SYN-2026-0003", "summary": "yamlette unsafe loader executes tags (synthetic)",
+   "aliases": ["CVE-2099-10003"],
+   "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}],
+   "affected": [{"package": {"ecosystem": "PyPI", "name": "yamlette"},
+                 "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"last_affected": "5.1"}]}]}]},
+  {"id": "SYN-2026-0004", "summary": "left-trim-lite ReDoS on long whitespace runs (synthetic)",
+   "aliases": ["CVE-2099-10004"],
+   "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N"}],
+   "affected": [{"package": {"ecosystem": "npm", "name": "left-trim-lite"},
+                 "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.2.5"}]}]}]}
+]

@@ -1,0 +1,6 @@
+{
+  "name": "ledgerly-web",
+  "private": true,
+  "dependencies": {"left-trim-lite": "^1.1.0"},
+  "devDependencies": {"datefmt-mini": "0.3.1"}
+}

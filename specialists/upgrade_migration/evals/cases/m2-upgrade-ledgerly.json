@@ -1,0 +1,18 @@
+{
+  "name": "Apply approved non-breaking upgrades to ledgerly-api",
+  "milestone": "m2-upgrade",
+  "brief": {
+    "engagement_id": "eval-um-002",
+    "specialist": "upgrade-migration",
+    "objective": "Apply the approved plan: quillhttp to 1.9.1 and left-trim-lite to 1.2.5; tabulon major deferred.",
+    "intake": {
+      "fixture": "ledgerly-api",
+      "repository": "ledgerly-api (main)",
+      "test_command": "python -m pytest -q",
+      "targets": "Fix known vulnerabilities",
+      "upgrade_policy": "No majors in this milestone"
+    },
+    "answers": {"tabulon": "Defer the 4.0 major to a later engagement."}
+  },
+  "notes": "Two steps, each with a green logged test run. osv_delta should show 2 resolved, 0 new. The patch must not touch tests or CI. The report must state tabulon and yamlette remain open."
+}
