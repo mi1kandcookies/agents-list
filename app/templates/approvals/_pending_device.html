@@ -19,11 +19,13 @@
     </div>
     <div class="apr-actions">
       {% if link and (link.startswith('https://') or link.startswith('http://')) %}
-      <a class="btn btn-primary btn-lg" href="{{ link }}" target="_blank" rel="noopener noreferrer">Open on your phone</a>
+      <button class="btn btn-primary btn-lg" type="button" data-approval-popup="{{ link }}">Open on your phone</button>
+      <a class="btn btn-secondary" href="{{ link }}" target="_blank" rel="noopener noreferrer" data-popup-fallback hidden>Open in a new tab</a>
       <button type="button" class="btn btn-secondary" data-copy="{{ link }}"><span data-copy-label>Copy link</span></button>
       {% endif %}
       <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
     </div>
+    <p class="apr-popup-note" role="status" data-popup-note hidden>Approval window opened. Keep this page open while the provider checks your approval.</p>
     {% if link %}<div class="apr-link mono">{{ link }}</div>{% endif %}
     <p class="apr-live" role="status"><span class="apr-spinner" aria-hidden="true"></span>Waiting for approval, expires in <span class="mono" data-countdown>…</span></p>
   {% endif %}

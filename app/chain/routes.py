@@ -58,7 +58,7 @@ def _wallet_snapshot() -> dict:
     Missing keys are represented as unconfigured roles so the terminal can
     explain what still needs funding before an on-chain rehearsal.
     """
-    from chain.config import get_address, get_chain_config
+    from chain.config import get_address, get_chain_config, payment_token_mode
 
     cfg = get_chain_config()
     token = get_address("USDC")
@@ -113,10 +113,13 @@ def _wallet_snapshot() -> dict:
             row["error"] = str(exc)[:160]
         rows.append(row)
 
+    token_mode = payment_token_mode()
     return {
         "chain": {"chainId": cfg.chain_id, "name": cfg.name, "caip2": cfg.caip2,
                   "rpcUrl": cfg.rpc_url, "explorer": cfg.explorer},
-        "token": {"address": token, "symbol": "USDC", "decimals": 6},
+        "token": {"address": token, "symbol": "mUSDC" if token_mode == "mock" else "USDC",
+                   "name": "Mock USD Coin" if token_mode == "mock" else "USD Coin",
+                   "mode": token_mode, "decimals": 6},
         "rpc_connected": connected,
         "wallets": rows,
         "configured_wallets": sum(1 for row in rows if row["configured"]),
@@ -186,7 +189,7 @@ def api_x402_domain():
     """EIP-712 domain + token metadata a buyer needs to sign an EIP-3009
     USDC authorization. Read from the token contract, cached, with a
     name "USDC" / version "2" fallback when the RPC is unreachable."""
-    from chain.config import get_address, payment_recipient
+    from chain.config import get_address, payment_recipient, payment_token_mode
     from chain.usdc import TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_DECIMALS, get_usdc_domain
     domain = get_usdc_domain(refresh=request.args.get("refresh") == "1")
     return jsonify({
@@ -194,7 +197,10 @@ def api_x402_domain():
         "domainSource": domain["source"],
         "types": TRANSFER_WITH_AUTHORIZATION_TYPES,
         "primaryType": "TransferWithAuthorization",
-        "token": {"address": get_address("USDC"), "symbol": "USDC", "decimals": USDC_DECIMALS},
+        "token": {"address": get_address("USDC"),
+                  "symbol": "mUSDC" if payment_token_mode() == "mock" else "USDC",
+                  "name": "Mock USD Coin" if payment_token_mode() == "mock" else "USD Coin",
+                  "mode": payment_token_mode(), "decimals": USDC_DECIMALS},
         "recipient": payment_recipient(),
     })
 

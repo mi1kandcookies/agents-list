@@ -52,12 +52,21 @@ def main() -> int:
         print(f"ERROR: configured chain id {cfg.chain_id} != RPC chain id {actual_chain}", file=sys.stderr)
         return 2
 
+    token_mode = payment_token_mode()
+    token_symbol = "mUSDC" if token_mode == "mock" else "USDC"
     token = get_address("USDC")
-    print(f"payment_token_mode: {payment_token_mode()}")
+    print(f"payment_token_mode: {token_mode}")
     print(f"payment_token: {token or 'not configured'}")
+    token_contract = None
     if token:
         code = w3.eth.get_code(Web3.to_checksum_address(token))
         print(f"payment_token_code: {len(code)} bytes")
+        token_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(token),
+            abi=[{"type": "function", "name": "balanceOf", "stateMutability": "view",
+                  "inputs": [{"name": "account", "type": "address"}],
+                  "outputs": [{"name": "", "type": "uint256"}]}],
+        )
 
     for label, variable in ROLES:
         key = (os.environ.get(variable) or "").strip()
@@ -66,7 +75,11 @@ def main() -> int:
             continue
         try:
             address = Account.from_key(key).address
-            print(f"{label}: {address} ({_eth(w3, address)})")
+            line = f"{label}: {address} ({_eth(w3, address)})"
+            if token_contract is not None:
+                balance = int(token_contract.functions.balanceOf(address).call())
+                line += f" ({balance / 10**6:.6f} {token_symbol})"
+            print(line)
         except (TypeError, ValueError):
             print(f"{label}: invalid key material in {variable}", file=sys.stderr)
             return 2

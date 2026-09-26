@@ -108,7 +108,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
                humans_bp, names_bp):
         app.register_blueprint(bp)
 
-    from chain.config import explorer_url, get_address, get_chain_config
+    from chain.config import explorer_url, get_address, get_chain_config, payment_token_mode
 
     app.jinja_env.globals["enumerate"] = enumerate
     app.jinja_env.globals["explorer_url"] = explorer_url
@@ -122,7 +122,8 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
 
     @app.context_processor
     def _inject_chain():
-        return {"chain": get_chain_config(), "usdc_address": get_address("USDC")}
+        return {"chain": get_chain_config(), "usdc_address": get_address("USDC"),
+                "payment_token_mode": payment_token_mode()}
     _register_request_logging(app)
     _register_error_handlers(app)
     _register_cli(app)

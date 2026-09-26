@@ -835,6 +835,10 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .profile-specialty { font-size: var(--fs-base); color: var(--ink-2); margin-top: 6px; max-width: 640px; }
 .profile-ens, .agent-card-ens { color: var(--accent); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .profile-ens { margin-top: 8px; }
+.profile-chain-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: var(--fs-xs); color: var(--ink-3); }
+.profile-chain-id .eyebrow { margin: 0; }
+.profile-chain-id .mono { color: var(--ink-2); }
+.profile-chain-id a { color: var(--link); }
 .agent-card-ens { margin-top: 8px; }
 .profile-cta { display: flex; gap: 8px; }
 

@@ -94,10 +94,10 @@ def rows(db, agent, human):
             return row
 
         @staticmethod
-        def ledger(eng, kind, amount, *, milestone=None, approval=None):
+        def ledger(eng, kind, amount, *, milestone=None, approval=None, status="simulated"):
             e = LedgerEntry(engagement_id=eng.id, kind=kind, amount_micro=amount,
                             milestone_id=milestone.id if milestone else None,
-                            approval_id=approval.id if approval else None, status="simulated",
+                            approval_id=approval.id if approval else None, status=status,
                             tx_hash=None if kind == "hold" else f"sim-{kind}")
             db.session.add(e)
             db.session.commit()
@@ -301,3 +301,19 @@ def test_consumed_approval_shows_done_with_ledger(client, rows):
     html = _html(client, f"/approvals/{apr.id}")
     assert "Approved &amp; done" in html and "Funded 25.00 USDC into escrow" in html
     assert f"{entry.id} (simulated)" in html and f'href="/jobs/{eng.id}">Continue' in html
+
+
+def test_consumed_approval_shows_pending_chain_payment(client, rows, monkeypatch):
+    class PendingEscrow:
+        def receipt_status(self, tx_hash):
+            return "pending"
+
+    monkeypatch.setattr("app.engagements.service.get_escrow", lambda: PendingEscrow())
+    eng = rows.job("funded")
+    apr = rows.approval(eng, "consumed", result={
+        "ok": True, "summary": "Funded 25.00 USDC into escrow", "ledger_ids": []})
+    rows.ledger(eng, "fund", eng.total_micro, approval=apr, status="pending")
+    html = _html(client, f"/approvals/{apr.id}")
+    assert "Payment pending" in html
+    assert "no second payment will be signed" in html
+    assert 'data-payment-pending="true"' in html
