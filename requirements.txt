@@ -8,6 +8,10 @@ Flask-CORS>=4.0.1
 Flask-Limiter>=3.8.0
 requests>=2.32.0
 
+# Official x402 client/server schemas and exact EVM client. The upper bound
+# keeps the tested hook and wire-format API stable until the adapter is updated.
+x402>=2.24.0,<2.25.0
+
 # OIDC ID token verification (RS256 via the cryptography backend).
 PyJWT[crypto]>=2.8
 

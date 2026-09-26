@@ -74,10 +74,14 @@ threshold, so the score thresholds are ours (see `.env.example`).
 
 Files that call the API: `app/screening/intercepta.py` (the only REST client),
 `app/screening/service.py` (persisted payer/payee verdicts), and
-`app/screening/presign.py` (payer-side pre-sign gate). The exact x402 signer
-hook is in `chain/x402_v2.py`; `scripts/intercepta_x402_smoke.py` demonstrates
-the 402 → three live scans → sign → retry path. `scripts/screening_smoke.py`
-is the provider-only smoke test. Tests use fixtures shaped per the provider's
+`app/screening/presign.py` (payer-side pre-sign gate). The paying agent uses
+the official x402 Python client through `chain/x402_official.py`; its lifecycle
+hook validates the approved terms and its guarded signer passes the exact
+EIP-712 authorization to the screening gate before signing. The resource-side
+compatibility and settlement policy remain in `chain/x402_v2.py`.
+`scripts/intercepta_x402_smoke.py` demonstrates the 402 → three live scans →
+official SDK sign → retry path. `scripts/screening_smoke.py` is the
+provider-only smoke test. Tests use fixtures shaped per the provider's
 documented response shapes and never reach the network; live feedback is
 recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
 

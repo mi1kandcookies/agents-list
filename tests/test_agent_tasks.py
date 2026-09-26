@@ -9,6 +9,7 @@ from eth_account import Account
 
 from app.mandates import service as mandates
 from chain import x402_v2
+from chain.x402_official import create_payment_payload, payment_signature_header
 from chain.x402_v2 import Expectation, PaymentRequirements
 from tests.conftest import WALLET
 from tests.test_mandates import _approval, _exp, signing_pem  # noqa: F401  (fixture)
@@ -161,6 +162,29 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     assert settle == {"success": True, "transaction": pay["tx_hash"], "network": "eip155:11155111",
                       "payer": payer_key.address.lower()}
     assert resp.headers["X-PAYMENT-RESPONSE"] == resp.headers["PAYMENT-RESPONSE"]
+
+
+def test_official_x402_client_payload_is_accepted_by_task_route(
+        client, db, callee, payer_agent, payer_key, mandate, screener):
+    """The protected route accepts the official SDK's v2 exact payload."""
+    body = _challenge(client, callee).get_json()
+    req = PaymentRequirements.from_dict(body["accepts"][0])
+    payload = create_payment_payload(
+        body,
+        payer_key,
+        expected=Expectation(pay_to=PAYEE, amount_micro=PRICE, asset=req.asset),
+        domain=None,
+    )
+    response = client.post(
+        _url(callee),
+        json={"task": "Summarize the release notes"},
+        headers={
+            "PAYMENT-SIGNATURE": payment_signature_header(payload),
+            "Authorization": f"Mandate {mandate.token}",
+        },
+    )
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["payment"]["amount_micro"] == PRICE
 
 
 def test_payment_signature_header_is_accepted(client, db, callee, payer_key, mandate, screener):

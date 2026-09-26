@@ -137,6 +137,13 @@ TxResult(tx_hash, status, explorer)
 ```
 Fund: vault signs EIP-3009 to the escrow address, submitted via the existing facilitator path. Release: escrow key calls USDC `transfer`. Sub-hire allocation is ledger-only. Receipts are polled asynchronously. Without keys, entries are `simulated` and labeled in the UI.
 
+The paying-agent x402 path uses the official Python SDK's exact EVM client
+through `chain/x402_official.py`. Its pre-payment lifecycle hook binds the
+selected requirements to the approved terms, and a guarded signer submits the
+exact typed authorization to the risk gate before signing. The resource-side
+route still performs the local mandate, nonce, screening and escrow checks
+before accepting the SDK-compatible payload.
+
 ## 7. JSON API (used by the MCP server)
 
 | Method & path | Body | Returns |
