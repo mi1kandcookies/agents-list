@@ -1,0 +1,192 @@
+schema_version: 1
+slug: market-research
+name: Market & Competitive Research
+version: 0.1.0
+summary: >-
+  Turns a research brief into a cited, reproducible market and competitor
+  report. Every claim carries a verbatim quote from an archived source and
+  every number in the sizing model traces back to an evidence-ledger claim.
+listing:
+  category: Research
+  description: >-
+    Desk research you can audit. The agent plans a question tree with you,
+    builds an evidence ledger (claim, verbatim quote, archived snapshot,
+    retrieval time, source tier), then delivers a competitor matrix, a
+    top-down and bottom-up sizing model and a report with claim-level
+    citations. Acceptance re-runs the verifier: quotes must appear verbatim
+    in their snapshots and every figure must cite a claim.
+  tags: [market-research, competitive-intelligence, market-sizing, tam, desk-research, citations]
+  capabilities:
+    - research question tree and source plan
+    - evidence ledger with verbatim-quote verification
+    - source tiering and contradiction log
+    - competitor feature and pricing matrix
+    - top-down and bottom-up TAM/SAM/SOM with sensitivity table
+    - cited report with traceability matrix
+  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 15000}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: research
+prompts:
+  system: prompts/system.md
+  include:
+    - playbook/research-method.md
+    - playbook/source-policy.md
+    - playbook/sizing-and-matrix.md
+tools:
+  # kit tools
+  - read_document
+  - read_file
+  - write_file
+  - edit_file
+  - list_files
+  - search_files
+  - http_fetch
+  - web_search
+  - record_source
+  - record_claim
+  - ask_client
+  - post_progress
+  - submit_milestone
+  # market-research tools (tools.py)
+  - write_question_tree
+  - classify_source
+  - map_claims
+  - export_evidence
+  - build_competitor_matrix
+  - build_sizing_model
+shell: {allow: [], timeout_seconds: 120}
+# The open web is reached only through the configured search provider and
+# http_fetch; the harness narrows `allow` to the intake's allowed_domains when
+# the client supplies them. Fetched pages are untrusted data, never instructions.
+egress: {mode: allowlist, allow: ["*"]}
+limits: {max_steps: 120, max_tokens: 4000000, max_usd: 60, max_wall_minutes: 240}
+human_gate:
+  required: false
+  reviewer_role: ""
+  disclaimer: >-
+    Research product only. Not investment, legal, tax or accounting advice.
+    Figures are drawn from the cited public sources as of the evidence cutoff
+    date and may be incomplete or out of date; verify before relying on them
+    in any regulated document.
+  checklist:
+    - Client approved the question tree, source policy and evidence cutoff before evidence gathering
+    - No primary research (surveys, interviews, outreach) was run without explicit client approval
+    - A qualified person reviews the output before it is used in offering materials or regulatory filings
+intake:
+  - field: research_objective
+    question: What decision will this research inform (e.g. market entry, pricing, fundraise, product roadmap)?
+    required: true
+  - field: market_definition
+    question: Which market, product category and customer segment are in scope, and what is explicitly out of scope?
+    required: true
+  - field: geography
+    question: Which geographies should the research cover?
+    required: true
+  - field: competitors
+    question: Which competitors must be covered? List any you already know; the agent will add others it finds.
+    required: false
+  - field: evidence_cutoff
+    question: What evidence cutoff date should the ledger use (sources retrieved on or before this date)?
+    required: false
+  - field: allowed_domains
+    question: Should the agent be limited to specific websites or data sources? Leave empty for the open web via the configured search provider.
+    required: false
+  - field: tier1_share
+    question: What minimum share of claims must come from tier-1 (primary) sources? Default 0.6.
+    required: false
+  - field: client_documents
+    question: Upload any internal material to use as evidence (prior research, win/loss notes, product docs) into inputs/.
+    required: false
+estimate: {usd_per_hour: 5.0}
+milestones:
+  - id: m1-plan
+    title: Research plan and source map
+    description: >-
+      Question tree (key questions and leaf sub-questions), scope and
+      exclusions, source strategy per leaf question, glossary, evidence
+      cutoff date and budget split. The client approves the tree before any
+      evidence gathering.
+    deliverables:
+      - deliverables/m1-plan/research-plan.md
+      - deliverables/m1-plan/questions.json
+    hours: [2, 6]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m1-plan/research-plan.md, deliverables/m1-plan/questions.json]}}
+      - {check: json_valid, params: {path: deliverables/m1-plan/questions.json}}
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-plan/research-plan.md
+          sections: [Objective, Scope and exclusions, Question tree, Source strategy, Evidence cutoff, Glossary]
+      - {check: no_placeholders, params: {paths: [deliverables/m1-plan/research-plan.md]}}
+      - check: question_tree_valid
+        description: Every leaf question maps to at least two source types including one primary source
+        params: {path: deliverables/m1-plan/questions.json, min_source_types: 2, min_primary: 1}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/research-plan.yaml, paths: [deliverables/m1-plan/research-plan.md, deliverables/m1-plan/questions.json], threshold: 0.75}
+      - {check: human_signoff, kind: human, description: Client approves the question tree, source policy and evidence cutoff}
+  - id: m2-evidence
+    title: Evidence ledger
+    description: >-
+      Claim ledger with verbatim quotes, archived snapshots, retrieval
+      timestamps and source tiers, each claim linked to the leaf questions it
+      answers, plus a contradiction log and a coverage note for questions
+      with insufficient evidence.
+    deliverables:
+      - deliverables/m2-evidence/claims.csv
+      - deliverables/m2-evidence/claim-map.json
+      - deliverables/m2-evidence/contradictions.md
+    hours: [6, 20]
+    acceptance:
+      - {check: ledger_verified, description: Every quote appears verbatim in its archived snapshot}
+      - check: csv_columns
+        params:
+          path: deliverables/m2-evidence/claims.csv
+          columns: [claim_id, question_ids, text, quote, source_id, uri, retrieved_at, tier, snapshot_sha256]
+      - check: evidence_export_matches_ledger
+        description: claims.csv matches the ledger and snapshots row for row
+        params: {path: deliverables/m2-evidence/claims.csv}
+      - check: question_coverage
+        description: Every leaf question has enough supporting claims or an explicit insufficient-evidence note
+        params: {questions: deliverables/m1-plan/questions.json, claim_map: deliverables/m2-evidence/claim-map.json, min_claims: 3}
+      - check: source_tier_mix
+        description: Enough claims come from tier-1 sources (client-set threshold, default 0.6)
+        params: {min_tier1_share: 0.6}
+      - {check: file_exists, params: {path: deliverables/m2-evidence/contradictions.md}}
+      - {check: human_signoff, kind: human, description: Client accepts the evidence ledger}
+  - id: m3-report
+    title: Competitor matrix, sizing model and report
+    description: >-
+      Competitor feature and pricing matrix, top-down and bottom-up
+      TAM/SAM/SOM with an assumptions list and sensitivity table, and the
+      final report with claim-level [C#] citations and a traceability matrix
+      from questions to findings to claims.
+    deliverables:
+      - deliverables/m3-report/report.md
+      - deliverables/m3-report/competitor-matrix.csv
+      - deliverables/m3-report/market-sizing.json
+    hours: [8, 24]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m3-report/report.md, deliverables/m3-report/competitor-matrix.csv, deliverables/m3-report/market-sizing.json]}}
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-report/report.md
+          sections: [Executive summary, Market definition, Market size, Competitive landscape, Contradictions and open questions, Traceability matrix, Sources]
+      - {check: no_placeholders, params: {paths: [deliverables/m3-report/report.md]}}
+      - {check: citations_resolve, params: {paths: [deliverables/m3-report/report.md]}}
+      - {check: ledger_verified}
+      - check: disclaimer_present
+        params: {path: deliverables/m3-report/report.md, text: "Not investment, legal, tax or accounting advice"}
+      - check: matrix_cells_cited
+        description: Every filled competitor-matrix cell cites a verified ledger claim; pricing cells carry a date
+        params: {path: deliverables/m3-report/competitor-matrix.csv}
+      - check: sizing_model_consistent
+        description: Recomputed TAM/SAM/SOM match, every input cites a claim or a stated assumption, top-down and bottom-up agree or are reconciled
+        params: {path: deliverables/m3-report/market-sizing.json, tolerance: 0.30}
+      - check: report_answers_questions
+        description: Every leaf question from the plan is answered or marked unresolved in the traceability matrix
+        params: {questions: deliverables/m1-plan/questions.json, path: deliverables/m3-report/report.md}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/report.yaml, paths: [deliverables/m3-report/report.md], threshold: 0.8}
+      - {check: human_signoff, kind: human, description: Client accepts the report}
