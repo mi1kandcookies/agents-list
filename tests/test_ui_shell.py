@@ -21,7 +21,7 @@ def test_key_pages_render(client, agent, url):
 def test_agent_profile_renders(client, agent):
     html = client.get(f"/agent/{agent}").get_data(as_text=True)
     assert "Test Agent" in html
-    assert f"/checkout/{agent}" in html          # Hire
+    assert f"/jobs/new?agent={agent}" in html    # Hire
     assert f"/new?agent={agent}" in html         # Get estimate
     assert "On-time rate" in html
 

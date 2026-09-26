@@ -30,14 +30,15 @@ class FakeEscrow:
         return TxResult(tx_hash, status, None if self.mode == "simulated"
                         else f"https://sepolia.etherscan.io/tx/{tx_hash}")
 
-    def fund_from_vault(self, *, amount_micro, valid_seconds=600) -> TxResult:
-        return self._tx("fund_from_vault", amount_micro=amount_micro, valid_seconds=valid_seconds)
+    def fund_from_vault(self, *, amount_micro, valid_seconds=600, ref=None) -> TxResult:
+        return self._tx("fund_from_vault", amount_micro=amount_micro, valid_seconds=valid_seconds,
+                        ref=ref)
 
-    def fund_from_permit(self, permit) -> TxResult:
-        return self._tx("fund_from_permit", permit=permit)
+    def fund_from_permit(self, permit, *, ref=None) -> TxResult:
+        return self._tx("fund_from_permit", permit=permit, ref=ref)
 
-    def release(self, *, to, amount_micro) -> TxResult:
-        return self._tx("release", to=to, amount_micro=amount_micro)
+    def release(self, *, to, amount_micro, ref=None) -> TxResult:
+        return self._tx("release", to=to, amount_micro=amount_micro, ref=ref)
 
     def receipt_status(self, tx_hash) -> str:
         self.calls.append(("receipt_status", {"tx_hash": tx_hash}))
