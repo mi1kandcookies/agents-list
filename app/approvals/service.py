@@ -25,6 +25,8 @@ action hash, ban, weekly cap, the engagement's claimed human and screening
 (a fresh screen of the payee for money-moving kinds) in the same transaction
 that runs the executor, so an approval executes at most
 once. When a callback or poll reaches ``approved``, the executor runs at once.
+After a successful execution commits, the kind's after-consume hooks run
+(``executors.after_consume``); they never undo or fail the approval.
 
 Every state change writes an ``approval_events`` row.
 """
@@ -44,7 +46,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.approvals import actions
 from app.approvals.errors import ApprovalError, ApprovalNotFound, ApprovalStateError
-from app.approvals.executors import EXECUTORS, ExecutionResult
+from app.approvals.executors import EXECUTORS, ExecutionResult, run_after_consume
 from app.common.ids import new_id
 from app.extensions import db
 from app.humans import service as humans
@@ -585,6 +587,8 @@ def consume(approval_id: str, *, kind: str) -> ExecutionResult:
         _transition(approval, "failed", code=EXECUTOR_ERROR, detail=result.summary,
                     result=_result_detail(result))
     db.session.commit()
+    if result.ok:
+        run_after_consume(approval, action)
     return result
 
 

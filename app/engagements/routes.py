@@ -10,7 +10,7 @@ import functools
 import hmac
 import os
 
-from flask import current_app, jsonify, redirect, render_template, request, url_for
+from flask import current_app, g, jsonify, redirect, render_template, request, url_for
 
 from app.approvals.actions import format_usdc
 from app.engagements import bp
@@ -38,15 +38,18 @@ def _error(exc: EngagementError):
 
 def _api(fn):
     """Bearer MCP_API_TOKEN when configured (no-op otherwise, like
-    require_api_key); EngagementError → {error, code, field}."""
+    require_api_key); EngagementError → {error, code, field}. Sets
+    ``g.api_token_ok`` only when a configured token was presented."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         token = current_app.config.get("MCP_API_TOKEN") or os.environ.get("MCP_API_TOKEN")
+        g.api_token_ok = False
         if token:
             provided = request.headers.get("Authorization", "")
             if not hmac.compare_digest(provided.encode(), f"Bearer {token}".encode()):
                 return jsonify({"error": "missing or invalid bearer token",
                                 "code": "UNAUTHORIZED"}), 401
+            g.api_token_ok = True
         try:
             return fn(*args, **kwargs)
         except EngagementError as exc:
@@ -93,7 +96,9 @@ def api_create():
 def api_get(engagement_id):
     eng = svc.get_engagement(engagement_id)
     svc.refresh(eng)
-    return jsonify(svc.engagement_json(eng, detail=True))
+    # The hired agent's mandate token is a bearer credential: only callers
+    # holding the configured API token (the agent's MCP server) receive it.
+    return jsonify(svc.engagement_json(eng, detail=True, with_token=g.api_token_ok))
 
 
 @bp.route("/api/engagements/<engagement_id>/hire", methods=["POST"])
