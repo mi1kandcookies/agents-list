@@ -21,7 +21,9 @@ Each rule has:
   nothing is a broken regex, not a finished migration.
 - Do not edit a detector after its baseline is recorded to make the count
   drop; checks compare the regex with the baseline. If a detector was wrong,
-  add a corrected one with a new id and explain it in the report.
+  add a corrected one with a new id, keep the old one in detectors.json as
+  `{"id": "<old>", "superseded_by": "<new>", "reason": "..."}`, and explain
+  it in the report. Dropping a recorded detector from the file fails.
 - Detectors must be narrow enough that the new code does not match.
 
 ## Order of work

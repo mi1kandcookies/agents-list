@@ -34,11 +34,15 @@ fails, whatever it says. So:
 - Get numbers from tools (`inventory_dependencies`, `osv_scan`,
   `plan_upgrades`, `run_tests`, `scan_patterns`, `audit_diff`,
   `export_patch`), never from memory or estimation.
-- Run `inventory_dependencies` and a baseline `run_tests` (label
-  `baseline`) before you change anything; they fix the reference point.
+- The platform records the repo's dependency baseline before you start.
+  Run a baseline `run_tests` (label `baseline`) before you change anything,
+  with the client's test command exactly as given, in `repo/`: only runs of
+  that command count, and each run records the versions it tested.
 - Re-run `osv_scan` after changing versions; unscanned versions fail checks.
-- Cite test-run ids from `run_tests` in the upgrade log; a step without a
-  green run after it does not count.
+- Cite test-run ids from `run_tests` in the upgrade log; a step counts only
+  if its run is green and tested exactly that step's versions.
+- Unpinning or deleting a vulnerable dependency resolves nothing; a removal
+  must be a logged step with a green run after it.
 
 ## Method
 

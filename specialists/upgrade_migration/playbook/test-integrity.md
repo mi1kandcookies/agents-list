@@ -7,7 +7,10 @@ by weakening the grader is worthless and fails acceptance.
 
 - delete a test file or a test function;
 - add skip / xfail / disabled markers (`pytest.mark.skip`, `xfail`,
-  `unittest.skip`, `it.skip`, `xit`, `describe.skip`, `t.Skip`, ...);
+  `pytestmark`, `importorskip`, `unittest.skip`, `it.skip`, `xit`,
+  `describe.skip`, `t.Skip`, ...), focus a test (`it.only`), or narrow what
+  runs (`collect_ignore`, `--deselect`, `--ignore`, `-k` in addopts,
+  `testPathIgnorePatterns`);
 - loosen an assertion (exact -> approximate, equality -> truthiness, a
   specific exception -> a broad one) to absorb a behavior change;
 - change CI configuration, test selection flags, coverage thresholds or the
@@ -26,7 +29,10 @@ by weakening the grader is worthless and fails acceptance.
 ## Evidence
 
 - `run_tests` logs every run; cite the run id after each step.
-- The pass count must not drop below the baseline run's.
+- The pass count must not drop below the baseline run's, and the count of
+  skipped / xfailed / deselected tests must not rise above it. The baseline
+  run is the client's exact test command in `repo/` at the versions the repo
+  arrived with; a run of any other command proves nothing.
 - Run `audit_diff` on the exported patch before submitting; resolve every
   flag or explain it (a flagged patch fails acceptance).
 - Flaky test? Re-run once. If it flips, record both run ids and report it as
