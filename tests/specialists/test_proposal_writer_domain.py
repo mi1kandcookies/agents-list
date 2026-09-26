@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
 from agentkit.manifest import load_manifest
 from specialists.proposal_writer import checks as C
 from specialists.proposal_writer import tools as T
@@ -191,8 +191,14 @@ def test_shred_requirements_writes_requirements_and_matrix(rfp_ws):
 
 
 def test_shred_requirements_rejects_escape_and_bad_prefix(rfp_ws):
-    with pytest.raises(ToolError):
-        T.shred_requirements(rfp_ws, path="../outside.md")
+    # Paths go through the kit's jail: escapes and the kit's own folder are
+    # policy violations, checked before the filesystem is touched.
+    for bad in ("../outside.md", "//evil.example/share/rfp.md", ".agentkit/ledger.json",
+                ".AgentKit/journal.jsonl"):
+        with pytest.raises(PolicyViolation):
+            T.shred_requirements(rfp_ws, path=bad)
+    with pytest.raises(PolicyViolation):
+        T.shred_requirements(rfp_ws, path=RFP, out=".agentkit/requirements.json")
     with pytest.raises(ToolError):
         T.shred_requirements(rfp_ws, path=RFP, out="inputs/requirements.json")
     with pytest.raises(ToolError):
@@ -280,6 +286,16 @@ def test_scan_grounding_flags_changed_numbers_certs_and_uncited_facts():
     assert scan["unresolved"] == ["[KB:a.md#p9]"]
     assert [u["not_in_cited_text"] for u in scan["unsupported"]] == [["8"], ["SOC 2"]]
     assert [u["sentence"] for u in scan["uncited_claims"]] == ["Revenue grew 40% last year."]
+
+
+def test_scan_grounding_ignores_ledger_ids_but_they_ground_nothing():
+    passages = {"a.md#p1": "We serve 6 transit agencies."}
+    # a ledger id beside a KB citation is not read as the figure 12 or 3
+    ok = T.scan_grounding("## S\nWe serve 6 transit agencies [KB:a.md#p1] [C12, C3].\n", passages, {})
+    assert ok["unsupported"] == [] and ok["uncited_claims"] == [] and ok["cited_sentences"] == 1
+    # a ledger id alone does not cite the knowledge base
+    alone = T.scan_grounding("## S\nWe serve 6 transit agencies [C1].\n", passages, {})
+    assert [u["sentence"] for u in alone["uncited_claims"]] == ["We serve 6 transit agencies [C1]."]
 
 
 # --- tools: questionnaire -------------------------------------------------------

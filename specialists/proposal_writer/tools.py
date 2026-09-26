@@ -15,10 +15,13 @@ proposal-writer specialist.
     set_answer              write one questionnaire answer, grounded or abstained
 
 Every tool is a plain function fn(workspace, *, fetch=None, run=None, **args)
-returning a dict; agent.py wraps them as kit tools through TOOL_DEFS. None of
-them needs the network or a subprocess. checks.py reuses the parsers here so
-acceptance recomputes from the source documents instead of trusting what the
-agent wrote.
+returning a dict; the kit wraps them through TOOL_DEFS (tools_from_defs), and
+their output reaches the model as untrusted data. None of them needs the
+network or a subprocess. Model-supplied paths go through resolve(), the kit's
+workspace jail (agentkit.policy.jail_path, .agentkit/ refused), and the tools
+write only under deliverables/ or work/, never inputs/. checks.py reuses the
+parsers here so acceptance recomputes from the source documents instead of
+trusting what the agent wrote.
 
 Text conventions (plain .txt/.md, or .docx read with the stdlib):
     pages     a form feed, a "[[page N]]" header line (what follows is page N)
@@ -28,7 +31,8 @@ Text conventions (plain .txt/.md, or .docx read with the stdlib):
     markers   the draft tags the requirement(s) a section answers with an
               HTML comment: <!-- R-004, R-005 -->
     citations [KB:<file>#p<N>] cites paragraph N of a knowledge-base file;
-              [REQ:R-004] cites the solicitation's own requirement text
+              [REQ:R-004] cites the solicitation's own requirement text; a
+              claim-ledger id ([C3]) may sit beside them but grounds nothing
 """
 from __future__ import annotations
 
@@ -45,7 +49,8 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
+from agentkit.policy import INTERNAL_DIR, jail_path
 
 REQUIREMENTS_PATH = "deliverables/m1-shred/requirements.json"
 MATRIX_PATH = "deliverables/m1-shred/compliance_matrix.csv"
@@ -79,13 +84,17 @@ def _root(workspace: Path) -> Path:
 
 
 def resolve(workspace: Path, rel: str) -> Path:
-    """Workspace-relative path -> absolute path; refuses anything outside."""
+    """Workspace-relative path -> absolute path through the kit's jail: the
+    path is checked lexically before the filesystem is touched (no drive,
+    UNC or ".." escape), then symlinks are resolved; .agentkit/ belongs to
+    the kit. Escapes raise PolicyViolation."""
     if not isinstance(rel, str) or not rel.strip():
         raise ToolError("path must be a non-empty workspace-relative string")
     root = _root(workspace)
-    path = (root / rel).resolve()
-    if path != root and root not in path.parents:
-        raise ToolError(f"path escapes the workspace: {rel}")
+    path = jail_path(root, rel)
+    parts = path.relative_to(root).parts
+    if parts and parts[0].lower() == INTERNAL_DIR:
+        raise PolicyViolation(f"path {rel!r} is internal to the kit")
     return path
 
 
@@ -751,6 +760,7 @@ def check_page_budget(workspace: Path, *, fetch=None, run=None, outline: str = O
 _MARKER = re.compile(r"<!--\s*((?:[A-Z]{1,4}-\d{1,4}[\s,;]*)+)-->")
 _COMMENT = re.compile(r"<!--.*?-->", re.S)
 _CITATION = re.compile(r"\[(KB|REQ):([^\]\s]+)\]")
+_LEDGER_CITATION = re.compile(r"\[\s*C\d+(?:\s*[,;]\s*C\d+)*\s*\]")
 _SECTION_REF = re.compile(r"\b(?:sections?|sec\.|§|pages?|p\.)\s*[A-Z]?[\d.]+\b|\b[A-Z]\.\d+(?:\.\d+)*\b", re.I)
 _NUMBER = re.compile(r"\$?\d[\d,]*(?:\.\d+)?%?")
 _CERT = re.compile(r"\b(ISO\s?\d{4,5}(?:-\d)?|SOC\s?[123]|FedRAMP|StateRAMP|CMMI|HIPAA|HITRUST|"
@@ -799,7 +809,9 @@ def _squash(text: str) -> str:
 def unsupported_tokens(sentence: str, support: str) -> list[str]:
     """Numbers and certification names in a sentence that the supporting
     text does not contain."""
-    body = _SECTION_REF.sub(" ", _CITATION.sub(" ", _COMMENT.sub(" ", sentence)))
+    body = _COMMENT.sub(" ", sentence)
+    # Citation ids are not figures: "[C12]" must not read as the number 12.
+    body = _SECTION_REF.sub(" ", _LEDGER_CITATION.sub(" ", _CITATION.sub(" ", body)))
     support_numbers = {_norm_number(t) for t in _NUMBER.findall(support)}
     # Certification names are matched whole (so "SOC 2" is not also a bare "2").
     missing = [t for t in _NUMBER.findall(_CERT.sub(" ", body)) if _norm_number(t) not in support_numbers]

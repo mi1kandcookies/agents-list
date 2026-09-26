@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from agentkit.errors import ToolError
+from agentkit.errors import AgentKitError
 from specialists.proposal_writer import tools as T
 
 BRIEF_PATH = "deliverables/m1-shred/bid-brief.md"
@@ -36,7 +36,7 @@ def _guarded(fn: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]
     def wrapper(workspace: Path, params: dict | None = None, *, run=None) -> dict[str, Any]:
         try:
             return fn(Path(workspace), dict(params or {}), run=run)
-        except (ToolError, OSError, ValueError, KeyError, TypeError) as exc:
+        except (AgentKitError, OSError, ValueError, KeyError, TypeError) as exc:
             return _result(False, f"{fn.__name__}: {exc}", 0.0)
     return wrapper
 
