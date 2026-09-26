@@ -84,19 +84,26 @@ def _roll_back(engagement, entry) -> None:
     """A fund or release reverted on chain: undo the optimistic state change."""
     from app.models import LedgerEntry
     if entry.kind == "fund":
+        if has_live_fund(engagement.id):   # another funding of this engagement stands
+            return
         engagement.status = "scoped"
         for m in engagement.milestones:
             if m.status == "funded":
                 m.status = "pending"
     elif entry.kind == "release" and entry.milestone_id is not None:
-        m = next((m for m in engagement.milestones if m.id == entry.milestone_id), None)
-        if m is not None:
-            m.status = "submitted" if m.submitted_at else "funded"
-            m.released_ledger_id = None
-            if engagement.status == "completed":
-                engagement.status = "in_progress"
         for hold in LedgerEntry.query.filter_by(approval_id=entry.approval_id, kind="hold").all():
             hold.status = "failed"
+        m = next((m for m in engagement.milestones if m.id == entry.milestone_id), None)
+        if m is None:
+            return
+        paid = released_micro(m)
+        if paid >= m.amount_micro:
+            return
+        m.status = "held" if paid else ("submitted" if m.submitted_at else "funded")
+        if m.released_ledger_id == entry.id:
+            m.released_ledger_id = None
+        if engagement.status == "completed":
+            engagement.status = "in_progress"
 
 
 def entry_json(entry) -> dict:

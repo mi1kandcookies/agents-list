@@ -416,6 +416,28 @@ def test_failed_fund_receipt_rolls_back(app, client, approvals, screener, agent_
     assert {m["status"] for m in body["milestones"]} == {"pending"}
 
 
+def test_failed_release_receipt_rolls_back_release_and_hold(app, client, approvals, screener,
+                                                            agent_public_id):
+    from tests.fakes.escrow import FakeEscrow
+    escrow = FakeEscrow(mode="onchain")
+    app.extensions["agents_list.escrow"] = escrow
+    eid = _funded(client, approvals, agent_public_id)
+    screener.cap_micro = 4_000_000
+    screener.set(PAYEE, "CAP")
+    client.post(f"/api/engagements/{eid}/milestones/0/submit", json={"evidence": "done"})
+    a = client.post(f"/api/engagements/{eid}/milestones/0/release", json={}).get_json()
+    assert approvals.approve_and_consume(a["approval_id"], "milestone.release").ok
+    release = next(e for e in _ledger(eid) if e.kind == "release")
+    escrow.statuses[release.tx_hash] = "failed"
+    body = client.get(f"/api/engagements/{eid}").get_json()
+    assert {e["kind"]: e["status"] for e in body["ledger"]} == {
+        "fund": "confirmed", "release": "failed", "hold": "failed"}
+    m = body["milestones"][0]
+    assert (m["status"], m["released_micro"], m["released_ledger_id"]) == ("submitted", 0, None)
+    # it can be released again with a new approval
+    assert client.post(f"/api/engagements/{eid}/milestones/0/release", json={}).status_code == 202
+
+
 # ── mandate hook ──────────────────────────────────────────────────────────
 def test_root_mandate_issued_after_funding(app, client, approvals, screener, human, agent_public_id):
     from app.mandates import tokens
