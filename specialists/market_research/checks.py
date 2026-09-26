@@ -16,6 +16,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agentkit.errors import PolicyViolation
+from agentkit.policy import jail_path
 from specialists.market_research import tools
 
 _INSUFFICIENT = re.compile(r"insufficient evidence", re.IGNORECASE)
@@ -33,10 +35,20 @@ def _fail_list(problems: list[str], ok: str, limit: int = 10) -> dict[str, Any]:
     return _result(False, "; ".join(problems[:limit]) + more)
 
 
+def _file(workspace: Path, rel: Any) -> tuple[Path | None, str]:
+    """A workspace file named in check params (which may come from a
+    client's brief), jailed to the workspace like the kit's own checks."""
+    try:
+        path = jail_path(Path(workspace), rel)
+    except PolicyViolation as exc:
+        return None, str(exc)
+    return path, "" if path.is_file() else f"{rel} not found"
+
+
 def _read_json(workspace: Path, rel: str) -> tuple[Any, str]:
-    path = Path(workspace) / rel
-    if not path.is_file():
-        return None, f"{rel} not found"
+    path, err = _file(workspace, rel)
+    if err:
+        return None, err
     try:
         return json.loads(path.read_text(encoding="utf-8")), ""
     except ValueError as exc:
@@ -44,9 +56,9 @@ def _read_json(workspace: Path, rel: str) -> tuple[Any, str]:
 
 
 def _read_csv(workspace: Path, rel: str) -> tuple[list[dict[str, str]] | None, list[str], str]:
-    path = Path(workspace) / rel
-    if not path.is_file():
-        return None, [], f"{rel} not found"
+    path, err = _file(workspace, rel)
+    if err:
+        return None, [], err
     with path.open(encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
         return list(reader), list(reader.fieldnames or []), ""
@@ -129,8 +141,7 @@ def question_coverage(workspace: Path, params: dict, *, run=None) -> dict[str, A
 def source_tier_mix(workspace: Path, params: dict, *, run=None) -> dict[str, Any]:
     """Share of verified claims whose source recomputes to tier 1 meets the threshold."""
     threshold = float(params.get("min_tier1_share", 0.6))
-    ledger = tools.load_ledger(workspace)
-    status = tools.verify_claims(workspace, ledger)
+    status = tools.verify_claims(workspace)
     verified = [cid for cid, s in status.items() if s["verified"]]
     if not verified:
         return _result(False, "no verified claims in the ledger", 0.0)
@@ -238,9 +249,9 @@ def report_answers_questions(workspace: Path, params: dict, *, run=None) -> dict
     if err:
         return _result(False, err)
     rel = params.get("path", "deliverables/m3-report/report.md")
-    path = Path(workspace) / rel
-    if not path.is_file():
-        return _result(False, f"{rel} not found")
+    path, err = _file(workspace, rel)
+    if err:
+        return _result(False, err)
     section = _section(path.read_text(encoding="utf-8"), params.get("section", "Traceability matrix"))
     if not section.strip():
         return _result(False, f"{rel} has no '{params.get('section', 'Traceability matrix')}' section")
