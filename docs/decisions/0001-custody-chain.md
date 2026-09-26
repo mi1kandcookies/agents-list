@@ -28,6 +28,7 @@ Action object `v1` (every action carries `approval_id` and `exp`, so each hash/n
   "amount_micro": 25000000,
   "payee_agent_id": "AGT-…",
   "payee_address": "0x…",
+  "payee_source": "ens | profile",
   "milestones": [{"idx": 0, "amount_micro": 10000000, "title_hash": "0x…"}],
   "milestone_idx": 1,
   "parent_mandate_id": "MND-…",
@@ -36,7 +37,7 @@ Action object `v1` (every action carries `approval_id` and `exp`, so each hash/n
   "screening_ack": true
 }
 ```
-Fields not relevant to a kind are omitted (not null). Functions: `build_action(kind, **fields) -> dict`, `canonical(obj) -> bytes`, `action_hash(obj) -> str`, `action_nonce(obj) -> str`, `sow_hash(sow) -> str`, `describe(action) -> list[tuple[str, str]]` (human-readable summary rows). Golden vectors live in `tests/fixtures/action_vectors.json`.
+Fields not relevant to a kind are omitted (not null). `payee_source` (amendment) records whether `payee_address` was confirmed by the agent's ENS payout record (`ens`) or taken from the profile (`profile`); see `resolve_payee` in `app/names/service.py`. Functions: `build_action(kind, **fields) -> dict`, `canonical(obj) -> bytes`, `action_hash(obj) -> str`, `action_nonce(obj) -> str`, `sow_hash(sow) -> str`, `describe(action) -> list[tuple[str, str]]` (human-readable summary rows). Golden vectors live in `tests/fixtures/action_vectors.json`.
 
 ## 2. World identity client — `app/identity/world.py`
 
