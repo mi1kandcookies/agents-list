@@ -14,8 +14,9 @@ listing:
     rules-first transaction categorization with an exceptions queue, a bank
     reconciliation with $0.00 unexplained difference, draft adjusting journal
     entries with support, trial balance, flux commentary and financial
-    statements. Every number is recomputed by deterministic checks, nothing is
-    plugged, and all work product goes to your accountant or CPA for approval.
+    statements. The reconciliation, schedule entries, trial balance, flux and
+    statements are recomputed from your files by deterministic checks, nothing
+    is plugged, and all work product goes to your accountant or CPA for approval.
   tags: [bookkeeping, month-end-close, reconciliation, accruals, trial-balance, flux-analysis]
   capabilities:
     - Rules-first categorization of bank activity with confidence and an exceptions queue
@@ -81,7 +82,7 @@ intake:
   - field: bank_statement
     question: >-
       Please upload the bank statement for the period as CSV (date, description,
-      amount, running balance) to inputs/bank_statement.csv.
+      amount, running balance; oldest or newest first) to inputs/bank_statement.csv.
     required: true
   - field: gl_export
     question: >-
@@ -101,6 +102,19 @@ intake:
     required: true
   - field: statement_ending_balance
     question: What ending balance is printed on the bank statement (for cross-checking the CSV)?
+    required: false
+  - field: prior_bank_reconciliation
+    question: >-
+      Were any checks or deposits still outstanding at the end of the prior
+      month? If so, upload last month's bank reconciliation (or a CSV of those
+      items: date, description, amount) to inputs/prior_bank_reconciliation.json
+      or .csv; otherwise answer "none".
+    required: false
+  - field: prior_month_pl
+    question: >-
+      Please upload last month's profit and loss for that month only (not year
+      to date) as CSV (account, debit, credit) to inputs/prior_month_pl.csv, so
+      income and expenses can be compared month to month.
     required: false
   - field: accrual_schedule
     question: >-
@@ -131,7 +145,7 @@ milestones:
       - deliverables/m1-onboarding/opening_balance_tieout.csv
       - deliverables/m1-onboarding/categorization_rulebook.csv
       - deliverables/m1-onboarding/close_checklist.md
-    hours: [2, 6]
+    hours: [1, 3]
     acceptance:
       - check: files_exist
         params:
@@ -189,7 +203,7 @@ milestones:
       - deliverables/m2-period-close/accrual_schedule.csv
       - deliverables/m2-period-close/journal_entries.csv
       - deliverables/m2-period-close/trial_balance.csv
-    hours: [4, 12]
+    hours: [1.5, 3]
     acceptance:
       - check: files_exist
         params:
@@ -203,29 +217,45 @@ milestones:
       - check: json_valid
         params: {path: deliverables/m2-period-close/bank_reconciliation.json}
       - check: categorization_complete
-        description: Categorized count and dollars equal the bank feed; low-confidence items are queued
+        description: >-
+          Categorized count and dollars equal the bank feed, accounts are in the chart, rule
+          citations agree with the rulebook, and undecided or low-confidence items are queued
         params:
           statement: inputs/bank_statement.csv
           categorized: deliverables/m2-period-close/categorized.csv
           exceptions: deliverables/m2-period-close/exceptions.csv
+          chart_of_accounts: inputs/chart_of_accounts.csv
+          rules: [inputs/categorization_rules.csv, deliverables/m1-onboarding/categorization_rulebook.csv]
       - check: bank_rec_ties
         description: Recomputed bank reconciliation has $0.00 unexplained difference and matches the reported one
         params:
           statement: inputs/bank_statement.csv
           gl: inputs/gl_detail.csv
           reconciliation: deliverables/m2-period-close/bank_reconciliation.json
+          prior_reconciliation: inputs/prior_bank_reconciliation.json
           journal_entries: deliverables/m2-period-close/journal_entries.csv
       - check: journal_entries_balanced
-        description: Every draft entry balances, cites support, uses known accounts and is marked draft
+        description: Every draft entry balances, cites support, is dated in the period, uses known accounts and is marked draft
         params:
           journal_entries: deliverables/m2-period-close/journal_entries.csv
           chart_of_accounts: inputs/chart_of_accounts.csv
+          gl: inputs/gl_detail.csv
+      - check: schedule_entries_tie
+        description: The accrual schedule recomputes from the client's schedule and each item due has its exact draft entry
+        params:
+          schedule: inputs/accrual_schedule.csv
+          accrual_schedule: deliverables/m2-period-close/accrual_schedule.csv
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
       - check: trial_balance_ties
-        description: Adjusted trial balance recomputes from the GL plus draft entries; debits equal credits
+        description: >-
+          Adjusted trial balance at period end recomputes from the GL plus draft entries, debits
+          equal credits, and cash equals the reconciled bank balance
         params:
           gl: inputs/gl_detail.csv
           journal_entries: deliverables/m2-period-close/journal_entries.csv
           trial_balance: deliverables/m2-period-close/trial_balance.csv
+          statement: inputs/bank_statement.csv
+          prior_reconciliation: inputs/prior_bank_reconciliation.json
       - check: no_plugs
         description: Suspense and Ask My Accountant balances are zero or itemized; no forcing entries
         params:
@@ -247,7 +277,7 @@ milestones:
       - deliverables/m3-close-package/flux.csv
       - deliverables/m3-close-package/financial_statements.json
       - deliverables/m3-close-package/close_package.md
-    hours: [2, 6]
+    hours: [1, 2]
     acceptance:
       - check: files_exist
         params:
@@ -260,11 +290,19 @@ milestones:
           gl: inputs/gl_detail.csv
           journal_entries: deliverables/m2-period-close/journal_entries.csv
           trial_balance: deliverables/m2-period-close/trial_balance.csv
+          statement: inputs/bank_statement.csv
+          prior_reconciliation: inputs/prior_bank_reconciliation.json
       - check: flux_commentary_complete
-        description: Every variance at or above the thresholds has commentary and the amounts recompute
+        description: >-
+          Every variance over the client's thresholds (balances against the prior trial balance,
+          the month's P&L against the prior month's) has commentary and the amounts recompute
         params:
           current: deliverables/m2-period-close/trial_balance.csv
-          prior: [inputs/prior_trial_balance.csv, inputs/prior_month_pl.csv]
+          prior_trial_balance: inputs/prior_trial_balance.csv
+          prior_pl: inputs/prior_month_pl.csv
+          gl: inputs/gl_detail.csv
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
+          chart_of_accounts: inputs/chart_of_accounts.csv
           flux: deliverables/m3-close-package/flux.csv
       - check: financial_statements_tie
         description: Statements recompute from the adjusted trial balance and the balance sheet balances

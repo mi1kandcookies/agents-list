@@ -122,7 +122,9 @@ def test_reconcile_bank_ties_to_the_cent(ws):
     assert out["gl_ending_balance"] == "36811.00" and out["matched_count"] == 16
     assert {i["amount"] for i in out["outstanding_items"]} == {"-1275.00", "1118.60"}
     assert {i["amount"] for i in out["unrecorded_items"]} == {"-25.00", "3.18"}
-    with pytest.raises(ToolError):
+    assert out["opening_difference"] == "0.00" and out["prior_reconciliation"] is None
+    (ws / "inputs/close_parameters.json").unlink()      # the cash account comes from here by default
+    with pytest.raises(ToolError, match="cash_account"):
         t.reconcile_bank(ws, period="2026-08")
 
 
@@ -434,3 +436,287 @@ def test_eval_cases_are_well_formed():
         assert {"name", "brief", "milestone", "notes"} <= set(case) and case["milestone"] in ids
         assert case["brief"]["specialist"] == "bookkeeping-close"
         assert (PACK / "evals" / "fixtures" / case["fixture"] / "inputs").is_dir()
+
+
+# --- regressions: reconciliation carry-forward, batches, order, cut-off ---------------
+
+def _append_rows(path, rows):
+    _write_rows(path, _rows(path) + rows)
+
+
+def _gl(entry_id, day, account, description, debit="", credit=""):
+    return {"entry_id": entry_id, "date": day, "account": account, "description": description,
+            "debit": debit, "credit": credit}
+
+
+def _september(ws, *, prior_rec=True):
+    """A September on top of the August fixture: August's drafts posted, the
+    August 31 deposit and check 1052 clearing in September."""
+    _close_period(ws)
+    gl = _rows(ws / "inputs/gl_detail.csv")
+    gl += [_gl(r["entry_id"], r["date"], r["account"], r["description"], r["debit"], r["credit"])
+           for r in _rows(ws / M2 / "journal_entries.csv")]
+    gl += [_gl("GJ-0020", "2026-09-01", "6000", "Harbor Properties - September rent", debit="4500.00"),
+           _gl("GJ-0020", "2026-09-01", "1000", "Harbor Properties - September rent", credit="4500.00"),
+           _gl("GJ-0021", "2026-09-08", "1000", "Square deposit 0908", debit="3000.00"),
+           _gl("GJ-0021", "2026-09-08", "4000", "Square deposit 0908", credit="3000.00")]
+    _write_rows(ws / "inputs/gl_detail.csv", gl)
+    _write_rows(ws / "inputs/bank_statement.csv", [
+        {"date": "2026-09-01", "description": "SQUARE DEPOSIT 0831", "amount": "1118.60", "balance": "38064.18"},
+        {"date": "2026-09-01", "description": "HARBOR PROPERTIES RENT SEP", "amount": "-4500.00",
+         "balance": "33564.18"},
+        {"date": "2026-09-04", "description": "CHECK 1052", "amount": "-1275.00", "balance": "32289.18"},
+        {"date": "2026-09-08", "description": "SQUARE DEPOSIT 0908", "amount": "3000.00", "balance": "35289.18"}])
+    if prior_rec:
+        shutil.copyfile(ws / M2 / "bank_reconciliation.json", ws / "inputs/prior_bank_reconciliation.json")
+    params = json.loads((ws / "inputs/close_parameters.json").read_text())
+    params.update(period="2026-09", statement_ending_balance="35289.18")
+    (ws / "inputs/close_parameters.json").write_text(json.dumps(params))
+    shutil.rmtree(ws / "deliverables")
+
+
+def test_prior_outstanding_items_clear_the_next_month(ws):
+    _september(ws)
+    out = t.reconcile_bank(ws)
+    assert out["unexplained_difference"] == "0.00" and out["opening_difference"] == "0.00"
+    assert out["outstanding_items"] == [] and out["unrecorded_items"] == []
+    assert {(i["entry_id"], i["amount"]) for i in out["prior_items_cleared"]} == {("GJ-0019", "1118.60"),
+                                                                                  ("GJ-0018", "-1275.00")}
+    t.draft_journal_entry(ws, entry_id="ADJ-202609-AP", date="2026-09-30", description="Roastware invoice 77",
+                          lines=[{"account": "6300", "debit": "10"}, {"account": "2000", "credit": "10"}],
+                          support="invoice 77")
+    t.build_trial_balance(ws)
+    for check in ("bank_rec_ties", "trial_balance_ties"):
+        assert _run(ws, check, "m2-period-close")["passed"] is True, check
+
+
+def test_without_the_prior_rec_the_opening_difference_shows(ws):
+    _september(ws, prior_rec=False)
+    out = t.reconcile_bank(ws)
+    assert out["unexplained_difference"] == "156.40" and out["opening_difference"] == "156.40"
+    assert {i["amount"] for i in out["unrecorded_items"]} == {"1118.60", "-1275.00"}
+    # the prior items as a CSV beside the default path; one of them never clears
+    _write_rows(ws / "inputs/prior_bank_reconciliation.csv", [
+        {"date": "2026-08-30", "description": "Check 1052", "amount": "-1275.00"},
+        {"date": "2026-08-31", "description": "Square deposit 0831", "amount": "1118.60"},
+        {"date": "2026-07-29", "description": "Check 1039", "amount": "-500.00"}])
+    out = t.reconcile_bank(ws)
+    assert out["prior_reconciliation"] == "inputs/prior_bank_reconciliation.csv"
+    assert out["unrecorded_items"] == [] and len(out["prior_items_cleared"]) == 2
+    stale = [i for i in out["outstanding_items"] if i["carried_from_prior"]]
+    assert [(i["amount"], i["age_days"]) for i in stale] == [("-500.00", 63)]
+    # check 1039 is not in these books, and the opening difference says so
+    assert out["opening_difference"] == out["unexplained_difference"] == "-500.00"
+
+
+def test_newest_first_statement_reads_in_reverse(ws):
+    path = ws / "inputs/bank_statement.csv"
+    _write_rows(path, _rows(path)[::-1])
+    out = t.parse_bank_statement(ws)
+    assert out["opening_balance"] == "42350.00" and out["ending_balance"] == "36945.58"
+    assert out["running_balance_breaks"] == [] and out["order"].startswith("newest first")
+    assert t.reconcile_bank(ws, cash_account="1000", period="2026-08")["unexplained_difference"] == "0.00"
+
+
+def _split_blue_ridge(ws):
+    """The 8,200.00 Blue Ridge ACH recorded in the GL as two receipts."""
+    gl = [r for r in _rows(ws / "inputs/gl_detail.csv") if r["entry_id"] != "GJ-0007"]
+    gl += [_gl("GJ-0007A", "2026-08-10", "1000", "Blue Ridge Grocers - inv 2207 part 1", debit="5000.00"),
+           _gl("GJ-0007A", "2026-08-10", "1100", "Blue Ridge Grocers - inv 2207 part 1", credit="5000.00"),
+           _gl("GJ-0007B", "2026-08-10", "1000", "Blue Ridge Grocers - inv 2207 part 2", debit="3200.00"),
+           _gl("GJ-0007B", "2026-08-10", "1100", "Blue Ridge Grocers - inv 2207 part 2", credit="3200.00")]
+    _write_rows(ws / "inputs/gl_detail.csv", gl)
+
+
+def test_batched_deposit_reconciles_and_a_duplicate_receipt_fails(ws):
+    _split_blue_ridge(ws)
+    _close_period(ws)
+    rec = json.loads((ws / M2 / "bank_reconciliation.json").read_text())
+    assert rec["unexplained_difference"] == "0.00" and len(rec["unrecorded_items"]) == 2
+    assert rec["batched_matches"] == [{"bank_rows": [7], "entries": ["GJ-0007A", "GJ-0007B"], "amount": "8200.00"}]
+    assert _run(ws, "bank_rec_ties", "m2-period-close")["passed"] is True
+    journal = ws / M2 / "journal_entries.csv"
+    honest = journal.read_bytes()
+    for day in ("2026-08-11", "2026-08-31"):       # matched to the bank line, or left beside it
+        t.draft_journal_entry(ws, entry_id="ADJ-DUP", date=day, description="Record Blue Ridge ACH deposit",
+                              lines=[{"account": "1000", "debit": "8200"}, {"account": "4100", "credit": "8200"}],
+                              support="bank statement row 7")
+        out = _run(ws, "bank_rec_ties", "m2-period-close")
+        assert out["passed"] is False and "left outstanding" in out["details"], day
+        journal.write_bytes(honest)
+
+
+def test_period_cut_off(ws):
+    _append_rows(ws / "inputs/gl_detail.csv", [
+        _gl("GJ-0020", "2026-09-01", "6000", "Harbor Properties - September rent", debit="4500.00"),
+        _gl("GJ-0020", "2026-09-01", "1000", "Harbor Properties - September rent", credit="4500.00")])
+    _append_rows(ws / "inputs/bank_statement.csv", [
+        {"date": "2026-09-01", "description": "HARBOR PROPERTIES RENT SEP", "amount": "-4500.00",
+         "balance": "32445.58"}])
+    params = json.loads((ws / "inputs/close_parameters.json").read_text())
+    (ws / "inputs/close_parameters.json").write_text(json.dumps({**params, "statement_ending_balance": "32445.58"}))
+    _close_period(ws)
+    rec = json.loads((ws / M2 / "bank_reconciliation.json").read_text())
+    assert rec["statement_ending_balance"] == "36945.58" and rec["statement_lines_outside_period"] == 1
+    assert {i["amount"] for i in rec["unrecorded_items"]} == {"-25.00", "3.18"}
+    tb = {r["account"]: r for r in _rows(ws / M2 / "trial_balance.csv")}
+    assert tb["1000"]["debit"] == "36789.18" and tb["6000"]["debit"] == "4500.00"
+    for check in ("bank_rec_ties", "trial_balance_ties"):
+        assert _run(ws, check, "m2-period-close")["passed"] is True, check
+    t.build_trial_balance(ws, as_of="2026-12-31")                # a TB that runs past period end
+    out = _run(ws, "trial_balance_ties", "m2-period-close")
+    assert out["passed"] is False and "6000" in out["details"]
+    with pytest.raises(ToolError, match="outside the period"):
+        t.draft_journal_entry(ws, entry_id="ADJ-SEP", date="2026-09-01", description="September accrual",
+                              lines=[{"account": "6100", "debit": "5"}, {"account": "2100", "credit": "5"}],
+                              support="meter read")
+    journal = ws / M2 / "journal_entries.csv"
+    _write_rows(journal, _rows(journal) + [dict(r, entry_id="ADJ-SEP", date="2026-09-01")
+                                           for r in _rows(journal)[:2]])
+    out = _run(ws, "journal_entries_balanced", "m2-period-close")
+    assert out["passed"] is False and "ADJ-SEP: dated outside the period" in out["details"]
+
+
+def test_trial_balance_cash_must_equal_the_reconciled_bank_balance(closed):
+    """Without the bank entry the journal and the TB still agree with each
+    other, but cash no longer ties to the bank."""
+    journal = closed / M2 / "journal_entries.csv"
+    _write_rows(journal, [r for r in _rows(journal) if r["entry_id"] != "ADJ-202608-BANK"])
+    t.build_trial_balance(closed)
+    out = _run(closed, "trial_balance_ties", "m2-period-close")
+    assert out["passed"] is False and "reconciled bank balance is 36789.18" in out["details"]
+
+
+def test_date_window_comes_from_the_close_parameters_not_the_deliverable(closed):
+    t.reconcile_bank(closed, cash_account="1000", period="2026-08", date_window=1)
+    out = _run(closed, "bank_rec_ties", "m2-period-close")
+    assert out["passed"] is False and "outstanding_items amounts differ" in out["details"]
+    params = json.loads((closed / "inputs/close_parameters.json").read_text())
+    (closed / "inputs/close_parameters.json").write_text(json.dumps({**params, "date_window": 1}))
+    out = _run(closed, "bank_rec_ties", "m2-period-close")
+    # the reported figures now recompute; check 1041 (3 days to clear) still needs an answer
+    assert "amounts differ" not in out["details"] and "CHECK 1041" in out["details"]
+
+
+# --- regressions: schedule, journal, categorization, suspense, flux -------------------
+
+def test_schedule_entry_amounts_are_recomputed(closed):
+    assert _run(closed, "schedule_entries_tie", "m2-period-close")["passed"] is True
+    journal = closed / M2 / "journal_entries.csv"
+    rows = _rows(journal)
+    for r in rows:
+        if r["entry_id"] == "ADJ-202608-PRE-001":
+            r["debit"], r["credit"] = ("3000.00", "") if r["debit"] else ("", "3000.00")
+    _write_rows(journal, rows)
+    schedule = closed / M2 / "accrual_schedule.csv"
+    sched = _rows(schedule)
+    next(r for r in sched if r["item_id"] == "PRE-001")["this_period"] = "3000.00"
+    _write_rows(schedule, sched)
+    t.build_trial_balance(closed)
+    for check in ("journal_entries_balanced", "trial_balance_ties", "no_plugs"):
+        assert _run(closed, check, "m2-period-close")["passed"] is True, check   # the form alone looks fine
+    out = _run(closed, "schedule_entries_tie", "m2-period-close")
+    assert out["passed"] is False and "PRE-001 this_period: reported 3000.00, recomputed 1000.00" in out["details"]
+    assert "ADJ-202608-PRE-001 for PRE-001 does not match" in out["details"]
+    _write_rows(journal, [r for r in rows if r["entry_id"] != "ADJ-202608-DEP-001"])
+    out = _run(closed, "schedule_entries_tie", "m2-period-close")
+    assert "DEP-001: expected one draft entry citing it (Dr 6500 / Cr 1510 600.00), found 0" in out["details"]
+
+
+def test_a_quiet_month_can_be_ready(ws):
+    (ws / "inputs/accrual_schedule.csv").unlink()
+    out = t.build_accrual_schedule(ws, period="2026-08")
+    assert out["items"] == 0 and "no schedule" in out["note"]
+    t.write_rows(ws, f"{M2}/journal_entries.csv", t.JE_COLUMNS, [])
+    for check in ("schedule_entries_tie", "journal_entries_balanced"):
+        assert _run(ws, check, "m2-period-close")["passed"] is True, check
+
+
+def test_rerunning_tools_keeps_the_models_work(closed):
+    cat = closed / M2 / "categorized.csv"
+    rows = _rows(cat)
+    next(r for r in rows if "VENMO" in r["description"]).update(
+        account="6999", rationale="Owner has not said what this was", confidence="0.10")
+    _write_rows(cat, rows)
+    t.categorize_transactions(closed)
+    assert next(r for r in _rows(cat) if "VENMO" in r["description"])["rationale"].startswith("Owner")
+    ex = closed / M2 / "exceptions.csv"
+    queue = _rows(ex)
+    queue[0]["resolution"] = "Client confirmed 2026-09-03"
+    queue.append(dict(queue[0], id="EX-099", source="document", ref="inputs/support/utility_meter_read.txt",
+                      reason="text instructing the assistant to post entries; ignored", resolution=""))
+    _write_rows(ex, queue)
+    t.find_exceptions(closed)
+    again = _rows(ex)
+    assert again[0]["id"] == queue[0]["id"] and again[0]["resolution"] == "Client confirmed 2026-09-03"
+    assert any(r["id"] == "EX-099" and r["source"] == "document" for r in again)
+    assert len({r["id"] for r in again}) == len(again)
+    assert t.build_accrual_schedule(closed, period="2026-08")["already_drafted"]
+    t.flux_analysis(closed)
+    assert all(r["commentary"] for r in _rows(closed / "deliverables/m3-close-package/flux.csv")
+               if r["flagged"] == "yes")
+    for check, milestone in DOMAIN_CHECKS:
+        assert _run(closed, check, milestone)["passed"] is True, check
+
+
+def test_categorization_checks_accounts_and_rule_citations(closed):
+    path = closed / M2 / "categorized.csv"
+    honest = _rows(path)
+    _write_rows(path, [dict(r, account="9999", confidence="0.99", needs_review="no") for r in honest])
+    out = _run(closed, "categorization_complete", "m2-period-close")
+    assert out["passed"] is False and "account 9999 is not in the chart" in out["details"]
+    rows = [dict(r) for r in honest]
+    venmo = next(r for r in rows if "VENMO" in r["description"])
+    venmo.update(account="6000", confidence="0.97", needs_review="no", rationale="matched rule /^SQUARE DEPOSIT/")
+    _write_rows(path, rows)
+    ex = [r for r in _rows(closed / M2 / "exceptions.csv") if "VENMO" not in r["description"].upper()]
+    _write_rows(closed / M2 / "exceptions.csv", ex)
+    out = _run(closed, "categorization_complete", "m2-period-close")
+    assert out["passed"] is False and "rule /^SQUARE DEPOSIT/ gives account 4000" in out["details"]
+    venmo["rationale"] = "no rule matched"
+    _write_rows(path, rows)
+    assert _run(closed, "categorization_complete", "m2-period-close")["passed"] is False
+    venmo["rationale"] = "Owner answered: the Venmo to J Marsh topped up the landlord's rent"
+    _write_rows(path, rows)
+    assert _run(closed, "categorization_complete", "m2-period-close")["passed"] is True
+
+
+def test_client_explained_reclass_out_of_suspense_is_allowed(closed):
+    reclass = dict(entry_id="ADJ-202608-VENMO", date="2026-08-31", description="Reclass Venmo payment to rent",
+                   lines=[{"account": "6000", "debit": "300"}, {"account": "6999", "credit": "300"}])
+    with pytest.raises(ToolError, match="client's answer"):
+        t.draft_journal_entry(closed, **reclass, support="looks like rent")
+    with pytest.raises(ToolError, match="client's answer"):                 # past zero
+        t.draft_journal_entry(closed, **dict(reclass, lines=[{"account": "6000", "debit": "400"},
+                                                             {"account": "6999", "credit": "400"}]),
+                              support="client answer 2026-09-03")
+    t.draft_journal_entry(closed, **reclass, support="client answer 2026-09-03: rent top-up to the landlord")
+    t.build_trial_balance(closed)
+    for check in ("journal_entries_balanced", "no_plugs", "trial_balance_ties"):
+        assert _run(closed, check, "m2-period-close")["passed"] is True, check
+    assert t.SUSPENSE_NAME_RE.search("Opening Balance Equity")
+
+
+def test_flux_without_a_prior_month_pl(closed):
+    (closed / "inputs/prior_month_pl.csv").unlink()
+    out = t.flux_analysis(closed)
+    assert "no prior-month P&L" in out["notes"][0]
+    rows = _rows(closed / "deliverables/m3-close-package/flux.csv")
+    assert rows and {r["statement"] for r in rows} == {"balance_sheet"}
+    check = _run(closed, "flux_commentary_complete", "m3-close-package")
+    assert check["passed"] is True and "no prior-month P&L" in check["details"]
+
+
+def test_flux_any_rule_flags_either_threshold(closed):
+    # accumulated depreciation moved -600.00, exactly 10%: under $1,000, so only "or" flags it
+    assert "1510" not in {r["account"] for r in t.flux_analysis(closed)["flagged_rows"]}
+    flagged = {r["account"]: r for r in t.flux_analysis(closed, rule="any")["flagged_rows"]}
+    assert flagged["1510"]["change"] == "-600.00" and flagged["1510"]["change_pct"] == "-10.0"
+
+
+def test_manifest_hours_fit_the_run_limits():
+    m = _manifest()
+    for ms in m["milestones"]:
+        _low, high = ms["hours"]
+        assert high * 60 <= m["limits"]["max_wall_minutes"], ms["id"]
+        assert high * m["estimate"]["usd_per_hour"] <= m["limits"]["max_usd"], ms["id"]

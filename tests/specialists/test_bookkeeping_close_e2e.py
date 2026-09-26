@@ -7,6 +7,7 @@ import hashlib
 import io
 import itertools
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,7 @@ from agentkit.loop import RunOutcome
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext, Specialist
 from agentkit.types import ModelResponse, Submission, ToolCall, Usage
-from specialists.bookkeeping_close.agent import BookkeepingClose, materiality_thresholds
+from specialists.bookkeeping_close.agent import BookkeepingClose, close_parameters, materiality_thresholds
 from specialists.bookkeeping_close.checks import CHECK_DEFS
 from specialists.bookkeeping_close.tools import DRAFT_STATUS, TOOL_DEFS
 
@@ -312,7 +313,7 @@ def test_cli_lists_shows_and_scopes_the_specialist(tmp_path):
     code, out = run("milestones", "bookkeeping-close")
     assert code == 0 and [m["id"] for m in json.loads(out)] == [M1, M2, M3]
     code, out = run("estimate", "bookkeeping-close", "--intake", str(intake))
-    assert code == 0 and json.loads(out)["hours_high"] == 24.0
+    assert code == 0 and json.loads(out)["hours_high"] == 8.0
     assert run("validate-intake", "bookkeeping-close", "--intake", str(intake)) == (0, "[]\n")
     code, out = run("validate-intake", "bookkeeping-close", "--intake", str(bad))
     assert code == 1 and json.loads(out)[0]["field"] == "period"
@@ -464,3 +465,125 @@ def test_domain_tools_cannot_escape_or_touch_inputs_and_kit_files(spec, tmp_path
     assert not (ws / ".agentkit/rec.json").exists() and not (tmp_path / "trial_balance.csv").exists()
     assert not Ledger(ws).is_authored("inputs/bank_statement.csv")
     assert sub.status == "ready_for_review"                            # the honest work that followed
+
+
+# --- two consecutive months -----------------------------------------------------------
+
+def _gl_row(entry_id, day, account, description, debit="", credit=""):
+    return {"entry_id": entry_id, "date": day, "account": account, "description": description,
+            "debit": debit, "credit": credit}
+
+
+def _write_csv(path, rows):
+    path.write_text(_csv_text(rows), encoding="utf-8")
+
+
+def _september_inputs(spec, aug, sep):
+    """September's client files, as they would arrive after August was
+    reviewed and posted: the GL export now holds August's approved drafts;
+    last month's reconciliation, adjusted TB and P&L are the prior files."""
+    shutil.copytree(aug / "inputs", sep / "inputs")
+    coa = {r["account"]: r["type"] for r in _rows(aug / "inputs/chart_of_accounts.csv")}
+    gl = _rows(aug / "inputs/gl_detail.csv")
+    gl += [_gl_row(r["entry_id"], r["date"], r["account"], r["description"], r["debit"], r["credit"])
+           for r in _rows(aug / D2 / "journal_entries.csv")]
+    gl += [_gl_row("GJ-0020", "2026-09-01", "6000", "Harbor Properties - September rent", debit="4500.00"),
+           _gl_row("GJ-0020", "2026-09-01", "1000", "Harbor Properties - September rent", credit="4500.00"),
+           _gl_row("GJ-0021", "2026-09-08", "1000", "Square deposit 0908", debit="3000.00"),
+           _gl_row("GJ-0021", "2026-09-08", "4000", "Square deposit 0908", credit="3000.00"),
+           _gl_row("GJ-0022", "2026-09-15", "5000", "Cafe Imports inv 5602 - green coffee", debit="12300.00"),
+           _gl_row("GJ-0022", "2026-09-15", "2000", "Cafe Imports inv 5602 - green coffee", credit="12300.00")]
+    _write_csv(sep / "inputs/gl_detail.csv", gl)
+    _write_csv(sep / "inputs/bank_statement.csv", [
+        {"date": "2026-09-01", "description": "SQUARE DEPOSIT 0831", "amount": "1118.60", "balance": "38064.18"},
+        {"date": "2026-09-01", "description": "HARBOR PROPERTIES RENT SEP", "amount": "-4500.00",
+         "balance": "33564.18"},
+        {"date": "2026-09-04", "description": "CHECK 1052", "amount": "-1275.00", "balance": "32289.18"},
+        {"date": "2026-09-08", "description": "SQUARE DEPOSIT 0908", "amount": "3000.00", "balance": "35289.18"},
+        {"date": "2026-09-30", "description": "MONTHLY SERVICE FEE", "amount": "-25.00", "balance": "35264.18"}])
+    shutil.copyfile(aug / D2 / "bank_reconciliation.json", sep / "inputs/prior_bank_reconciliation.json")
+    tb = _rows(aug / D2 / "trial_balance.csv")
+    _write_csv(sep / "inputs/prior_trial_balance.csv", tb)          # pre-closing: carries August's P&L
+    _write_csv(sep / "inputs/prior_month_pl.csv", [                  # August was the fiscal year's first month
+        {"account": r["account"], "debit": r["debit"], "credit": r["credit"]}
+        for r in tb if coa[r["account"]] in ("revenue", "expense")])
+    schedule = _rows(aug / "inputs/accrual_schedule.csv")
+    booked = {r["item_id"]: r["due_through_period"] for r in _rows(aug / D2 / "accrual_schedule.csv")}
+    _write_csv(sep / "inputs/accrual_schedule.csv", [dict(r, booked_to_date=booked[r["item_id"]]) for r in schedule])
+    params = json.loads((aug / "inputs/close_parameters.json").read_text(encoding="utf-8"))
+    params.update(period="2026-09", statement_ending_balance="35264.18")
+    (sep / "inputs/close_parameters.json").write_text(json.dumps(params), encoding="utf-8")
+
+
+def _september_brief(spec, stem):
+    brief = _brief(spec, stem)
+    brief.intake = {**brief.intake, "period": "2026-09", "statement_ending_balance": "35264.18",
+                    "prior_bank_reconciliation": "inputs/prior_bank_reconciliation.json"}
+    brief.objective = brief.objective.replace("August 2026", "September 2026")
+    return brief
+
+
+SEPTEMBER_BANK_ENTRY = {"entry_id": "ADJ-202609-BANK", "date": "2026-09-30",
+                        "description": "Record September bank service fee per statement",
+                        "support": "bank_reconciliation.json unrecorded row 5",
+                        "lines": [{"account": "6400", "debit": "25.00"}, {"account": "1000", "credit": "25.00"}]}
+
+
+def test_two_consecutive_months_close(spec, tmp_path):
+    aug = _workspace(spec, tmp_path)
+    sub, _, _ = _run(spec, aug, _brief(spec, "harbor_lane_august_close"), M2, [*_m2_work(), M2_SUBMIT])
+    assert sub.status == "ready_for_review"
+    sub, _, _ = _run(spec, aug, _brief(spec, "harbor_lane_close_package"), M3, _m3_plan(spec, aug))
+    assert sub.status == "ready_for_review"
+
+    sep = tmp_path / "september"
+    _september_inputs(spec, aug, sep)
+    work = [("reconcile_bank", {"cash_account": "1000", "period": "2026-09"}) if name == "reconcile_bank"
+            else ("build_accrual_schedule", {"period": "2026-09"}) if name == "build_accrual_schedule"
+            else ("draft_journal_entry", SEPTEMBER_BANK_ENTRY) if name == "draft_journal_entry"
+            else (name, args) for name, args in _m2_work()]
+    sub2, _, events = _run(spec, sep, _september_brief(spec, "harbor_lane_august_close"), M2, [*work, M2_SUBMIT])
+    assert not _errors(events), _errors(events)
+    _assert_submission(spec, sep, sub2, M2, M2_FILES)
+    rec = json.loads((sep / D2 / "bank_reconciliation.json").read_text(encoding="utf-8"))
+    # August's deposit in transit and outstanding check clear; nothing is booked twice
+    assert {i["entry_id"] for i in rec["prior_items_cleared"]} == {"GJ-0018", "GJ-0019"}
+    assert rec["outstanding_items"] == [] and [i["amount"] for i in rec["unrecorded_items"]] == ["-25.00"]
+    assert rec["unexplained_difference"] == rec["opening_difference"] == "0.00"
+    journal = _rows(sep / D2 / "journal_entries.csv")
+    assert {r["entry_id"] for r in journal} == {"ADJ-202609-PRE-001", "ADJ-202609-DEP-001", "ADJ-202609-DEF-001",
+                                                "ADJ-202609-BANK"}               # ACR-001 is fully booked
+
+    sub3, _, events = _run(spec, sep, _september_brief(spec, "harbor_lane_close_package"), M3,
+                           _m3_plan(spec, sep))
+    assert not _errors(events), _errors(events)
+    _assert_submission(spec, sep, sub3, M3, M3_FILES)
+    flux = {r["account"]: r for r in _rows(sep / D3 / "flux.csv")}
+    # September's cost of goods (12,300) against August's month (10,655), not
+    # year to date against August's TB plus August's P&L (22,955 vs 21,310)
+    assert (flux["5000"]["prior"], flux["5000"]["current"], flux["5000"]["flagged"]) == \
+        ("10655.00", "12300.00", "yes")
+    assert flux["5000"]["basis"] == "activity for the month" and flux["1000"]["basis"] == "balance at period end"
+    statements = json.loads((sep / D3 / "financial_statements.json").read_text(encoding="utf-8"))
+    assert statements["period"] == "2026-09" and statements["balance_sheet"]["as_of"] == "2026-09-30"
+    assert statements["income_statement"]["basis"].startswith("fiscal year to date")
+    assert statements["balance_sheet"]["difference"] == "0.00"
+
+
+# --- intake -----------------------------------------------------------------------------
+
+def test_materiality_ignores_labels_and_reads_or():
+    assert materiality_thresholds("Per our FY2026 policy: $2,500 and 5%") == {
+        "flux_threshold_abs": "2500", "flux_threshold_pct": "5"}
+    assert materiality_thresholds("$1,000 or 10%") == {
+        "flux_threshold_abs": "1000", "flux_threshold_pct": "10", "flux_threshold_rule": "any"}
+
+
+def test_an_unreadable_stated_balance_is_left_out_of_close_parameters(spec):
+    intake = {"period": "2026-08", "cash_account": "1000", "statement_ending_balance": "$36,945.58 as of Aug 31"}
+    gaps = spec.validate_intake(intake)
+    assert [(g.field, g.blocking) for g in gaps if g.field == "statement_ending_balance"] == [
+        ("statement_ending_balance", False)]
+    assert "statement_ending_balance" not in close_parameters(intake)
+    assert close_parameters({**intake, "statement_ending_balance": "$36,945.58"})["statement_ending_balance"] \
+        == "36945.58"
