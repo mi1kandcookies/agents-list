@@ -287,8 +287,9 @@ def red_flags_text(overrides: dict | None = None) -> str:
     from specialists.financial_research.checks import RED_FLAG_ITEMS
     lines = ["# Red-flag checklist", ""]
     for cik in CIKS:
-        lines += [f"## {NAMES[cik]} (CIK {cik})", "", "| ID | Item | Status | Evidence |",
-                  "|---|---|---|---|"]
+        # the window filing_red_flags reports for every fixture company
+        lines += [f"## {NAMES[cik]} (CIK {cik})", "", "Window: 2022-11-04 to 2025-11-04", "",
+                  "| ID | Item | Status | Evidence |", "|---|---|---|---|"]
         for item, title in RED_FLAG_ITEMS.items():
             status, evidence = "not_found", "Filing index and FY2024 10-K reviewed"
             if cik == "9900003" and item in COLDHARBOR_HITS:

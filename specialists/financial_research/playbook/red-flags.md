@@ -1,7 +1,10 @@
 # Red-flag checklist
 
 Write `deliverables/m3-diligence-memo/red_flags.md` with one section per
-company, headed `## <Company name> (CIK <number>)`, containing this table:
+company, headed `## <Company name> (CIK <number>)`, containing the review
+window (see Window below) and this table:
+
+Window: 2022-11-04 to 2025-11-04
 
 | ID | Item | Status | Evidence |
 |---|---|---|---|
@@ -38,14 +41,15 @@ Say which it is once you have read it.
 
 ## Window
 
-The window runs three years back from the company's latest filing unless
-the plan says otherwise; the acceptance check uses the same window.
+The window runs at least three years back from the company's latest filing
+(longer if the plan says so); the acceptance check enforces three years.
 `filing_red_flags` reports the window and whether the loaded filing index
 covers it (`complete`). SEC's index JSON holds only recent filings (about a
 year, or 1,000 filings, for heavy filers); when `complete` is false, call
 `edgar_submissions` with `since=<window start>` to load the older pages and
 scan again. The check fails a checklist whose window the index does not
-cover. State the window at the top of each company's section.
+cover. State the window under each company's heading, as
+`Window: <from> to <to>` with the dates `filing_red_flags` returned.
 
 An item you could not assess (text not available) is a question for the
 client, listed in `questions.md`, and marked `not_found` with the limitation
