@@ -133,7 +133,7 @@ window.addEventListener('agentslist:connected', (e) => {
   const btn = document.getElementById('wallet-btn');
   if (btn && e.detail && e.detail.address) {
     const short = e.detail.address.slice(0, 6) + '\u2026' + e.detail.address.slice(-4);
-    btn.innerHTML = `<span style="font-family:var(--font-mono)">${short}</span>`;
+    btn.innerHTML = `<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums">${short}</span>`;
     btn.setAttribute('data-connected', 'true');
   }
 });
@@ -453,7 +453,7 @@ function updateEditorPreview() {
     const dot = isSubagent
       ? `<div style="width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;"></div>`
       : `<div style="width:7px;height:7px;border-radius:50%;background:var(--blue);flex-shrink:0;"></div>`;
-    return `<div class="workflow-preview-row">${dot}<span style="font-family:var(--font-mono);font-size:.6875rem;color:var(--text-3);width:16px;">${i+1}</span><div><div style="font-weight:600;font-size:.875rem;">${name}</div><div style="font-size:.75rem;color:var(--text-3);">${purpose}</div></div></div>`;
+    return `<div class="workflow-preview-row">${dot}<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.6875rem;color:var(--text-3);width:16px;">${i+1}</span><div><div style="font-weight:600;font-size:.875rem;">${name}</div><div style="font-size:.75rem;color:var(--text-3);">${purpose}</div></div></div>`;
   }).join('');
 }
 
@@ -522,7 +522,7 @@ function makeLineChart(id, labels, datasets, options = {}) {
   const el = document.getElementById(id);
   if (!el || typeof Chart === 'undefined') return;
 
-  const MONO = '"IBM Plex Mono", monospace';
+  const MONO = getComputedStyle(document.body).fontFamily || 'Inter, sans-serif';
   const TICK = CHART.tick;
 
   // Gradient fill: created after layout so chartArea dimensions are correct
@@ -605,7 +605,7 @@ function makeLineChart(id, labels, datasets, options = {}) {
           boxWidth: 8, boxHeight: 8,
           callbacks: {
             title: (items) => items[0].label,
-            label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toLocaleString('en-US', { minimumFractionDigits: 0 })}`
+            label: (ctx) => ` ${ctx.dataset.label}: $${fmtUSDC(ctx.parsed.y, { unit: false })}`
           }
         }
       },
@@ -621,7 +621,7 @@ function makeLineChart(id, labels, datasets, options = {}) {
           position: 'right',
           ticks: {
             color: TICK, font: { family: MONO, size: 9 }, padding: 10, maxTicksLimit: 5,
-            callback: (v) => '$' + Number(v).toLocaleString()
+            callback: (v) => '$' + fmtUSDC(v, { unit: false })
           }
         },
         ...options.scales,
@@ -640,7 +640,7 @@ function makeBarChart(id, labels, datasets, options = {}) {
   const el = document.getElementById(id);
   if (!el || typeof Chart === 'undefined') return;
 
-  const MONO = '"IBM Plex Mono", monospace';
+  const MONO = getComputedStyle(document.body).fontFamily || 'Inter, sans-serif';
   const GRID = CHART.grid;
   const TICK = CHART.tick;
 
@@ -666,7 +666,7 @@ function makeBarChart(id, labels, datasets, options = {}) {
           titleFont: { family: MONO, size: 11 },
           bodyFont:  { family: MONO, size: 11 },
           callbacks: {
-            label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(2)}`
+            label: (ctx) => ` ${ctx.dataset.label}: $${fmtUSDC(ctx.parsed.y, { unit: false })}`
           }
         }
       },
@@ -681,7 +681,7 @@ function makeBarChart(id, labels, datasets, options = {}) {
           border: { display: false },
           ticks: {
             color: TICK, font: { family: MONO, size: 10 },
-            callback: (v) => '$' + Number(v).toLocaleString()
+            callback: (v) => '$' + fmtUSDC(v, { unit: false })
           }
         },
       },

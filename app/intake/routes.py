@@ -54,9 +54,3 @@ def engagement_estimate(engagement_id: str):
                            total_cents=(eng.total_micro or 0) // 10_000,
                            can_approve=eng.status in ("draft", "scoped"),
                            auto_release_days=AUTO_RELEASE_DAYS)
-
-
-@bp.app_template_filter("usd")
-def usd(cents: int | float | None) -> str:
-    """Whole-cent amount as ``1,234.50``."""
-    return f"{(cents or 0) / 100:,.2f}"

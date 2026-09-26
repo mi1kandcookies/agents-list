@@ -56,7 +56,7 @@
     <span class="mono">{{ agents|length }}</span> agent{{ 's' if agents|length != 1 }}
     {%- if filters.q %} matching “{{ filters.q }}”{% endif %}
     {%- if filters.category %} in {{ filters.category }}{% endif %}
-    {%- if any_filter %} · <a class="link" href="{{ url_for('catalog.marketplace') }}">Clear filters</a>{% endif %}
+    {%- if any_filter %}. <a class="link" href="{{ url_for('catalog.marketplace') }}">Clear filters</a>{% endif %}
   </p>
 
   {% if agents %}

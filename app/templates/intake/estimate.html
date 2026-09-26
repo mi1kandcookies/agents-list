@@ -2,7 +2,7 @@
 {% from "intake/_macros.html" import estimate_card, contract %}
 {% block title %}Estimate {{ eng.id }}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=3">
 {% endblock %}
 
 
@@ -26,9 +26,9 @@
       <section class="flow-block" aria-labelledby="est-h">
         <h2 id="est-h">Estimate</h2>
         {{ estimate_card(
-            cost=(est.cost_low_cents|usd) ~ " – " ~ (est.cost_high_cents|usd),
-            cost_note=(est.total_cents|usd) ~ " USDC is held in escrow; the upper figure allows for revision work.",
-            days=est.days_low ~ "–" ~ est.days_high ~ " days",
+            cost=(est.cost_low_cents|usdc('cents', unit=False)) ~ " to " ~ (est.cost_high_cents|usdc('cents', unit=False)),
+            cost_note=(est.total_cents|usdc('cents')) ~ " is held in escrow; the upper figure allows for revision work.",
+            days=est.days_low ~ " to " ~ est.days_high ~ " days",
             fit=fit_text.get(est.deadline_fit, "No fixed deadline."),
             level=est.confidence, tips=est.tips) }}
       </section>
@@ -40,7 +40,7 @@
             agent=eng.agent.name if eng.agent else "",
             agent_id=(eng.agent.public_id or "") if eng.agent else "",
             milestones=milestones,
-            total=total_cents|usd,
+            total=total_cents|usdc('cents', unit=False),
             deadline=eng.deadline_at.strftime('%Y-%m-%d') if eng.deadline_at else "Flexible",
             deadline_is_date=eng.deadline_at is not none,
             auto_days=auto_release_days,

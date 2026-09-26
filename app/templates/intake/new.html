@@ -2,7 +2,7 @@
 {% from "intake/_macros.html" import estimate_card, contract %}
 {% block title %}Describe your job{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=3">
 {% endblock %}
 
 {% block content %}
@@ -12,7 +12,7 @@
       <h1 class="flow-eyebrow">Describe your job</h1>
       <div class="flow-progress">
         <p class="flow-progress-label">
-          <span class="mono" id="flow-count">1 / 9</span>
+          <span class="mono" id="flow-count">1 of 9</span>
           <span id="flow-step-name">Outcome</span>
         </p>
         <div class="flow-bar" role="progressbar" aria-label="Progress" aria-valuemin="1"
@@ -32,7 +32,7 @@
     <div class="flow-grid">
       <form class="flow-main" id="flow-form" novalidate data-prefill="{{ prefill }}">
 
-        <!-- 1 · Outcome -->
+        <!-- Step 1: Outcome -->
         <section class="flow-step" data-step="1" data-name="Outcome" aria-labelledby="s1-h">
           <h2 id="s1-h" tabindex="-1">What do you need done?</h2>
           <p class="flow-lede">Describe the result you want, not the tasks. You can refine every detail on the next screens.</p>
@@ -48,7 +48,7 @@
           <p class="flow-error" id="e-1" role="alert" hidden></p>
         </section>
 
-        <!-- 2 · Category -->
+        <!-- Step 2: Category -->
         <section class="flow-step" data-step="2" data-name="Category" aria-labelledby="s2-h" hidden>
           <h2 id="s2-h" tabindex="-1">What kind of work is it?</h2>
           <p class="flow-lede">This picks sensible default milestones and which agents we show you.</p>
@@ -65,7 +65,7 @@
           <p class="flow-error" id="e-2" role="alert" hidden></p>
         </section>
 
-        <!-- 3 · Milestones -->
+        <!-- Step 3: Milestones -->
         <section class="flow-step" data-step="3" data-name="Milestones" aria-labelledby="s3-h" hidden>
           <h2 id="s3-h" tabindex="-1">Break it into milestones</h2>
           <p class="flow-lede">Each milestone is delivered and paid on its own. We suggested a starting point; rename, reorder, add or remove.</p>
@@ -76,12 +76,12 @@
           <ol class="ms-list" id="ms-list" aria-describedby="e-3"></ol>
           <div class="ms-foot">
             <button type="button" class="fbtn fbtn-ghost" id="ms-add">Add milestone</button>
-            <p class="ms-total">Total <span class="mono" id="ms-total">0.00</span> <span class="mono">USDC</span></p>
+            <p class="ms-total">Total <span class="mono" id="ms-total">0</span> <span class="mono">USDC</span></p>
           </div>
           <p class="flow-error" id="e-3" role="alert" hidden></p>
         </section>
 
-        <!-- 4 · Success criteria -->
+        <!-- Step 4: Success criteria -->
         <section class="flow-step" data-step="4" data-name="Success criteria" aria-labelledby="s4-h" hidden>
           <h2 id="s4-h" tabindex="-1">How will you know each one is done?</h2>
           <p class="flow-lede">You approve payment against these. Specific, checkable items work best. Press <kbd>Enter</kbd> in an item to add the next one.</p>
@@ -89,7 +89,7 @@
           <p class="flow-error" id="e-4" role="alert" hidden></p>
         </section>
 
-        <!-- 5 · Deadline -->
+        <!-- Step 5: Deadline -->
         <section class="flow-step" data-step="5" data-name="Deadline" aria-labelledby="s5-h" hidden>
           <h2 id="s5-h" tabindex="-1">When do you need it?</h2>
           <p class="flow-lede">We compare this with the estimate so you know early if it is tight.</p>
@@ -105,7 +105,7 @@
           <p class="flow-error" id="e-5" role="alert" hidden></p>
         </section>
 
-        <!-- 6 · Budget -->
+        <!-- Step 6: Budget -->
         <section class="flow-step" data-step="6" data-name="Budget" aria-labelledby="s6-h" hidden>
           <h2 id="s6-h" tabindex="-1">What is your budget?</h2>
           <p class="flow-lede">Your milestones are rescaled to match. Nothing is charged until you approve the contract.</p>
@@ -127,7 +127,7 @@
           <p class="flow-error" id="e-6" role="alert" hidden></p>
         </section>
 
-        <!-- 7 · Estimate and agent -->
+        <!-- Step 7: Estimate and agent -->
         <section class="flow-step" data-step="7" data-name="Estimate" aria-labelledby="s7-h" hidden>
           <h2 id="s7-h" tabindex="-1">Estimate and your agent</h2>
           {{ estimate_card() }}
@@ -139,20 +139,20 @@
           <p class="flow-error" id="e-7" role="alert" hidden></p>
         </section>
 
-        <!-- 8 · Contract review -->
+        <!-- Step 8: Contract review -->
         <section class="flow-step" data-step="8" data-name="Contract" aria-labelledby="s8-h" hidden>
           <h2 id="s8-h" tabindex="-1">Review the contract</h2>
           <p class="flow-lede">Each term has a plain-English note beside it. Go back to change anything.</p>
           {{ contract(auto_days=auto_release_days) }}
         </section>
 
-        <!-- 9 · Approve -->
+        <!-- Step 9: Approve -->
         <section class="flow-step" data-step="9" data-name="Approve" aria-labelledby="s9-h" hidden>
           <h2 id="s9-h" tabindex="-1">Approve and fund escrow</h2>
           <ol class="next-steps">
             <li>We create the statement of work and show you its hash.</li>
             <li>World ID confirms a real, unique person is approving. It does not share who you are.</li>
-            <li>After you confirm, <span class="mono" data-bind="c-total">0.00</span> <span class="mono">USDC</span> moves into escrow. Nothing moves before that.</li>
+            <li>After you confirm, <span class="mono" data-bind="c-total">0</span> <span class="mono">USDC</span> moves into escrow. Nothing moves before that.</li>
           </ol>
           <div class="sow-created" id="sow-created" hidden>
             <p class="est-label">Statement of work</p>

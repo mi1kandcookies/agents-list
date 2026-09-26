@@ -2,7 +2,7 @@
 {% from "components/status_pill.html" import status_pill %}
 {% from "components/agent_card.html" import monogram, operator_label, trust_badges %}
 {% block title %}{{ job.outcome|truncate(60) }}{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926b">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926n">{% endblock %}
 
 {% macro check_icon() -%}
 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
@@ -16,7 +16,7 @@
   <nav class="crumb" aria-label="Breadcrumb">
     <a href="{{ url_for('engagements.jobs_list') }}">Jobs</a><span aria-hidden="true">/</span>
     <span class="mono">{{ job.engagement_id }}</span>
-    {% if job.parent_engagement_id %}<span aria-hidden="true">·</span><span>Sub-hire of <a class="mono" href="/jobs/{{ job.parent_engagement_id }}">{{ job.parent_engagement_id }}</a></span>{% endif %}
+    {% if job.parent_engagement_id %}<span class="crumb-note">Sub-hire of <a class="mono" href="/jobs/{{ job.parent_engagement_id }}">{{ job.parent_engagement_id }}</a></span>{% endif %}
   </nav>
 
   <header class="job-head">
@@ -112,7 +112,7 @@
     <section class="job-main" aria-labelledby="ms-h">
       <div class="section-bar">
         <h2 id="ms-h">Milestones</h2>
-        <span class="muted"><span class="mono">{{ view.milestones|selectattr('status', 'equalto', 'released')|list|length }}/{{ view.milestones|length }}</span> released</span>
+        <span class="muted"><span class="mono">{{ view.milestones|selectattr('status', 'equalto', 'released')|list|length }}</span> of <span class="mono">{{ view.milestones|length }}</span> released</span>
       </div>
       <ol class="ms-list">
         {% for m in view.milestones %}
@@ -151,7 +151,7 @@
                 {% for a in m.activity %}
                 <li>
                   <time title="{{ a.at|utc }}">{{ a.at|utc('%Y-%m-%d %H:%M') }}</time>
-                  <span>{{ a.label }}{% if a.ref %} · {% if a.href %}<a href="{{ a.href }}"{% if a.href.startswith('http') %} target="_blank" rel="noopener"{% endif %}>{{ a.ref }}</a>{% else %}<span class="mono">{{ a.ref }}</span>{% endif %}{% endif %}{% if a.simulated %}<span class="sim">simulated</span>{% endif %}</span>
+                  <span>{{ a.label }}{% if a.ref %} {% if a.href %}<a class="act-ref" href="{{ a.href }}"{% if a.href.startswith('http') %} target="_blank" rel="noopener"{% endif %}>{{ a.ref }}</a>{% else %}<span class="act-ref mono">{{ a.ref }}</span>{% endif %}{% endif %}{% if a.simulated %}<span class="sim">simulated</span>{% endif %}</span>
                   <span class="amt">{{ a.amount|usdc if a.amount else '' }}</span>
                 </li>
                 {% endfor %}
@@ -232,7 +232,7 @@
         <ul class="side-rows">
           {% for e in job.ledger %}
           <li data-ledger="{{ e.id }}">
-            <span class="what">{{ {'fund': 'Funded', 'release': 'Released', 'hold': 'Held', 'refund': 'Refunded'}.get(e.kind, e.kind|capitalize) }}{% if e.status == 'failed' %} · failed{% elif e.status == 'pending' %} · pending{% endif %}</span>
+            <span class="what">{{ {'fund': 'Funded', 'release': 'Released', 'hold': 'Held', 'refund': 'Refunded'}.get(e.kind, e.kind|capitalize) }}{% if e.status == 'failed' %} (failed){% elif e.status == 'pending' %} (pending){% endif %}</span>
             <span class="amt">{{ e.amount_micro|usdc }}</span>
             <span class="ref">
               {% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}…</a>

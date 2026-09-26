@@ -28,8 +28,9 @@ FLOWS = ("device", "web")
 
 
 @bp.app_template_filter("usdc")
-def _usdc_filter(micro) -> str:
-    return format_usdc(int(micro or 0))
+def _usdc_filter(amount, scale: str = "micro", unit: bool = True) -> str:
+    """``{{ m.amount_micro|usdc }}`` → "900 USDC"; see app.common.money."""
+    return format_usdc(amount, scale, unit=unit)
 
 
 @bp.app_template_filter("utc")
@@ -327,7 +328,7 @@ def _detail_view(eng, job: dict) -> dict:
         if m["submitted_at"]:
             activity.append({"at": m["submitted_at"], "label": "Delivered for review"})
         for a in mine:
-            activity.append({"at": a["created_at"], "label": f"Release approval · {a['pill'][0]}",
+            activity.append({"at": a["created_at"], "label": f"Release approval ({a['pill'][0].lower()})",
                              "href": a["url"], "ref": a["approval_id"]})
         for e in ledger_rows:
             if idx_of.get(e["milestone_id"]) != m["idx"]:
@@ -335,7 +336,7 @@ def _detail_view(eng, job: dict) -> dict:
             label = {"release": "Released to agent", "hold": "Held in escrow"}.get(e["kind"],
                                                                                    e["kind"])
             activity.append({"at": e["created_at"], "amount": e["amount_micro"],
-                             "label": label + (" · failed" if e["status"] == "failed" else ""),
+                             "label": label + (" (failed)" if e["status"] == "failed" else ""),
                              "href": e["explorer"], "ref": e["id"], "simulated": e["simulated"]})
         activity.sort(key=lambda x: x["at"] or 0)
         auto = auto_at.get(m["idx"])

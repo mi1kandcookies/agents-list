@@ -22,7 +22,7 @@
     <li>
       <span>{{ {'fund': 'Funded', 'release': 'Released', 'hold': 'Held', 'refund': 'Refunded'}.get(e.kind, e.kind|capitalize) }}</span>
       <span class="mono">{{ e.amount_micro|usdc }}</span>
-      <span class="mono ref">{% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}… ↗</a>{% elif e.simulated %}{{ e.id }} · simulated{% else %}{{ e.id }}{% endif %}</span>
+      <span class="mono ref">{% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}… ↗</a>{% elif e.simulated %}{{ e.id }} (simulated){% else %}{{ e.id }}{% endif %}</span>
     </li>
     {% endfor %}
   </ul>

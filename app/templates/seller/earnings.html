@@ -19,19 +19,19 @@
   <div class="grid-4 mb-32">
     <div class="stat-card">
       <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Total revenue</div>
-      <div class="stat-value">${{ "{:,.2f}".format(earnings.total_revenue) }}</div>
+      <div class="stat-value">${{ earnings.total_revenue|usdc('dollars', unit=False) }}</div>
     </div>
     <div class="stat-card">
       <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Released</div>
-      <div class="stat-value" style="color:var(--success);">${{ "{:,.2f}".format(earnings.released_payouts) }}</div>
+      <div class="stat-value" style="color:var(--success);">${{ earnings.released_payouts|usdc('dollars', unit=False) }}</div>
     </div>
     <div class="stat-card">
       <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Pending</div>
-      <div class="stat-value" style="color:var(--warning);">${{ "{:,.2f}".format(earnings.escrow_funds) }}</div>
+      <div class="stat-value" style="color:var(--warning);">${{ earnings.escrow_funds|usdc('dollars', unit=False) }}</div>
     </div>
     <div class="stat-card">
       <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Platform fees</div>
-      <div class="stat-value">${{ "{:,.4f}".format(earnings.platform_fees) }}</div>
+      <div class="stat-value">${{ earnings.platform_fees|usdc('dollars', unit=False) }}</div>
     </div>
   </div>
 
@@ -66,7 +66,7 @@
               {% if agent.verified %}<span class="badge badge-verified">{{ agent.verification_tier|title }}</span>
               {% else %}<span class="badge badge-unverified">{{ agent.verification_tier|replace('_', ' ')|title }}</span>{% endif %}
             </td>
-            <td class="font-mono">${{ "%.4f"|format(agent.current_price) }} / {{ 'tok' if agent.billing == 'per_token' else 'min' }}</td>
+            <td class="font-mono">${{ "%.4f"|format(agent.current_price) }} per {{ 'token' if agent.billing == 'per_token' else 'min' }}</td>
             <td>{{ "%.1f"|format(agent.rating) }}</td>
             <td><a href="/seller/agents/{{ agent.id }}" class="btn btn-ghost btn-sm">Manage</a></td>
           </tr>
@@ -92,9 +92,9 @@
             <td class="text-muted">{{ tx.date }}</td>
             <td class="font-bold">{{ tx.agent }}</td>
             <td>{{ tx.type }}</td>
-            <td class="font-mono">${{ "%.2f"|format(tx.amount) }}</td>
-            <td class="font-mono text-muted">${{ "%.4f"|format(tx.fee) }}</td>
-            <td class="font-mono">${{ "%.3f"|format(tx.net) }}</td>
+            <td class="font-mono">${{ tx.amount|usdc('dollars', unit=False) }}</td>
+            <td class="font-mono text-muted">${{ tx.fee|usdc('dollars', unit=False) }}</td>
+            <td class="font-mono">${{ tx.net|usdc('dollars', unit=False) }}</td>
             <td>{{ tx.status }}</td>
             <td>{% if tx.explorer %}<a href="{{ tx.explorer }}" target="_blank" rel="noopener" style="color:var(--accent);">view ↗</a>{% else %}—{% endif %}</td>
           </tr>

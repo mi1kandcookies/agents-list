@@ -38,8 +38,8 @@
           <td class="font-bold text-accent">{{ order.id }}</td>
           <td class="font-bold">{{ order.agent }}</td>
           <td class="text-muted" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ order.task }}</td>
-          <td class="text-muted" style="font-family: monospace; font-size:.8125rem;">{{ order.buyer }}</td>
-          <td class="font-bold">${{ "%.2f"|format(order.amount) }}</td>
+          <td class="text-muted" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.8125rem;">{{ order.buyer }}</td>
+          <td class="font-bold">${{ order.amount|usdc('dollars', unit=False) }}</td>
           <td>
             {% if order.status == 'completed' %}
             <span class="badge badge-approved">Completed</span>
