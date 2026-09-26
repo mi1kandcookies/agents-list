@@ -11,7 +11,7 @@ criteria:
     description: The tree covers the market from several vantage points (buyer, competitor, entrant, regulator, investor) with no obvious gaps for the stated objective.
     weight: 0.2
   - id: source-strategy
-    description: Each leaf names realistic source types, including primary sources, and the plan explains how hard-to-find data will be approached.
+    description: Each leaf names realistic source types, including primary sources; the source map names the concrete sites behind them; and the plan explains how hard-to-find data will be approached.
     weight: 0.2
   - id: scope-discipline
     description: Scope, exclusions, geography, glossary and evidence cutoff are explicit, so the client can approve or change them.

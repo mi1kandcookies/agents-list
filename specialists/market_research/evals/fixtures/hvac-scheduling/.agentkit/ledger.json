@@ -4,7 +4,8 @@
     {"id": "S2", "uri": "https://brightwrench.example.com/pricing", "title": "Brightwrench pricing", "retrieved_at": "2026-09-01T10:05:00Z"},
     {"id": "S3", "uri": "https://tallyho-dispatch.example.com/plans", "title": "Tallyho Dispatch plans", "retrieved_at": "2026-09-01T10:07:00Z"},
     {"id": "S4", "uri": "https://fieldops-weekly.example.net/2026/scheduling-survey", "title": "FieldOps Weekly scheduling survey", "retrieved_at": "2026-09-01T10:12:00Z"},
-    {"id": "S5", "uri": "https://market-notes.example.org/fsm-spend-2025", "title": "FSM spend 2025", "retrieved_at": "2026-09-01T10:20:00Z"}
+    {"id": "S5", "uri": "https://market-notes.example.org/fsm-spend-2025", "title": "FSM spend 2025", "retrieved_at": "2026-09-01T10:20:00Z"},
+    {"id": "S6", "uri": "https://www.workforce.example.gov/hvac/2026-profile", "title": "HVAC workforce profile 2026", "retrieved_at": "2026-09-01T10:25:00Z"}
   ],
   "claims": [
     {"id": "C1", "text": "There were 118,400 US HVAC contractor establishments in 2025.", "source": "S1", "quote": "In 2025 there were 118,400 HVAC contractor establishments in the United States", "location": "para 1"},
@@ -13,6 +14,8 @@
     {"id": "C4", "text": "Tallyho Dispatch Team costs $49 per user per month.", "source": "S3", "quote": "Team plan costs $49 per user per month.", "location": "plans table"},
     {"id": "C5", "text": "38% of small HVAC contractors use dedicated scheduling software.", "source": "S4", "quote": "38% of small HVAC contractors already use dedicated scheduling software", "location": "para 1"},
     {"id": "C6", "text": "US trades spent $1.9B on field-service management software in 2025.", "source": "S5", "quote": "Spending on field-service management software for US trades reached $1.9 billion in 2025", "location": "para 1"},
-    {"id": "C7", "text": "HVAC was 22% of US trades FSM software spend in 2025.", "source": "S5", "quote": "HVAC accounted for 22% of it", "location": "para 1"}
+    {"id": "C7", "text": "HVAC was 22% of US trades FSM software spend in 2025.", "source": "S5", "quote": "HVAC accounted for 22% of it", "location": "para 1"},
+    {"id": "C8", "text": "About 91,000 US HVAC contracting businesses employ fewer than 20 people.", "source": "S6", "quote": "About 91,000 HVAC contracting businesses in the United States employ fewer than 20 people", "location": "para 1"},
+    {"id": "C9", "text": "Small HVAC firms employ a median of 6 technicians.", "source": "S6", "quote": "Small firms employ a median of 6 technicians", "location": "para 2"}
   ]
 }
