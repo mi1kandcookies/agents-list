@@ -46,10 +46,14 @@ def marketplace_stats() -> dict:
 def index():
     """Search-first home: search box, headline figures, categories, agents."""
     from app.models import Agent as AgentModel
-    agents = [a.to_dict() for a in listed_agents_query()
-              .order_by(AgentModel.featured.desc(), AgentModel.verified.desc(),
-                        AgentModel.rating.desc(), AgentModel.id.asc())
-              .limit(9).all()]
+    from app.seller.stamp import stamp_status
+    rows = (listed_agents_query()
+            .order_by(AgentModel.featured.desc(), AgentModel.verified.desc(),
+                      AgentModel.rating.desc(), AgentModel.id.asc())
+            .limit(40).all())
+    # Featured: agents that can be hired right now (valid operator stamp) first.
+    rows.sort(key=lambda a: not stamp_status(a).ok)
+    agents = [a.to_dict() for a in rows[:9]]
     return render_template("landing.html", agents=agents, stats=marketplace_stats(),
                            chips=CATEGORY_CHIPS)
 
