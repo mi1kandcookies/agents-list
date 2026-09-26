@@ -21,7 +21,11 @@ metrics:
 
 Required fields: `name`, `description`, `grain`, `query`, `value_column`,
 `owner`. Names are unique, lowercase, and match the customer's reference
-metric names when a reference exists.
+metric names when a reference exists. `query` names a query saved with
+`save_query` as `queries/<name>.sql`; SQL anywhere else is refused, because
+acceptance only re-runs and hashes the saved queries. The query must compute
+its value from the input tables: the reference totals are not queryable, and
+a value typed into the SQL is refused.
 
 Default positions when the customer has not said otherwise:
 
@@ -30,8 +34,9 @@ Default positions when the customer has not said otherwise:
 - Exact duplicate export rows are removed before aggregation.
 - Counts of customers are distinct customers, not rows.
 - Money is rounded to cents only at the end (`ROUND(SUM(x), 2)`).
-- Tolerance to a reference is 0.5% for money and exact for counts, unless
-  `reference_totals.csv` gives its own `tolerance_pct`.
+- Tolerance to a reference is exact when the query returns a whole number
+  (a count, or a sum of integer cents) and 0.5% otherwise, unless
+  `reference_totals.csv` gives its own `tolerance_pct` for the metric.
 
 If a metric cannot reconcile, do not force it. Write down both numbers, the
 difference, the rule you think explains it, and the question for the
