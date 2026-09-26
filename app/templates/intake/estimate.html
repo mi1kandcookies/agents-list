@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "intake/_macros.html" import estimate_card, contract %}
+{% block title %}Estimate {{ eng.id }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}">
+{% endblock %}
+
+
+{% block content %}
+{% set fit_text = {
+  "ok": "Fits your deadline.",
+  "tight": "Tight: your deadline falls inside this range.",
+  "short": "Your deadline is shorter than the lower estimate.",
+} %}
+<main class="flow">
+  <div class="flow-wrap flow-narrow">
+    <header class="flow-top">
+      <p class="flow-eyebrow">Engagement <span class="mono">{{ eng.id }}</span>
+        <span class="status mono">{{ eng.status }}</span></p>
+      <h1 class="flow-title">Estimate and contract</h1>
+      <p class="flow-lede">Created <span class="mono">{{ eng.created_at.strftime('%Y-%m-%d') }}</span>.
+        {% if can_approve %}Check the terms below, then approve to fund escrow.{% endif %}</p>
+    </header>
+
+    <div class="flow-main">
+      <section class="flow-block" aria-labelledby="est-h">
+        <h2 id="est-h">Estimate</h2>
+        {{ estimate_card(
+            cost=(est.cost_low_cents|usd) ~ " – " ~ (est.cost_high_cents|usd),
+            cost_note=(est.total_cents|usd) ~ " USDC is held in escrow; the upper figure allows for revision work.",
+            days=est.days_low ~ "–" ~ est.days_high ~ " days",
+            fit=fit_text.get(est.deadline_fit, "No fixed deadline."),
+            level=est.confidence, tips=est.tips) }}
+      </section>
+
+      <section class="flow-block" aria-labelledby="contract-h">
+        <h2 id="contract-h">Contract</h2>
+        {{ contract(
+            brief=eng.outcome,
+            agent=eng.agent.name if eng.agent else "",
+            agent_id=(eng.agent.public_id or "") if eng.agent else "",
+            milestones=milestones,
+            total=total_cents|usd,
+            deadline=eng.deadline_at.strftime('%Y-%m-%d') if eng.deadline_at else "Flexible",
+            deadline_is_date=eng.deadline_at is not none,
+            auto_days=auto_release_days,
+            sow_hash=eng.sow_hash, engagement_id=eng.id) }}
+      </section>
+
+      {% if can_approve %}
+      <div class="flow-nav">
+        <a class="fbtn fbtn-ghost" href="{{ url_for('intake.new_job') }}">Start a different job</a>
+        <button type="button" class="fbtn fbtn-primary fbtn-lg" id="estimate-approve"
+                data-engagement-id="{{ eng.id }}" data-total="{{ total_cents / 100 }}">Approve with World ID</button>
+      </div>
+      <p class="flow-error" id="e-9" role="alert" hidden></p>
+      {% endif %}
+    </div>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{% if can_approve %}<script src="{{ url_for('static', filename='js/flow.js') }}"></script>{% endif %}
+{% endblock %}

@@ -86,7 +86,10 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     from app.chain import bp as chain_bp
     from app.seller import bp as seller_bp
 
-    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
+    from app.intake import bp as intake_bp
+
+    # intake first: its guided flow serves /new ahead of the catalog placeholder.
+    for bp in (intake_bp, catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
         app.register_blueprint(bp)
 
     # Custody chain (docs/decisions/0001-custody-chain.md); routes land per area.
