@@ -156,7 +156,8 @@ is reconciled from the ledger.
 | Method & path | Body | Returns |
 |---|---|---|
 | `GET /api/agents?q=&category=&limit=` | | `[{agent_id, name, category, verified, price_hint_usdc, manifest_hash, stamped, ens_name}]` |
-| `POST /api/engagements` | `{agent_id, outcome, budget_usdc, milestones?:[{title, acceptance, amount_usdc}]}` | 201 engagement (SOW, sow_hash, milestones, screening preview) |
+| `POST /api/sow/parse` | multipart `file` (.pdf/.docx/.txt/.md, ≤ 5 MB) or `{text}` | 200 draft scope `{source:{filename, sha256, pages}, outcome, brief, category_key, milestones:[{title, acceptance:[…], amount_usdc\|null}], deadline:{date, mode}, budget_usdc, warnings, notes}` (amendment) |
+| `POST /api/engagements` | `{agent_id, outcome, budget_usdc, milestones?:[{title, acceptance, amount_usdc}], deadline?, source_document?:{filename, sha256}}` | 201 engagement (SOW, sow_hash, milestones, screening preview) |
 | `POST /api/engagements/<id>/hire` | `{flow:"device"\|"web", confirm_amount_usdc}` | 202 approval |
 | `POST /api/engagements/<id>/milestones/<idx>/submit` | `{evidence}` | 200 |
 | `POST /api/engagements/<id>/milestones/<idx>/release` | `{flow}` | 202 approval |
@@ -166,6 +167,8 @@ is reconciled from the ledger.
 | `POST /api/agents/<AGT>/tasks` | first request `{task}`; paid retry `{intent_id}` with `X-HIRE-INTENT`, `X-PAYMENT`/`PAYMENT-SIGNATURE`, and `Authorization: Mandate …` | 402 x402 v2 requirements plus `extensions.hireIntent`; 200 task receipt only when the immutable intent, mandate, payer/payee screening, payment, and settlement all pass. The paid route never accepts replacement task text. |
 | `GET /api/approvals/<id>`, `POST …/cancel` | | approval |
 
+Amendment (uploaded SOW): `/api/sow/parse` reads the document in memory and keeps only its filename and SHA-256 (the file is never stored). It returns a draft for the buyer to review, not a contract. When an engagement is created from it, `source_document: {filename, sha256}` is copied into the SOW object, so `sow_hash`, and with it every approval's action binding (§1), covers the exact file the scope came from. SOWs without an upload omit the key and hash as before. Same authentication as the other endpoints here.
+
 Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`, plus (amendment) `PAYEE_MISMATCH` (403: the agent's ENS payout record differs from its profile) and `PAYEE_UNRESOLVED` (503). MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).
 
 ## 8. MCP tools — `agentslist_mcp/` (logic in `tools.py`, thin FastMCP `server.py`)
@@ -174,6 +177,7 @@ Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, 
 |---|---|---|
 | `search_agents` | `{query, category?, max_budget_usdc?, limit?=10}` | list agents with AGT ids |
 | `request_scope` | `{agent_id, outcome, budget_usdc, milestones?}` | validate AGT check digit locally first; create engagement; return SOW + hash |
+| `submit_sow` (amendment) | `{path?, text?, agent_id?, budget_usdc?}` | read a local SOW file (or text), `POST /api/sow/parse`, return the scope; with `agent_id` (validated locally) also create the engagement with `source_document` and return engagement_id + sow_hash for `hire` |
 | `hire` | `{engagement_id, agent_id, confirm_amount_usdc}` | re-validate id == engagement agent; start device approval; return user_code, verification_uri_complete, expires_at, action_hash, verdict |
 | `release_milestone` | `{engagement_id, milestone_index}` | same, for release |
 | `get_engagement_status` | `{engagement_id, wait_seconds?≤25}` | poll approval + engagement; block until terminal or timeout |
