@@ -16,7 +16,7 @@ files, so a forged or plugged number fails.
 | id | deliverables (under `deliverables/<id>/`) | domain checks |
 |---|---|---|
 | `m1-onboarding` | `diagnostic.md`, `account_map.csv`, `opening_balance_tieout.csv`, `categorization_rulebook.csv`, `close_checklist.md` | `account_map_complete`, `opening_balances_tie` |
-| `m2-period-close` | `categorized.csv`, `exceptions.csv`, `bank_reconciliation.json`, `accrual_schedule.csv`, `journal_entries.csv`, `trial_balance.csv` | `categorization_complete`, `bank_rec_ties`, `journal_entries_balanced`, `trial_balance_ties`, `no_plugs` |
+| `m2-period-close` | `categorized.csv`, `exceptions.csv`, `bank_reconciliation.json`, `accrual_schedule.csv`, `journal_entries.csv`, `trial_balance.csv` | `categorization_complete`, `bank_rec_ties`, `journal_entries_balanced`, `schedule_entries_tie`, `trial_balance_ties`, `no_plugs` |
 | `m3-close-package` | `flux.csv`, `financial_statements.json`, `close_package.md` | `trial_balance_ties`, `flux_commentary_complete`, `financial_statements_tie` |
 
 Each milestone also uses kit checks (`files_exist`, `markdown_sections`,
@@ -27,14 +27,15 @@ Each milestone also uses kit checks (`files_exist`, `markdown_sections`,
 
 | file | columns |
 |---|---|
-| `bank_statement.csv` | date, description, amount (+ in / - out), balance |
+| `bank_statement.csv` | date, description, amount (+ in / - out), balance; oldest or newest first |
 | `gl_detail.csv` | entry_id, date, account, description, debit, credit (opening balances dated before the period) |
 | `chart_of_accounts.csv` | account, name, type (asset, liability, equity, revenue, expense) |
 | `prior_trial_balance.csv` | account, debit, credit |
-| `prior_month_pl.csv` (optional) | account, debit, credit, for P&L flux |
+| `prior_month_pl.csv` (optional) | account, debit, credit: last month's activity only, for P&L flux (without it the P&L is not compared) |
+| `prior_bank_reconciliation.json` or `.csv` (optional) | last month's `bank_reconciliation.json`, or its outstanding items (date, description, amount), so they can clear this month |
 | `accrual_schedule.csv` (optional) | item_id, type, description, pl_account, balance_account, total_amount, start_date, months, booked_to_date, support |
 | `categorization_rules.csv` (optional) | pattern, account, confidence |
-| `close_parameters.json` | period, cash_account, statement_ending_balance, flux thresholds; written from the intake before the run when the client did not upload one |
+| `close_parameters.json` | period, cash_account, statement_ending_balance, flux thresholds (and optionally date_window); written from the intake before the run when the client did not upload one |
 
 ## Tools
 

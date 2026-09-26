@@ -25,14 +25,15 @@ drafts the reversal; explain why it happened.
 
 - Bank fees and interest from the reconciliation's unrecorded items.
 - Reclasses of items the client identified in answer to a question; cite the
-  answer.
+  answer (`client answer <date>`). This is the only entry allowed to touch a
+  suspense account, and only to move its balance toward zero.
 - Nothing else without support. Estimates (accruals without an invoice) state
   the basis, for example a meter read, a contract rate or last month's bill.
 
 ## Entry ids and support
 
-Use `ADJ-<YYYYMM>-<short-name>` ids. Support cites the file and the row or
-item id (`inputs/accrual_schedule.csv#PRE-001`,
+Use `ADJ-<YYYYMM>-<short-name>` ids, one entry per schedule item, dated in
+the period being closed. Support cites the file and the row or item id (`inputs/accrual_schedule.csv#PRE-001`,
 `bank_reconciliation.json unrecorded row 17`, `client answer 2026-09-03`).
 
 ## Needs a human decision
