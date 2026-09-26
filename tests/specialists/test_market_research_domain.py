@@ -470,3 +470,17 @@ def test_rubrics_are_well_formed():
         assert 0 < rubric["threshold"] <= 1
         assert sum(c["weight"] for c in rubric["criteria"]) == pytest.approx(1.0)
         assert len({c["id"] for c in rubric["criteria"]}) == len(rubric["criteria"])
+
+
+def test_eval_cases_are_well_formed():
+    import yaml
+
+    manifest = yaml.safe_load((PKG / "agent.yaml").read_text(encoding="utf-8"))
+    milestone_ids = {m["id"] for m in manifest["milestones"]}
+    cases = sorted((PKG / "evals" / "cases").glob("*.json"))
+    assert cases
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert set(case) == {"name", "brief", "milestone", "notes"}
+        assert case["name"] == path.stem and case["milestone"] in milestone_ids
+        assert case["brief"]["specialist"] == "market-research" and case["brief"]["objective"]
