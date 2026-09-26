@@ -55,6 +55,7 @@ OUTLINE_PATH = "deliverables/m2-outline/outline.md"
 DRAFT_PATH = "deliverables/m3-draft/proposal.md"
 ANSWERS_PATH = "deliverables/m3-draft/questionnaire_answers.csv"
 FINAL_MATRIX_PATH = "deliverables/m3-draft/compliance_matrix.csv"
+CHECKLIST_PATH = "deliverables/m3-draft/submission-checklist.md"
 KB_DIR = "inputs/kb"
 
 MATRIX_COLUMNS = ["req_id", "source", "section", "page", "type", "requirement",
@@ -791,7 +792,8 @@ def unsupported_tokens(sentence: str, support: str) -> list[str]:
     text does not contain."""
     body = _SECTION_REF.sub(" ", _CITATION.sub(" ", _COMMENT.sub(" ", sentence)))
     support_numbers = {_norm_number(t) for t in _NUMBER.findall(support)}
-    missing = [t for t in _NUMBER.findall(body) if _norm_number(t) not in support_numbers]
+    # Certification names are matched whole (so "SOC 2" is not also a bare "2").
+    missing = [t for t in _NUMBER.findall(_CERT.sub(" ", body)) if _norm_number(t) not in support_numbers]
     squashed = _squash(support)
     missing += [c for c in _CERT.findall(body) if _squash(c) not in squashed]
     return missing
@@ -845,17 +847,31 @@ def grounding_report(workspace: Path, *, fetch=None, run=None, draft: str = DRAF
                           _req_texts(doc))
 
 
+def response_locations(workspace: Path, draft: str = DRAFT_PATH,
+                       checklist: str = CHECKLIST_PATH) -> dict[str, list[str]]:
+    """Requirement id -> headings carrying its marker, in the draft and in the
+    submission checklist (prefixed "Checklist: ")."""
+    found: dict[str, list[str]] = {}
+    for rel, prefix in ((draft, ""), (checklist, "Checklist: ")):
+        if resolve(workspace, rel).is_file():
+            for rid, heads in draft_locations(read_text(workspace, rel)).items():
+                found.setdefault(rid, []).extend(prefix + h for h in heads)
+    return found
+
+
 def update_compliance_matrix(workspace: Path, *, fetch=None, run=None,
                              requirements: str = REQUIREMENTS_PATH, draft: str = DRAFT_PATH,
-                             answers: str | None = None, base_matrix: str = MATRIX_PATH,
+                             checklist: str = CHECKLIST_PATH, answers: str | None = None,
+                             base_matrix: str = MATRIX_PATH,
                              out: str = FINAL_MATRIX_PATH) -> dict[str, Any]:
-    """Fill response_section/status from the draft's requirement markers (and
-    the questionnaire answer sheet); owners are kept from the M1 matrix."""
+    """Fill response_section/status from the requirement markers in the draft
+    and submission checklist (and the questionnaire answer sheet); owners are
+    kept from the M1 matrix."""
     doc = load_requirements(workspace, requirements)
     owners = {}
     if resolve(workspace, base_matrix).is_file():
         owners = {r.get("req_id", ""): r.get("owner", "") for r in read_csv_rows(workspace, base_matrix)}
-    locations = draft_locations(read_text(workspace, draft)) if resolve(workspace, draft).is_file() else {}
+    locations = response_locations(workspace, draft, checklist)
     answered: dict[str, str] = {}
     if answers and resolve(workspace, answers).is_file():
         for row in read_csv_rows(workspace, answers):
@@ -985,8 +1001,8 @@ TOOL_DEFS: list[dict[str, Any]] = [
     {"name": "update_compliance_matrix", "risk": "write", "function": update_compliance_matrix,
      "description": "Rebuild the compliance matrix from the draft's <!-- R-### --> markers (and the "
                     "questionnaire answer sheet): response section and status per requirement.",
-     "input_schema": _schema({"requirements": _STR, "draft": _STR, "answers": _STR,
-                              "base_matrix": _STR, "out": _STR})},
+     "input_schema": _schema({"requirements": _STR, "draft": _STR, "checklist": _STR,
+                              "answers": _STR, "base_matrix": _STR, "out": _STR})},
     {"name": "grounding_report", "risk": "read", "function": grounding_report,
      "description": "Scan the draft for unresolved [KB:]/[REQ:] citations, cited sentences whose "
                     "numbers or certifications are not in the cited text, and uncited company "
