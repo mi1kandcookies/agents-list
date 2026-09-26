@@ -93,6 +93,12 @@ Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `perf`, `ci`, `build`
 5. Open as **Draft** while work is in progress; mark **Ready for review** when CI is green and the checklist is done.
 6. UI changes: include a screenshot or short clip. Contract changes: include `forge test` output and gas notes.
 7. AI agents opening PRs must state in the description which agent/model produced the change and what the human asked for.
+8. **AI agents must self-review before requesting review or merging.** After the last commit, re-read your *entire* diff (`git diff origin/main...HEAD` or `gh pr diff`) with fresh eyes — as a skeptical reviewer, not the author — and fix what you find. If your tool has a review command (e.g. `/code-review` in Claude Code), run it. Then fill in the `## Self-review` section of the PR description:
+   - **Checked:** what you verified (tests run, pages exercised, edge cases, AGENTS.md rules).
+   - **Found & fixed:** issues the review caught and how you fixed them (or "none").
+   - **Risks / not covered:** what's untested, assumptions, anything a human reviewer should look at closely.
+
+   Re-do the self-review after every new push. The `self-review` CI check fails an agent-authored PR (the "AI agent" box is ticked) whose description lacks this section. A self-review never replaces the human code-owner approval.
 
 ---
 
@@ -104,13 +110,11 @@ Every PR to `main` requires **all** of:
 |---|---|
 | ✅ CI (`test`) passes | required status check |
 | ✅ `content-policy` passes (rule 7) | required status check |
-| 🤖 AI review ran (`claude-review`) | required status check — automatic on every PR push |
+| ✅ `self-review` passes (agent PRs, §5.8) | required status check |
 | 👤 **1 approval from a code owner** (not the author) | branch protection + `.github/CODEOWNERS` |
 
-- The AI review posts a summary comment and inline comments. **Address every 🔴 blocking finding** (fix it, or reply explaining why it isn't a problem) before requesting human review.
 - New commits dismiss stale approvals — re-request review after pushing changes.
 - Reviewers: aim to respond within 1 business day. Use "Request changes" only for real blockers; prefix nits with `nit:`.
-- You can ask the AI reviewer follow-up questions by commenting `@claude …` on the PR.
 - **Contracts (`contracts/`)** and **wallet/payment code (`chain/`)**: reviewer must actually run the tests locally, not just read the diff.
 
 ---
@@ -120,7 +124,7 @@ Every PR to `main` requires **all** of:
 - **Squash and merge only** (enforced in repo settings). The PR title becomes the commit on `main`.
 - The **author** merges once all gates are green (not the reviewer), so the author owns the timing.
 - Linear history: no merge commits on `main`.
-- If `main` moved and the PR is out of date, rebase and push again (CI + AI review re-run).
+- If `main` moved and the PR is out of date, rebase and push again (CI re-runs).
 - Something broke `main`? Revert first (`git revert` via a PR), fix after.
 
 ---

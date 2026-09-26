@@ -46,3 +46,28 @@ jobs:
             echo "::error::Blocked terms found in PR title/body"; fail=1
           fi
           [ "$fail" = 0 ] || { echo "See AGENTS.md rule 7."; exit 1; }
+
+  # AGENTS.md §5.8: agent-authored PRs must include a self-review.
+  self-review:
+    name: self-review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a Self-review section on agent PRs
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          [ "$EVENT" = "pull_request" ] || { echo "Not a PR; skipping"; exit 0; }
+          if ! printf '%s' "$PR_BODY" | grep -qiE '^- \[[xX]\] AI agent'; then
+            echo "Human-authored PR; self-review optional"; exit 0
+          fi
+          section=$(printf '%s\n' "$PR_BODY" | awk '/^## Self-review/{f=1;next} /^## /{f=0} f')
+          for field in "Checked" "Found & fixed" "Risks / not covered"; do
+            line=$(printf '%s\n' "$section" | grep -F -- "**$field:**" | head -1)
+            value=$(printf '%s' "$line" | sed 's/.*:\*\*[[:space:]]*//')
+            if [ -z "$line" ] || [ -z "$value" ]; then
+              echo "::error::Agent PR is missing '$field' in the Self-review section (AGENTS.md §5.8)."
+              exit 1
+            fi
+          done
+          echo "Self-review present."

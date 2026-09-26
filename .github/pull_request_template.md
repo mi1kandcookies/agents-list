@@ -13,11 +13,18 @@ Closes #
 - [ ] Human
 - [ ] AI agent — agent/model: ______ — human who asked for it: @______
 
+## Self-review
+
+<!-- Required for AI-agent PRs (AGENTS.md §5.8). Humans: optional but encouraged. -->
+
+- **Checked:**
+- **Found & fixed:**
+- **Risks / not covered:**
+
 ## Checklist
 
 - [ ] Branch follows `<type>/<issue#>-<description>` and is rebased on `main`
 - [ ] `pytest` passes locally
 - [ ] No secrets, keys or `.env` files committed; new env vars added to `.env.example`
 - [ ] Scope limited to the linked issue
-- [ ] AI review findings addressed (fixed or replied to)
 - [ ] Docs/README updated if behavior or setup changed
