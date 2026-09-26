@@ -70,8 +70,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     limiter.init_app(app)
 
     # Import models so their tables are registered on db.metadata before
-    # migrations or create_all() run. (Upstream called create_all() before the
-    # models were imported, so a fresh database came up with no tables.)
+    # migrations or create_all() run.
     from app import models  # noqa: F401
 
     from app.admin import bp as admin_bp
