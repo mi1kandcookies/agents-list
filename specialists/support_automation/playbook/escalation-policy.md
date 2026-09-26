@@ -16,6 +16,11 @@ owner's written approval.
 
 - Recall beats precision. A false escalation costs a few minutes of a
   person's time; a missed one can cost a customer, a chargeback or a lawsuit.
+  Still, a rule set that hands most conversations to a person is not an
+  automation: the held-out replay needs at least 30% precision.
+- Keywords are phrases of at least three characters in a list. They match
+  at the start of a word ("sue" matches "sued", not "issue"), so a stem
+  catches its inflections; prefer phrases over single common words.
 - The agent never promises refunds, credits or exceptions that no approved
   policy states. If the policy has a limit (amount, days), amounts above the
   limit escalate.
