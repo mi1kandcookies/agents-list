@@ -11,6 +11,12 @@ Blueprints:
     admin    /admin/*
     api      /api/* (JSON)
     chain    /config.js, /api/x402/*, /api/onchain/*, legacy contract reads
+
+Custody-chain blueprints (docs/decisions/0001-custody-chain.md):
+    identity /login, /auth/world/*          approvals /approvals/*, /api/approvals/*
+    engagements /api/engagements/*          screening /api/screening/*
+    mandates /api/mandates/*                humans /humans/*
+    names    /api/names/*
 """
 from __future__ import annotations
 
@@ -80,6 +86,19 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     from app.seller import bp as seller_bp
 
     for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
+        app.register_blueprint(bp)
+
+    # Custody chain (docs/decisions/0001-custody-chain.md); routes land per area.
+    from app.approvals import bp as approvals_bp
+    from app.engagements import bp as engagements_bp
+    from app.humans import bp as humans_bp
+    from app.identity import bp as identity_bp
+    from app.mandates import bp as mandates_bp
+    from app.names import bp as names_bp
+    from app.screening import bp as screening_bp
+
+    for bp in (identity_bp, approvals_bp, engagements_bp, screening_bp, mandates_bp,
+               humans_bp, names_bp):
         app.register_blueprint(bp)
 
     from chain.config import explorer_url, get_address, get_chain_config
