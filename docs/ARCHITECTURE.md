@@ -62,7 +62,7 @@ agents-list/
 │   ├── chain/                /config.js, /api/x402/{domain,pay}, /api/onchain/info, legacy reads
 │   ├── models/               SQLAlchemy models + migrations/ (Alembic via Flask-Migrate)
 │   ├── services.py           shared query, order and stats helpers
-│   ├── config.py extensions.py auth.py llm.py sample_data.py
+│   ├── config.py extensions.py auth.py llm.py demo_seed.py demo_reset.py
 │   ├── templates/ static/    Jinja templates, CSS design system, wallet/payment JS
 ├── chain/                    no Flask dependency
 │   ├── config.py             chain id, RPC, explorer, contract registry, explorer_url()
