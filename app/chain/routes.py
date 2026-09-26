@@ -28,12 +28,16 @@ def config_js():
     """window.AGENTSLIST_CHAIN / AGENTSLIST_ADDRESSES for the frontend, rendered
     from server env so the browser never carries hardcoded chain values."""
     from chain.config import get_chain_config, get_deployment
+    from chain.usdc import cached_usdc_domain
     d = get_deployment()
     js = (
         "// Auto-generated from server env. Do not edit.\n"
         "window.AGENTSLIST_CHAIN = " + json.dumps(get_chain_config().to_frontend()) + ";\n"
         "window.AGENTSLIST_ADDRESSES = " + json.dumps(d["contracts"]) + ";\n"
         "window.AGENTSLIST_PAYMENT_RECIPIENT = " + json.dumps(d["paymentRecipient"]) + ";\n"
+        # Cached/fallback domain only; the signer fetches /api/x402/domain,
+        # which reads name()/version() from the token contract.
+        "window.AGENTSLIST_USDC_DOMAIN = " + json.dumps(cached_usdc_domain()) + ";\n"
     )
     return Response(js, mimetype="application/javascript")
 
@@ -42,6 +46,24 @@ def config_js():
 def api_onchain_info():
     from chain.config import get_deployment
     return jsonify(get_deployment())
+
+
+@bp.route("/api/x402/domain")
+def api_x402_domain():
+    """EIP-712 domain + token metadata a buyer needs to sign an EIP-3009
+    USDC authorization. Read from the token contract, cached, with a
+    name "USDC" / version "2" fallback when the RPC is unreachable."""
+    from chain.config import get_address, payment_recipient
+    from chain.usdc import TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_DECIMALS, get_usdc_domain
+    domain = get_usdc_domain(refresh=request.args.get("refresh") == "1")
+    return jsonify({
+        "domain": {k: domain[k] for k in ("name", "version", "chainId", "verifyingContract")},
+        "domainSource": domain["source"],
+        "types": TRANSFER_WITH_AUTHORIZATION_TYPES,
+        "primaryType": "TransferWithAuthorization",
+        "token": {"address": get_address("USDC"), "symbol": "USDC", "decimals": USDC_DECIMALS},
+        "recipient": payment_recipient(),
+    })
 
 
 @bp.route("/api/x402/pay", methods=["POST"])
@@ -79,6 +101,16 @@ def api_x402_pay():
 
     oc = get_onchain()
     if oc and oc.facilitator and recipient:
+        # Check the signature against the token's EIP-712 domain before
+        # spending gas on a transaction that would revert.
+        from chain.usdc import get_usdc_domain, recover_authorization_signer
+        try:
+            signer = recover_authorization_signer(payload, get_usdc_domain(w3=oc.w3))
+        except Exception:
+            signer = ""
+        if signer.lower() != buyer_addr.lower():
+            return api_error("signature does not match 'from' for the USDC domain",
+                             code="INVALID_SIGNATURE", field="v")
         try:
             result = oc.x402_execute(payload)
         except Exception as e:

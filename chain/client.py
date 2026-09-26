@@ -3,7 +3,7 @@ chain/client.py - Python-native web3 client for the platform's on-chain calls.
 
     from chain.client import OnChain
     oc = OnChain.from_env()
-    oc.x402_execute(signed_permit)          # submit a buyer-signed EIP-3009 transfer
+    oc.x402_execute(signed_permit)          # submit a buyer-signed EIP-3009 USDC transfer
     oc.submit_incident(agent_id, user, 1)   # gatekeeper-signed incident (legacy contract)
 
 Network and addresses come from chain.config (Ethereum Sepolia by default).
@@ -15,6 +15,8 @@ Env:
     FACILITATOR_PRIVATE_KEY  pays gas to submit buyer-signed authorizations
     GATEKEEPER_PRIVATE_KEY   signs incidents (legacy ReputationContract)
     MIN_SIGNER_ETH_RESERVE   ETH floor the signer must keep (default 0.01)
+    PRIORITY_FEE_GWEI        fallback EIP-1559 tip when the node can't suggest one
+    MAX_FEE_GWEI             optional cap on maxFeePerGas
     RPC_TIMEOUT_SECONDS      HTTP timeout for RPC calls (default 10)
 
 Each signer has its own key; there is deliberately no shared PRIVATE_KEY
@@ -37,6 +39,42 @@ except ImportError:  # the app still boots; chain routes return 503
 
 class ContractNotConfigured(RuntimeError):
     """The contract needed for this call has no address on the active chain."""
+
+
+def _gwei_env(name: str, default: float | None) -> float | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def eip1559_fees(w3) -> dict:
+    """EIP-1559 fee fields (type 2).
+
+    maxPriorityFeePerGas comes from eth_maxPriorityFeePerGas (fallback
+    PRIORITY_FEE_GWEI, default 1.5 gwei); maxFeePerGas = 2 x latest base fee
+    + priority, which survives several full blocks of base-fee growth. Sepolia
+    fees spike, so MAX_FEE_GWEI optionally caps the total. Chains without a
+    base fee fall back to a legacy gasPrice.
+    """
+    block = w3.eth.get_block("latest")
+    base_fee = block.get("baseFeePerGas") if hasattr(block, "get") else getattr(block, "baseFeePerGas", None)
+    if base_fee is None:
+        return {"gasPrice": int(w3.eth.gas_price)}
+    try:
+        priority = int(w3.eth.max_priority_fee)
+    except Exception:
+        priority = int(Web3.to_wei(_gwei_env("PRIORITY_FEE_GWEI", 1.5), "gwei"))
+    max_fee = 2 * int(base_fee) + priority
+    cap = _gwei_env("MAX_FEE_GWEI", None)
+    if cap is not None:
+        cap_wei = int(Web3.to_wei(cap, "gwei"))
+        max_fee = min(max_fee, cap_wei)
+        priority = min(priority, max_fee)
+    return {"type": 2, "maxFeePerGas": max_fee, "maxPriorityFeePerGas": priority}
 
 
 def _reserve_eth() -> float:
@@ -129,8 +167,7 @@ class OnChain:
         return bool(self._address(name))
 
     def _address(self, name: str) -> str | None:
-        key = _ADDRESS_KEYS[name]
-        return get_address(key) if key != "USDC" else _usdc_address()
+        return get_address(_ADDRESS_KEYS[name])
 
     def contract(self, name: str):
         """web3 contract for `name`, or ContractNotConfigured."""
@@ -242,7 +279,7 @@ class OnChain:
             "from": addr,
             "nonce": nonce if nonce is not None else self.w3.eth.get_transaction_count(addr, "pending"),
             "chainId": self.chain.chain_id,
-            "gasPrice": self.w3.eth.gas_price,
+            **eip1559_fees(self.w3),
         }
 
     def _sign_send(self, tx: dict, signer) -> bytes:
@@ -270,9 +307,3 @@ class OnChain:
                 f"to keep the {reserve:.3f} ETH reserve floor."
             )
 
-
-def _usdc_address() -> str | None:
-    """Payment token address. Set MOCK_USDC_ADDRESS until a Sepolia token is configured."""
-    from chain.config import _ADDRESS_RE
-    value = (os.environ.get("MOCK_USDC_ADDRESS") or "").strip()
-    return value if _ADDRESS_RE.match(value) else None

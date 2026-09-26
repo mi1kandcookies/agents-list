@@ -10,6 +10,9 @@ for _var in ("FACILITATOR_PRIVATE_KEY", "GATEKEEPER_PRIVATE_KEY", "PRIVATE_KEY",
              "LLM_URL", "API_KEY", "DATABASE_URL"):
     os.environ.pop(_var, None)
 os.environ["FLASK_ENV"] = "testing"
+# Unroutable RPC: any accidental chain read fails fast and falls back.
+os.environ["RPC_URL"] = "http://127.0.0.1:9"
+os.environ["RPC_TIMEOUT_SECONDS"] = "1"
 
 from app import create_app  # noqa: E402
 from app.extensions import db as _db  # noqa: E402
@@ -19,6 +22,8 @@ WALLET = "0x" + "b" * 40
 
 @pytest.fixture()
 def app():
+    from chain.usdc import clear_cache
+    clear_cache()
     app = create_app("testing")
     with app.app_context():
         _db.drop_all()

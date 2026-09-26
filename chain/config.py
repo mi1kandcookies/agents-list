@@ -13,6 +13,7 @@ change env vars:
     EXPLORER_URL        default https://sepolia.etherscan.io
     NATIVE_CURRENCY_SYMBOL / NATIVE_CURRENCY_NAME   default ETH / Sepolia Ether
 
+    USDC_ADDRESS        payment token (default: Circle USDC on Sepolia)
     <NAME>_ADDRESS      per-contract address override, see CONTRACTS below.
 
 Nothing in this module touches the network.
@@ -31,7 +32,13 @@ SEPOLIA_EXPLORER = "https://sepolia.etherscan.io"
 # Contracts the platform knows about. `default` is the Sepolia address when
 # one exists; None means "not deployed on this network yet" and every feature
 # that needs it degrades gracefully (503 / DB-only).
+CIRCLE_USDC_SEPOLIA = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+
 CONTRACTS: dict[str, dict] = {
+    # Payment token. Circle's USDC on Sepolia supports EIP-3009
+    # transferWithAuthorization / receiveWithAuthorization natively. Point
+    # USDC_ADDRESS at a mintable EIP-3009 mock for CI and load tests only.
+    "USDC":               {"env": "USDC_ADDRESS", "default": CIRCLE_USDC_SEPOLIA},
     # Canonical ERC-8004 registries on Sepolia (erc-8004/erc-8004-contracts).
     "IdentityRegistry":   {"env": "ERC8004_IDENTITY_REGISTRY",
                            "default": "0x8004A818BFB912233c491871b3d84c89A494BD9e"},
