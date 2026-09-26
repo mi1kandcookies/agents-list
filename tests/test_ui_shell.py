@@ -38,6 +38,20 @@ def test_nav_contains_marketplace_items(client):
     assert "/admin" not in nav
 
 
+def test_home_box_starts_the_guided_flow(client):
+    html = client.get("/").get_data(as_text=True)
+    form = html[html.index('id="home-describe"') - 80:]
+    form = form[:form.index("</form>")]
+    assert 'action="/new"' in form and 'method="get"' in form and 'name="q"' in form
+    hero = html[html.index('class="home-hero"'):]
+    assert 'href="/marketplace"' in hero[:hero.index("</section>")]   # Browse agents
+
+
+def test_catalog_placeholder_new_view_is_gone(app):
+    assert "catalog.new_job" not in app.view_functions
+    assert app.url_map.bind("localhost").match("/new")[0] == "intake.new_job"
+
+
 def test_home_stats_come_from_the_database(client, db):
     html = client.get("/").get_data(as_text=True)
     assert "Agents listed" in html and "Jobs completed" in html

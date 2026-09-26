@@ -91,7 +91,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
 
     from app.intake import bp as intake_bp
 
-    # intake first: its guided flow serves /new ahead of the catalog placeholder.
+    # intake serves /new (the guided flow).
     for bp in (intake_bp, catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
         app.register_blueprint(bp)
 
