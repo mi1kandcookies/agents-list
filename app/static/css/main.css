@@ -439,15 +439,20 @@ tbody tr:hover { background: var(--surface-2); }
 /* ══ Shell: header, navigation, footer ═════════════════════════════════════ */
 .site-header {
   position: sticky; top: 0; z-index: 100;
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  backdrop-filter: saturate(1.8) blur(18px);
-  -webkit-backdrop-filter: saturate(1.8) blur(18px);
+  /* Translucent glass: content scrolling underneath stays faintly visible
+     (a soft blur of colour and motion) without competing with the nav. */
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  backdrop-filter: saturate(1.9) blur(22px);
+  -webkit-backdrop-filter: saturate(1.9) blur(22px);
   border-bottom: 1px solid transparent;
   transition: background-color .28s var(--ease-out), border-color .28s var(--ease-out),
               box-shadow .28s var(--ease-out), backdrop-filter .28s var(--ease-out);
 }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .site-header { background: color-mix(in srgb, var(--bg) 94%, transparent); }
+}
 .site-header.is-scrolled {
-  border-bottom-color: color-mix(in srgb, var(--border) 80%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent);
   box-shadow: 0 1px 0 rgb(255 255 255 / .6) inset, 0 6px 24px -18px rgb(28 25 23 / .35);
 }
 /* Home: header floats transparent over the photo, then frosts on scroll. */
