@@ -504,3 +504,43 @@ def test_app_screener_override(app, fake_screener):
     fake_screener.set(SEPOLIA_PAYEE, "ASK_HUMAN")
     v = screen("subhire.hop", chain_address=SEPOLIA_PAYEE, amount_micro=1)
     assert v["verdict"] == "ASK_HUMAN" and fake_screener.calls[0]["hop"] == "subhire.hop"
+
+
+# ── verdict card ─────────────────────────────────────────────────────────────
+
+def _card(app, v) -> str:
+    tmpl = app.jinja_env.from_string(
+        '{% from "components/verdict_card.html" import verdict_card %}{{ verdict_card(v) }}')
+    return tmpl.render(v=v)
+
+
+@pytest.mark.parametrize("quick_body, css, label", [
+    ("quick_scan_clean", "verdict-card--pay", "Pay"),
+    ({"toxicScore": 45, "traits": []}, "verdict-card--cap", "Pay with cap"),
+    ("quick_scan_mixer", "verdict-card--ask-human", "Ask a human"),
+    ("quick_scan_sanctioned", "verdict-card--refuse", "Refuse"),
+])
+def test_verdict_card_renders_each_verdict(app, screener, http, quick_body, css, label):
+    body = fixture(quick_body) if isinstance(quick_body, str) else quick_body
+    http.route("GET", quick(), body=body)
+    v = release(screener)
+    html = _card(app, v)
+    assert css in html and f">{label}<" in html
+    assert "Screened as mainnet 0xb2b2…b2b2 (mapped from Sepolia 0xa1a1…a1a1)" in html
+    assert f"{v['latency_ms']} ms" in html and "fail-closed" not in html
+    for r in v["reasons"]:
+        assert r["code"] in html
+    if css.endswith("cap"):
+        assert "max 10.00 USDC" in html
+
+
+def test_verdict_card_fail_closed_note(app, screener, http):
+    http.route("GET", quick(), exc=requests.Timeout())
+    html = _card(app, release(screener))
+    assert "verdict-card--refuse" in html and "fail-closed" in html and "PROVIDER_TIMEOUT" in html
+
+
+def test_screening_stylesheet_is_served(client):
+    resp = client.get("/static/css/screening.css")
+    assert resp.status_code == 200 and b".verdict-card--ask-human" in resp.data
+    resp.close()
