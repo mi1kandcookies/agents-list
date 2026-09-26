@@ -48,16 +48,17 @@ class AgentListClient:
         self.session = session or requests.Session()
         self.timeout = timeout
 
-    def request(self, method: str, path: str, *, params=None, json=None, headers=None):
+    def request(self, method: str, path: str, *, params=None, json=None, headers=None, files=None):
         hdrs = {"Accept": "application/json"}
         if self.token:
             hdrs["Authorization"] = f"Bearer {self.token}"
         hdrs.update(headers or {})
         if params:
             params = {k: v for k, v in params.items() if v is not None and v != ""}
+        extra = {"files": files} if files else {}
         try:
             resp = self.session.request(method, self.base_url + path, params=params or None,
-                                        json=json, headers=hdrs, timeout=self.timeout)
+                                        json=json, headers=hdrs, timeout=self.timeout, **extra)
         except requests.RequestException as exc:
             raise AgentListAPIError(None, "API_UNREACHABLE",
                                     f"could not reach {self.base_url}: {exc.__class__.__name__}") from exc
@@ -79,6 +80,13 @@ class AgentListClient:
 
     def search_agents(self, q: str = "", category: str | None = None, limit: int | None = None):
         return self.request("GET", "/api/agents", params={"q": q, "category": category, "limit": limit})
+
+    def parse_sow(self, filename: str, data: bytes) -> dict:
+        """Upload a statement of work (multipart ``file``); returns the draft scope."""
+        return self.request("POST", "/api/sow/parse", files={"file": (filename, data)})
+
+    def parse_sow_text(self, text: str) -> dict:
+        return self.request("POST", "/api/sow/parse", json={"text": text})
 
     def create_engagement(self, payload: dict) -> dict:
         return self.request("POST", "/api/engagements", json=payload)

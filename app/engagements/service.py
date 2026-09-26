@@ -296,15 +296,18 @@ def _cap_of(verdict: dict) -> int:
 
 
 # ── scope ─────────────────────────────────────────────────────────────────
-def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, deadline=None):
+def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, deadline=None,
+                      source_document=None):
     """Build the SOW, persist the engagement as ``scoped`` and return
-    ``(engagement, screening_preview)``."""
+    ``(engagement, screening_preview)``. ``source_document`` ({filename,
+    sha256} of an uploaded SOW) goes into the SOW and so into sow_hash."""
     from app.models import Engagement, Milestone
     try:
         plan = normalize_milestones(milestones, budget_micro)
         deadline_ts = parse_deadline(deadline)
         sow = build_sow(agent_public_id=agent.public_id, outcome=outcome, budget_micro=budget_micro,
-                        milestones=plan, deadline=deadline_ts, category=agent.category)
+                        milestones=plan, deadline=deadline_ts, category=agent.category,
+                        source_document=source_document)
     except SowError as exc:
         raise EngagementError(str(exc), exc.code, 400, exc.field) from None
     eng = Engagement(
