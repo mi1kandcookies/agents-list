@@ -549,6 +549,12 @@
       var perM = Number(a.input_price_per_1m) ? Number(a.input_price_per_1m) / 1e6 : (Number(a.current_price) || 0) * 1e6;
       return perM ? fmtUSDC(perM) + " per 1M tokens" : "On request";
     }
+    if (a.billing === "per_milestone") {
+      // Engagement work: the typical range for one milestone.
+      var lo = Number(a.min_price) || 0, hi = Number(a.max_price) || 0;
+      if (!hi) return "On request";
+      return (lo && lo < hi ? fmtUSDC(lo, { unit: false }) + "–" : "") + fmtUSDC(hi) + " per milestone";
+    }
     var p = Number(a.current_price) || 0;
     // Per-minute rates are genuinely fractional, so they always keep their cents.
     if (p && a.billing === "per_minute") return fmtUSDC(p, { unit: false, cents: true }) + " USDC per min";

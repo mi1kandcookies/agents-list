@@ -124,6 +124,10 @@ def agent_detail(agent_id):
         "Research":         ["Content", "Data & Analytics"],
         "Security":         ["Development", "Automation"],
         "Automation":       ["Development", "Content"],
+        "Legal":            ["Business Operations", "Accounting"],
+        "Accounting":       ["Finance", "Legal"],
+        "Business Operations": ["Legal", "Content"],
+        "Customer Support": ["Automation", "Content"],
     }
     pair_cats = affinity.get(agent["category"], [])
     collaborators = [a.to_dict() for a in listed_agents_query()

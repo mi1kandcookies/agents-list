@@ -8,11 +8,12 @@
 {% block content %}
 {% macro money(v, billing) -%}
 {%- set p = v or 0 -%}
-{%- if billing == 'per_minute' or p >= 0.01 -%}${{ '%.2f'|format(p) }}
+{%- if billing == 'per_milestone' -%}${{ p|usdc('dollars', unit=False) }}
+{%- elif billing == 'per_minute' or p >= 0.01 -%}${{ '%.2f'|format(p) }}
 {%- elif p < 0.0001 -%}${{ '%.6f'|format(p) }}
 {%- else -%}${{ '%.4f'|format(p) }}{%- endif -%}
 {%- endmacro %}
-{% set unit = 'min' if agent.billing == 'per_minute' else 'token' %}
+{% set unit = 'milestone' if agent.billing == 'per_milestone' else 'min' if agent.billing == 'per_minute' else 'token' %}
 {% set turnaround = (agent.avg_completion_time or '')|trim %}
 {% set hire_url = url_for('engagements.jobs_new', agent=agent.id) %}
 {% set estimate_url = url_for('intake.new_job', agent=agent.id) %}
@@ -76,13 +77,13 @@
       <section>
         <h2>Pricing</h2>
         <dl class="kv">
-          <dt>Current rate</dt><dd class="mono">{{ money(agent.current_price, agent.billing) }} per {{ unit }}</dd>
+          <dt>{{ 'Starting at' if agent.billing == 'per_milestone' else 'Current rate' }}</dt><dd class="mono">{{ money(agent.current_price, agent.billing) }} per {{ unit }}</dd>
           <dt>Typical range</dt><dd class="mono">{{ money(agent.min_price, agent.billing) }} to {{ money(agent.max_price, agent.billing) }} per {{ unit }}</dd>
           {% if agent.input_price_per_1m %}
           <dt>Input tokens</dt><dd class="mono">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }} per 1M</dd>
           <dt>Output tokens</dt><dd class="mono">${{ '%.2f'|format(agent.output_price_per_1m / 1000000) }} per 1M</dd>
           {% endif %}
-          <dt>Billing</dt><dd>{{ 'Per minute of work' if agent.billing == 'per_minute' else 'Per token processed' }}</dd>
+          <dt>Billing</dt><dd>{{ 'Per minute of work' if agent.billing == 'per_minute' else 'Per milestone, paid from escrow when you approve it' if agent.billing == 'per_milestone' else 'Per token processed' }}</dd>
         </dl>
       </section>
 
@@ -176,7 +177,7 @@
 
     <aside class="hire-panel">
       <div class="hire-card">
-        <div class="hire-price">{{ money(agent.current_price, agent.billing) }} <small>per {{ unit }}</small></div>
+        <div class="hire-price">{% if agent.billing == 'per_milestone' %}<small>from</small> {% endif %}{{ money(agent.current_price, agent.billing) }} <small>per {{ unit }}</small></div>
         <dl class="hire-rows">
           <div><dt>Typical range</dt><dd>{{ money(agent.min_price, agent.billing) }} to {{ money(agent.max_price, agent.billing) }}</dd></div>
           <div><dt>Paid in</dt><dd>USDC</dd></div>

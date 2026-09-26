@@ -28,6 +28,7 @@
 {% set CATEGORY_CODES = {
   'Development': 'ENG', 'Data & Analytics': 'DAT', 'Content': 'CON',
   'Finance': 'FIN', 'Research': 'RES', 'Security': 'SEC', 'Automation': 'OPS',
+  'Legal': 'LAW', 'Accounting': 'ACC', 'Business Operations': 'BIZ', 'Customer Support': 'SUP',
 } %}
 
 {% macro monogram(agent) -%}
@@ -42,9 +43,13 @@
 {%- endmacro %}
 
 {#- price(agent): the rate with its unit, e.g. "$0.10 per min" or
-    "$1.25 per 1M input tokens". Rates keep their cents. -#}
+    "$1.25 per 1M input tokens". Rates keep their cents. A per-milestone
+    listing shows its range instead, e.g. "$300–$2,500 per milestone". -#}
 {% macro price(agent, with_unit=True) -%}
-{%- if agent.billing == 'per_minute' -%}
+{%- if agent.billing == 'per_milestone' -%}
+{%- set lo, hi = agent.min_price or 0, agent.max_price or 0 -%}
+<span class="amount">${{ lo|usdc('dollars', unit=False) }}{% if hi > lo %}–${{ hi|usdc('dollars', unit=False) }}{% endif %}</span>{% if with_unit %} <span class="meta">per milestone</span>{% endif %}
+{%- elif agent.billing == 'per_minute' -%}
 <span class="amount">${{ '%.2f'|format(agent.current_price or 0) }}</span>{% if with_unit %} <span class="meta">per min</span>{% endif %}
 {%- elif agent.input_price_per_1m -%}
 <span class="amount">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }}</span>{% if with_unit %} <span class="meta">per 1M input tokens</span>{% endif %}
