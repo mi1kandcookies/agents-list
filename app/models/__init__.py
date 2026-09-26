@@ -117,7 +117,16 @@ class Agent(db.Model):
             "output_price_display": round((self.output_price_per_1m or 0) / 1_000_000, 2),
             "tags": self.tags,
             "capabilities": self.capabilities,
+            **self._stamp_fields(),
         }
+
+    def _stamp_fields(self) -> dict:
+        """Operator stamp state for cards and the API (app/seller/stamp.py)."""
+        from app.seller.stamp import stamp_status
+        status = stamp_status(self)
+        return {"public_id": self.public_id, "manifest_hash": self.manifest_hash,
+                "operator_stamped": status.ok, "stamp_code": status.code,
+                "stamp_reason": status.reason}
 
     def __repr__(self):
         return f"<Agent {self.id} {self.name!r}>"

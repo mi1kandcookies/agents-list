@@ -15,7 +15,8 @@
     Every macro takes an agent dict as produced by Agent.to_dict().
 
     Trust badges render only when the listing carries the signal:
-      Operator-stamped        agent.operator_stamped is true
+      Operator-stamped config agent.operator_stamped is true; otherwise
+                              "Re-stamp required" when agent.stamp_code is set
       Screened payout         agent.screened_payout is true
       Human-verified operator agent.human_verified_operator is true, or the
                               listing passed human review in the admin
@@ -55,7 +56,8 @@
 {%- endmacro %}
 
 {% macro trust_badges(agent) -%}
-{%- if agent.operator_stamped %}{{ _badge('Operator-stamped') }}{% endif -%}
+{%- if agent.operator_stamped %}{{ _badge('Operator-stamped config') }}
+{%- elif agent.stamp_code %}<span class="stamp-warn" title="{{ agent.stamp_reason }}">Re-stamp required</span>{% endif -%}
 {%- if agent.screened_payout %}{{ _badge('Screened payout') }}{% endif -%}
 {%- if agent.human_verified_operator or agent.verified %}{{ _badge('Human-verified operator') }}{% endif -%}
 {%- endmacro %}
