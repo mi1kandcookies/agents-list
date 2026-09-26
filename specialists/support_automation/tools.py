@@ -2,8 +2,13 @@
 specialists/support_automation/tools.py - deterministic domain tools for the
 support-automation specialist.
 
-Each tool is a plain function fn(workspace, *, fetch=None, run=None, **args)
-returning a dict; agent.py wraps them for the kit. The model decides what the
+Each tool is a plain function fn(workspace, *, resolve_path=None, **args)
+returning a dict, listed in TOOL_DEFS; the kit wraps them (tools_from_defs)
+and hands them resolve_path, so every path the model supplies goes through
+the policy gate: jailed to the workspace, inputs/ read-only, .agentkit/
+refused, and every file a tool writes marked agent-authored (never a ledger
+source). Called directly (by checks.py or tests) they fall back to the same
+path rules without the authored bookkeeping. The model decides what the
 intents are and writes the articles; these tools do the counting, redaction,
 matching and replay so the numbers in every deliverable are reproducible.
 
@@ -25,7 +30,10 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from agentkit.errors import PolicyViolation
+from agentkit.policy import PolicyGate
 
 AUTOMATION_LEVELS = ("answer_only", "with_tools", "human_only")
 OTHER_INTENT = "other"
@@ -40,13 +48,35 @@ CARD_RE = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
 REDACTION_TOKENS = {"email": "[EMAIL]", "phone": "[PHONE]", "card": "[CARD]"}
 
 
-def _resolve(workspace: Path, rel: str) -> Path:
-    """Workspace-relative path; refuses anything that escapes the workspace."""
-    root = Path(workspace).resolve()
-    path = (root / rel).resolve()
-    if path != root and root not in path.parents:
-        raise ValueError(f"path escapes workspace: {rel}")
-    return path
+Resolver = Callable[..., Path]
+_GATE = PolicyGate()
+
+
+def _resolve(workspace: Path, rel: str, *, write: bool = False) -> Path:
+    """Workspace-relative path under the kit's path rules (no escape, lexical
+    check before any filesystem access, inputs/ read-only, .agentkit/
+    refused). Raises ValueError so checks report a readable failure."""
+    try:
+        return _GATE.resolve_path(Path(workspace), rel, write=write)
+    except PolicyViolation as exc:
+        raise ValueError(str(exc)) from None
+
+
+def _resolver(workspace: Path, resolve_path: Resolver | None) -> Resolver:
+    """The kit's resolve_path inside a run; _resolve for direct calls."""
+    if resolve_path is not None:
+        return resolve_path
+    return lambda rel, *, write=False: _resolve(workspace, rel, write=write)
+
+
+def _dir_files(res: Resolver, rel_dir: str, pattern: str = "*.md") -> list[Path]:
+    """Files matching `pattern` directly inside a workspace directory, each
+    resolved through `res` (so a link pointing out of the workspace fails)."""
+    root = res(rel_dir)
+    if not root.is_dir():
+        return []
+    base = rel_dir.replace("\\", "/").rstrip("/")
+    return [res(f"{base}/{p.name}") for p in sorted(root.glob(pattern)) if p.is_file()]
 
 
 def _read_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
@@ -120,12 +150,14 @@ def _text_columns(header: list[str], columns: list[str] | None) -> list[str]:
 
 # --- tools ------------------------------------------------------------------
 
-def redact_tickets(workspace: Path, *, fetch=None, run=None, input_path: str = "inputs/tickets.csv",
+def redact_tickets(workspace: Path, *, resolve_path: Resolver | None = None,
+                   input_path: str = "inputs/tickets.csv",
                    output_path: str = "deliverables/m1-discovery/tickets_redacted.csv",
                    columns: list[str] | None = None, **_: Any) -> dict:
     """Redact emails, phones and card numbers from the free-text columns of a
     ticket CSV. Row count and ids are preserved; counts are returned."""
-    header, rows = _read_csv(_resolve(workspace, input_path))
+    res = _resolver(workspace, resolve_path)
+    header, rows = _read_csv(res(input_path))
     cols = _text_columns(header, columns)
     totals = {"email": 0, "phone": 0, "card": 0}
     for row in rows:
@@ -133,14 +165,14 @@ def redact_tickets(workspace: Path, *, fetch=None, run=None, input_path: str = "
             row[col], counts = redact_text(row.get(col) or "")
             for k, v in counts.items():
                 totals[k] += v
-    _write_csv(_resolve(workspace, output_path), header, rows)
+    _write_csv(res(output_path, write=True), header, rows)
     return {"output_path": output_path, "rows": len(rows), "columns": cols, "redactions": totals}
 
 
-def scan_pii(workspace: Path, *, fetch=None, run=None, path: str, columns: list[str] | None = None,
-             **_: Any) -> dict:
+def scan_pii(workspace: Path, *, resolve_path: Resolver | None = None, path: str,
+             columns: list[str] | None = None, **_: Any) -> dict:
     """Count PII left in a CSV (text columns) or any text file."""
-    target = _resolve(workspace, path)
+    target = _resolver(workspace, resolve_path)(path)
     hits: list[dict] = []
     if target.suffix.lower() == ".csv":
         header, rows = _read_csv(target)
@@ -156,9 +188,9 @@ def scan_pii(workspace: Path, *, fetch=None, run=None, path: str, columns: list[
     return {"path": path, "total": len(hits), "counts": counts, "hits": hits[:50]}
 
 
-def load_intent_rules(workspace: Path, rules_path: str) -> list[dict]:
+def load_intent_rules(workspace: Path, rules_path: str, res: Resolver | None = None) -> list[dict]:
     """Parse and validate intent_rules.json; raises ValueError on bad shape."""
-    data = json.loads(_resolve(workspace, rules_path).read_text(encoding="utf-8"))
+    data = json.loads(_resolver(workspace, res)(rules_path).read_text(encoding="utf-8"))
     intents = data.get("intents") if isinstance(data, dict) else None
     if not isinstance(intents, list) or not intents:
         raise ValueError("intent rules need a non-empty 'intents' list")
@@ -221,7 +253,7 @@ def compute_taxonomy(rows: list[dict], intents: list[dict]) -> list[dict]:
 TAXONOMY_HEADER = ["intent", "label", "automation", "volume", "share", "avg_handle_minutes", "escalation_rate"]
 
 
-def build_intent_taxonomy(workspace: Path, *, fetch=None, run=None,
+def build_intent_taxonomy(workspace: Path, *, resolve_path: Resolver | None = None,
                           tickets_path: str = "deliverables/m1-discovery/tickets_redacted.csv",
                           rules_path: str = "deliverables/m1-discovery/intent_rules.json",
                           labeled_path: str = "deliverables/m1-discovery/tickets_labeled.csv",
@@ -229,13 +261,14 @@ def build_intent_taxonomy(workspace: Path, *, fetch=None, run=None,
                           **_: Any) -> dict:
     """Label every ticket with the keyword rules and write the taxonomy table
     (volume, share, handle time, escalation rate, automation level)."""
-    intents = load_intent_rules(workspace, rules_path)
-    header, rows = _read_csv(_resolve(workspace, tickets_path))
+    res = _resolver(workspace, resolve_path)
+    intents = load_intent_rules(workspace, rules_path, res)
+    header, rows = _read_csv(res(tickets_path))
     for row in rows:
         row["intent"] = classify_text(f"{row.get('subject', '')} {row.get('body', '')}", intents)
-    _write_csv(_resolve(workspace, labeled_path), header + (["intent"] if "intent" not in header else []), rows)
+    _write_csv(res(labeled_path, write=True), header + (["intent"] if "intent" not in header else []), rows)
     table = compute_taxonomy(rows, intents)
-    _write_csv(_resolve(workspace, output_path), TAXONOMY_HEADER, table)
+    _write_csv(res(output_path, write=True), TAXONOMY_HEADER, table)
     classified = sum(r["volume"] for r in table if r["intent"] != OTHER_INTENT)
     return {"tickets": len(rows), "coverage": round(classified / (len(rows) or 1), 4),
             "taxonomy_path": output_path, "labeled_path": labeled_path,
@@ -272,9 +305,9 @@ def article_matches(article: dict, intent: dict) -> bool:
     return hits >= min(2, len(intent["keywords"]))
 
 
-def compute_coverage(workspace: Path, intents: list[dict], taxonomy: list[dict], kb_dir: str) -> list[dict]:
-    kb = _resolve(workspace, kb_dir)
-    articles = [parse_article(p) for p in sorted(kb.glob("*.md"))] if kb.is_dir() else []
+def compute_coverage(workspace: Path, intents: list[dict], taxonomy: list[dict], kb_dir: str,
+                     res: Resolver | None = None) -> list[dict]:
+    articles = [parse_article(p) for p in _dir_files(_resolver(workspace, res), kb_dir)]
     volume = {r["intent"]: int(r["volume"]) for r in taxonomy}
     rows = []
     for intent in intents:
@@ -285,20 +318,21 @@ def compute_coverage(workspace: Path, intents: list[dict], taxonomy: list[dict],
     return rows
 
 
-def _read_taxonomy(workspace: Path, path: str) -> list[dict]:
-    return _read_csv(_resolve(workspace, path))[1]
+def _read_taxonomy(workspace: Path, path: str, res: Resolver | None = None) -> list[dict]:
+    return _read_csv(_resolver(workspace, res)(path))[1]
 
 
-def kb_coverage(workspace: Path, *, fetch=None, run=None,
+def kb_coverage(workspace: Path, *, resolve_path: Resolver | None = None,
                 rules_path: str = "deliverables/m1-discovery/intent_rules.json",
                 taxonomy_path: str = "deliverables/m1-discovery/intent_taxonomy.csv",
                 kb_dir: str = "inputs/help_center",
                 output_path: str = "deliverables/m1-discovery/kb_gap_map.csv", **_: Any) -> dict:
     """Map each intent to the help-center articles that cover it; intents with
     none are gaps, ranked by ticket volume."""
-    intents = load_intent_rules(workspace, rules_path)
-    rows = compute_coverage(workspace, intents, _read_taxonomy(workspace, taxonomy_path), kb_dir)
-    _write_csv(_resolve(workspace, output_path), ["intent", "volume", "status", "articles"], rows)
+    res = _resolver(workspace, resolve_path)
+    intents = load_intent_rules(workspace, rules_path, res)
+    rows = compute_coverage(workspace, intents, _read_taxonomy(workspace, taxonomy_path, res), kb_dir, res)
+    _write_csv(res(output_path, write=True), ["intent", "volume", "status", "articles"], rows)
     gaps = [r for r in rows if r["status"] == "gap"]
     return {"output_path": output_path, "intents": len(rows), "gaps": [(g["intent"], g["volume"]) for g in gaps]}
 
@@ -323,7 +357,7 @@ def policy_numbers(text: str, terms: list[str]) -> dict[str, set[str]]:
     return out
 
 
-def find_contradictions(workspace: Path, *, fetch=None, run=None, terms: list[str],
+def find_contradictions(workspace: Path, *, resolve_path: Resolver | None = None, terms: list[str],
                         paths: list[str] | None = None, kb_dir: str = "inputs/help_center",
                         tickets_path: str | None = None, reply_column: str = "agent_reply", **_: Any) -> dict:
     """Flag policy terms (refund, cancellation, shipping, ...) whose numeric
@@ -331,15 +365,14 @@ def find_contradictions(workspace: Path, *, fetch=None, run=None, terms: list[st
     and, optionally, agent replies in the ticket export. A term with more than
     one distinct value of the same unit is a candidate contradiction for a
     human to resolve - the tool does not decide which value is right."""
+    res = _resolver(workspace, resolve_path)
     sources: dict[str, str] = {}
-    kb = _resolve(workspace, kb_dir)
-    if kb.is_dir():
-        for p in sorted(kb.glob("*.md")):
-            sources[f"{kb_dir}/{p.name}"] = p.read_text(encoding="utf-8")
+    for p in _dir_files(res, kb_dir):
+        sources[f"{kb_dir.rstrip('/')}/{p.name}"] = p.read_text(encoding="utf-8")
     for rel in paths or []:
-        sources[rel] = _resolve(workspace, rel).read_text(encoding="utf-8")
+        sources[rel] = res(rel).read_text(encoding="utf-8")
     if tickets_path:
-        _, rows = _read_csv(_resolve(workspace, tickets_path))
+        _, rows = _read_csv(res(tickets_path))
         for row in rows:
             if row.get(reply_column):
                 sources[f"{tickets_path}#{row.get('ticket_id', '?')}"] = row[reply_column]
@@ -366,7 +399,7 @@ def _split_bucket(ticket_id: str, seed: str) -> float:
     return int(digest[:8], 16) / 0xFFFFFFFF
 
 
-def split_eval_set(workspace: Path, *, fetch=None, run=None,
+def split_eval_set(workspace: Path, *, resolve_path: Resolver | None = None,
                    tickets_path: str = "deliverables/m1-discovery/tickets_labeled.csv",
                    holdout_path: str = "deliverables/m3-agent-config/eval_holdout.csv",
                    build_path: str = "deliverables/m3-agent-config/build_split.csv",
@@ -375,12 +408,13 @@ def split_eval_set(workspace: Path, *, fetch=None, run=None,
     sealed held-out eval set (same seed + ids -> same split, any machine)."""
     if not 0 < float(holdout_fraction) < 1:
         raise ValueError("holdout_fraction must be between 0 and 1")
-    header, rows = _read_csv(_resolve(workspace, tickets_path))
+    res = _resolver(workspace, resolve_path)
+    header, rows = _read_csv(res(tickets_path))
     hold = [r for r in rows if _split_bucket(r["ticket_id"], seed) < float(holdout_fraction)]
     hold_ids = {r["ticket_id"] for r in hold}
     build = [r for r in rows if r["ticket_id"] not in hold_ids]
-    _write_csv(_resolve(workspace, holdout_path), header, hold)
-    _write_csv(_resolve(workspace, build_path), header, build)
+    _write_csv(res(holdout_path, write=True), header, hold)
+    _write_csv(res(build_path, write=True), header, build)
     return {"holdout_path": holdout_path, "build_path": build_path, "holdout": len(hold),
             "build": len(build), "must_escalate_in_holdout": sum(1 for r in hold if _truthy(r.get("must_escalate")))}
 
@@ -389,8 +423,8 @@ def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in ("1", "true", "yes", "y")
 
 
-def load_agent_config(workspace: Path, config_path: str) -> dict:
-    data = json.loads(_resolve(workspace, config_path).read_text(encoding="utf-8"))
+def load_agent_config(workspace: Path, config_path: str, res: Resolver | None = None) -> dict:
+    data = json.loads(_resolver(workspace, res)(config_path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("agent config must be a JSON object")
     return data
@@ -427,17 +461,18 @@ def compute_replay(rows: list[dict], rules: list[dict]) -> dict:
             "missed_ticket_ids": misses}
 
 
-def replay_escalations(workspace: Path, *, fetch=None, run=None,
+def replay_escalations(workspace: Path, *, resolve_path: Resolver | None = None,
                        config_path: str = "deliverables/m3-agent-config/agent_config.json",
                        eval_path: str = "deliverables/m3-agent-config/eval_holdout.csv",
                        output_path: str = "deliverables/m3-agent-config/escalation_replay.json",
                        **_: Any) -> dict:
     """Replay the config's escalation rules over held-out tickets and score
     them against the gold must_escalate labels (recall matters most)."""
-    config = load_agent_config(workspace, config_path)
-    _, rows = _read_csv(_resolve(workspace, eval_path))
+    res = _resolver(workspace, resolve_path)
+    config = load_agent_config(workspace, config_path, res)
+    _, rows = _read_csv(res(eval_path))
     result = compute_replay(rows, config.get("escalation_rules") or [])
-    out = _resolve(workspace, output_path)
+    out = res(output_path, write=True)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     return {"output_path": output_path, **result}

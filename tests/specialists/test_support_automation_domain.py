@@ -96,6 +96,29 @@ def test_redact_refuses_path_escape(ws):
         tools.redact_tickets(ws, input_path="../outside.csv")
 
 
+def test_tools_keep_inputs_read_only_and_kit_state_private(ws):
+    original = (ws / "inputs" / "tickets.csv").read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="read-only"):
+        tools.redact_tickets(ws, output_path="inputs/tickets.csv")
+    with pytest.raises(ValueError, match="internal"):
+        tools.redact_tickets(ws, output_path=".agentkit/ledger.json")
+    with pytest.raises(ValueError, match="internal"):
+        tools.scan_pii(ws, path=".agentkit/ledger.json")
+    assert (ws / "inputs" / "tickets.csv").read_text(encoding="utf-8") == original
+    assert not (ws / ".agentkit").exists()
+
+
+def test_tools_use_the_kit_resolver_when_given(ws):
+    seen = []
+
+    def resolve_path(p, *, write=False):
+        seen.append((p, write))
+        return tools._resolve(ws, p, write=write)
+
+    tools.redact_tickets(ws, resolve_path=resolve_path)
+    assert seen == [("inputs/tickets.csv", False), (f"{M1}/tickets_redacted.csv", True)]
+
+
 def test_build_intent_taxonomy_counts(ws):
     tools.redact_tickets(ws)
     out = tools.build_intent_taxonomy(ws)
