@@ -1044,3 +1044,15 @@ def test_approved_inputs_unchanged(ws):
         {"path": q, "sha256": t.sha256_file(ws / q)} for q in paths]}), encoding="utf-8")
     res = c.approved_inputs_unchanged(ws, p)
     assert res["passed"] is True and "the m1-playbook submission" in res["details"]
+
+
+# --- prompts and fixtures --------------------------------------------------------------------------
+
+def test_m3_eval_fixture_is_an_approved_issue_list_for_the_canonical_msa():
+    ws = FIX / "m3_msa_workspace"
+    msa = "inputs/northwind_saas_msa.txt"
+    assert (ws / msa).read_bytes() == (FIX / "northwind_saas_msa.txt").read_bytes()
+    doc = json.loads((ws / "deliverables/m2-issues/issues.json").read_text(encoding="utf-8"))
+    assert doc["contract"] == msa and doc["contract_sha256"] == t.sha256_file(ws / msa)
+    assert (ws / "deliverables/m2-issues/issues.md").read_text(encoding="utf-8") == t.render_issues_md(doc)
+    assert (ws / "deliverables/m2-issues/issues.csv").read_text(encoding="utf-8") == t.render_issues_csv(doc)
