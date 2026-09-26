@@ -680,6 +680,18 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .reassure { display: inline-flex; align-items: center; gap: 8px; }
 .reassure svg { color: var(--success); flex-shrink: 0; }
 
+.protection-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px;
+  margin-top: 18px; color: var(--ink-3); font-size: var(--fs-xs);
+}
+.protection-item { display: inline-flex; align-items: center; gap: 7px; }
+.protection-item strong { color: var(--ink-2); font-weight: 600; }
+.protection-mark {
+  display: inline-grid; place-items: center; width: 18px; height: 18px;
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  color: var(--accent); font-family: var(--font-mono); font-size: 10px; line-height: 1;
+}
+
 .stats-strip {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 40px; max-width: 760px;
