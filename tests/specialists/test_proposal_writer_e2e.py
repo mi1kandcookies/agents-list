@@ -14,9 +14,10 @@ from pathlib import Path
 import pytest
 
 from agentkit.__main__ import main as cli
-from agentkit.evidence import evidence_hash
+from agentkit.evidence import evidence_hash, platform_evidence
 from agentkit.events import MemorySink
 from agentkit.llm import ScriptedAdapter
+from agentkit.manifest import spec_hash
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
 from agentkit.types import Brief, ModelResponse, Submission, ToolCall, Usage
@@ -218,10 +219,16 @@ def _assert_ready(sub: Submission, ws: Path, milestone: str, files: list[str], s
     for rel, art in arts.items():
         data = (ws / rel).read_bytes()
         assert art.sha256 == hashlib.sha256(data).hexdigest() and art.bytes == len(data)
-    # the evidence hash is over the saved submission
+    # the evidence hash is over the saved submission, bound to the SOW index
+    # (milestones keep manifest order in the SOW)
     assert sub.evidence_hash.startswith("0x") and len(sub.evidence_hash) == 66
     saved = json.loads(spec.submission_path(ws, milestone).read_text(encoding="utf-8"))
     assert saved["evidence_hash"] == sub.evidence_hash == evidence_hash(Submission.from_dict(saved))
+    idx = [m.id for m in spec.manifest.milestones].index(milestone)
+    assert sub.milestone_idx == saved["milestone_idx"] == idx
+    evidence = json.loads(platform_evidence(sub))
+    assert evidence["milestone_idx"] == idx and evidence["milestone_id"] == milestone
+    assert evidence["status"] == "ready_for_review" and evidence["human_review"] is False
 
 
 # --- plans ---------------------------------------------------------------------------------
@@ -314,7 +321,11 @@ def test_cli_commands(spec, tmp_path):
     assert code == 0 and "proposal-writer" in out
     assert run("validate", "proposal-writer") == (0, "[]\n")
     code, out = run("show", "proposal-writer")
-    assert code == 0 and json.loads(out)["category"] == "Business Ops"
+    assert code == 0
+    listing = json.loads(out)
+    assert listing["category"] == "Business Operations"
+    assert listing["pricing"]["model"] == "per_milestone" and listing["pricing"]["task_price_usdc"] == 5.0
+    assert run("spec-hash", "proposal-writer") == (0, spec_hash(spec.manifest) + "\n")
     code, out = run("milestones", "proposal-writer", "--intake", str(intake))
     assert code == 0 and [m["id"] for m in json.loads(out)] == ["m1-shred", "m2-outline", "m3-draft"]
     code, out = run("estimate", "proposal-writer", "--intake", str(intake))
@@ -347,7 +358,7 @@ def test_rfp_engagement_all_milestones(spec, tmp_path):
     sub2, _, events = _run(spec, ws, "m2-outline", _m2_plan())
     assert _tool_errors(events) == []
     _assert_ready(sub2, ws, "m2-outline", M2_FILES, spec)
-    assert _results(sub2)["evidence_map_complete"].score == pytest.approx(14 / 15, abs=1e-4)
+    assert _results(sub2)["evidence_map_complete"].score == pytest.approx(round(14 / 15, 4))
 
     sub3, _, events = _run(spec, ws, "m3-draft", _m3_plan())
     assert _tool_errors(events) == []
@@ -356,7 +367,7 @@ def test_rfp_engagement_all_milestones(spec, tmp_path):
     assert results["ledger_verified"].passed is True
     # R-011 (support desk) has no evidence: the checklist lists it as an open
     # item, which the matrix shows instead of calling it addressed
-    assert results["matrix_consistent"].score == pytest.approx(22 / 23, abs=1e-4)
+    assert results["matrix_consistent"].score == pytest.approx(round(22 / 23, 4))
     final = {r["req_id"]: r for r in T.read_csv_rows(ws, T.FINAL_MATRIX_PATH)}
     assert final["R-011"]["status"] == "open_item"
     assert final["R-011"]["response_section"] == "Checklist: Open items"

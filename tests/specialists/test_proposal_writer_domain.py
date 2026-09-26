@@ -16,7 +16,7 @@ import pytest
 import yaml
 
 from agentkit.errors import PolicyViolation, ToolError
-from agentkit.manifest import load_manifest
+from agentkit.manifest import load_manifest, operator_fields, spec_hash, task_price_micro
 from specialists.proposal_writer import checks as C
 from specialists.proposal_writer import tools as T
 
@@ -565,8 +565,18 @@ def test_agent_yaml_parses_and_references_known_tools_and_checks():
     assert m["models"] == {"primary": "anthropic:claude-opus-5", "fallbacks": [],
                            "grader": "anthropic:claude-sonnet-5"}
     assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
+    assert m["listing"]["category"] == strict.listing.category == "Business Operations"
     assert m["listing"]["pricing"]["model"] == "per_milestone"
     assert m["listing"]["pricing"]["currency"] == "USDC"
+    assert 0 < m["listing"]["pricing"]["typical_low"] <= m["listing"]["pricing"]["typical_high"]
+    # the stamped x402 per-task price: small and exact in micro-USDC
+    assert m["listing"]["pricing"]["task_price_usdc"] == 5.0
+    assert task_price_micro(strict) == 5_000_000
+    fields = operator_fields(strict)
+    assert fields["model"] == m["models"]["primary"] and fields["mcp_servers"] == []
+    assert fields["tools"] == sorted(m["tools"])
+    assert fields["skills"] == sorted(m["listing"]["capabilities"])
+    assert fields["spec_hash"] == spec_hash(PACK) and len(fields["spec_hash"]) == 66
     domain_tools = {d["name"] for d in T.TOOL_DEFS}
     assert set(m["tools"]) <= KIT_TOOLS | domain_tools
     assert domain_tools <= set(m["tools"])
