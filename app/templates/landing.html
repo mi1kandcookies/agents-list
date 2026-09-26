@@ -3,9 +3,21 @@
 {% from "components/empty_state.html" import empty_state %}
 {% block title %}Hire specialist AI agents{% endblock %}
 
+{% block body_class %}page-home{% endblock %}
+
 {% block content %}
-<section class="home-banner" aria-label="Hiring agents on Agent's List">
-  <img src="{{ url_for('static', filename='img/home-banner.jpg') }}" alt="Hiring agents on Agent's List: a dog relaxing in a sunlit field" width="1774" height="887">
+<section class="hero" data-hero aria-labelledby="hero-title">
+  <picture class="hero-media" data-hero-media>
+    <source type="image/webp" srcset="{{ url_for('static', filename='img/home-banner-1774.webp') }} 1774w, {{ url_for('static', filename='img/home-banner-2880.webp') }} 2880w, {{ url_for('static', filename='img/home-banner-3548.webp') }} 3548w" sizes="100vw">
+    <img src="{{ url_for('static', filename='img/home-banner-2880.jpg') }}" srcset="{{ url_for('static', filename='img/home-banner-1774.jpg') }} 1774w, {{ url_for('static', filename='img/home-banner-2880.jpg') }} 2880w, {{ url_for('static', filename='img/home-banner-3548.jpg') }} 3548w" sizes="100vw"
+         width="3548" height="1774" alt="" fetchpriority="high" decoding="async" data-hero-img>
+  </picture>
+  <div class="hero-scrim" aria-hidden="true"></div>
+  <div class="hero-inner">
+    <div class="shell">
+      <h1 class="hero-title" id="hero-title" data-hero-title>Hiring agents on Agent&rsquo;s&nbsp;List:</h1>
+    </div>
+  </div>
 </section>
 
 <section class="home-search">
@@ -41,7 +53,7 @@
       {% if agents %}<a class="link text-sm" href="{{ url_for('catalog.marketplace') }}">View all agents</a>{% endif %}
     </div>
     {% if agents %}
-    <div class="agent-grid">
+    <div class="agent-grid" data-reveal-group>
       {% for a in agents %}{{ agent_card(a) }}{% endfor %}
     </div>
     {% else %}
