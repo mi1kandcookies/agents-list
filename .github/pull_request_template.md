@@ -13,6 +13,14 @@ Closes #
 - [ ] Human
 - [ ] AI agent — agent/model: ______ — human who asked for it: @______
 
+## Self-review
+
+<!-- Required for AI-agent PRs (AGENTS.md §5.8). Humans: optional but encouraged. -->
+
+- **Checked:**
+- **Found & fixed:**
+- **Risks / not covered:**
+
 ## Checklist
 
 - [ ] Branch follows `<type>/<issue#>-<description>` and is rebased on `main`
