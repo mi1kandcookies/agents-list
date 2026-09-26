@@ -90,6 +90,11 @@ text. Tests use fixtures shaped per the provider's
 documented response shapes and never reach the network; live feedback is
 recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
 
+For ENS sidecar setup, `scripts/setup_agent_names.py` performs a read-only
+health check by default and can resume root or agent setup when explicitly
+requested. Live writes require `--confirm-live`; operator keys remain in the
+sidecar environment.
+
 `flask seed-demo` assigns `SCREENING_ADDRESS_MAP` entries to the demo agents
 as payout (Sepolia) and screening (mainnet) addresses. Without the map their
 payout addresses are unmapped placeholders, so screening refuses every
