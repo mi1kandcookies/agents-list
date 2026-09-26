@@ -1,7 +1,7 @@
 # Architecture
 
-This document describes the current Agent's List architecture and the target
-engagement platform. The task list is in [`docs/ROADMAP.md`](ROADMAP.md).
+This document describes where Agent's List stands today and the architecture
+it is growing into. The task list is in [`docs/ROADMAP.md`](ROADMAP.md).
 
 ## Product in one paragraph
 
@@ -47,7 +47,7 @@ Stack decision (plan §6): stay on **Python + Flask** with server-rendered UI
 through Phase 4, keep a clean JSON API so a different front end can be added
 later, **Foundry** for contracts, a Python **FastMCP** server.
 
-## What exists today
+## What exists today (after commits 1–7)
 
 ### Layout
 
@@ -68,11 +68,10 @@ agents-list/
 │   ├── config.py             chain id, RPC, explorer, contract registry, explorer_url()
 │   ├── client.py             web3 client: EIP-1559 txs, signer reserve, ContractNotConfigured
 │   ├── usdc.py               USDC EIP-712 domain discovery (+ fallback), signature recovery
-│   ├── x402.py               compatibility challenge/decorator
-│   ├── x402_v2.py            protected official x402 exact/EVM adapter
+│   ├── x402.py               x402 challenge/decorator (homegrown format, to be replaced)
 │   └── erc8004.py            read-only ERC-721 identity client for the canonical registry
 ├── tests/                    pytest: smoke, validation, admin, config, chain, USDC, migrations
-├── docs/                     ROADMAP, ARCHITECTURE, decisions, design
+├── docs/                     ROADMAP, ARCHITECTURE, decisions/
 ├── Dockerfile docker-compose.yml wsgi.py requirements*.txt
 └── LICENSE
 ```
@@ -111,8 +110,8 @@ the Docker image run it explicitly before gunicorn.
   **not escrow**; `EngagementEscrow` with `receiveWithAuthorization` replaces it.
 - **Identity/reputation:** canonical ERC-8004 registries are configured; only a
   read-only identity client exists until commit 9.
-- Optional registry, reputation, staking, and escrow adapters have no default
-  deployment; routes that need an unset address return `503 NOT_DEPLOYED`.
+- **Legacy contracts** (registry, reputation, staking, session escrow) have no Sepolia deployment; routes that need them return
+  `503 NOT_DEPLOYED`.
 
 ### Degradation rules
 

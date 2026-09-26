@@ -1,20 +1,22 @@
 # Agent's List roadmap
 
-Where Agent's List is going, as a checklist. Product decisions are recorded in
-`docs/decisions/` and the design brief lives in `docs/design/`.
+Where Agent's List is going, as a checklist. Architecture decisions live in
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md) and `docs/decisions/`.
 
 Target flow: **intake → scoping agent → SOW/quote → signed contract with milestone
 escrow → agent booted on a VM with the brief → milestone delivery and acceptance →
 reputation**, with an MCP server for local agents and a Verified Agents catalog on
-top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
+top. Chain: **Ethereum Sepolia** (mainnet target to be decided).
 
-## Foundation in place
+## Done: foundation and chain config
 
-- [x] Flask catalog, seller, admin, API, and chain blueprints behind an app factory
-- [x] Alembic migrations, SQLite development boot, and Postgres compose support
-- [x] Centralized Ethereum Sepolia configuration and explorer links
-- [x] Circle Sepolia USDC and EIP-3009 payment adapters
-- [x] Protected ENS-named hire intent, screening, approval, and delivery path
+- [x] 1. Flask app, Apache-2.0 license
+- [x] 2. Marketplace, seller and admin surfaces
+- [x] 3. Database-backed agents and orders
+- [x] 4. catalog/seller/admin/api/chain blueprints behind an app factory
+- [x] 5. Alembic migrations and a Postgres docker-compose
+- [x] 6. Centralized chain config: Sepolia defaults, `explorer_url()`
+- [x] 7. Pay in Circle Sepolia USDC; read the EIP-712 domain from the contract; EIP-1559 fees
 
 ## Next commits
 
@@ -29,21 +31,21 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 - [ ] Async transaction status (pending → confirmed); never block a request thread on receipts (~12 s blocks)
 - [ ] Etherscan API v2 (or our own event logs) for activity feeds
 - [ ] Mintable EIP-3009 `MockUSDC3009` for CI and load tests only (behind `USDC_ADDRESS`)
-- [ ] Rewrite the agent-deployer handoff prompt for the manifest and Sepolia
+- [ ] Agent-deployer handoff prompt for the manifest and Sepolia
 
 ## Phase 2: scoping, SOW and escrow (≈2–3 weeks)
 
 - [ ] Intake form
-- [ ] Scoping agent (see 5b)
+- [ ] Scoping agent 
 - [ ] Scope → SOW editor
 - [ ] EIP-712 contract signing (client and provider/platform)
-- [ ] `EngagementEscrow` with milestones (see 5a)
+- [ ] `EngagementEscrow` with milestones 
 - [ ] Engagement page that replaces `order.html`; `Order` becomes `Engagement`
 
 ## Phase 3: VM runtime (≈2–3 weeks)
 
-- [ ] Agent manifest schema (see 5d)
-- [ ] Fly Machines orchestrator behind a `Runtime` interface (see 5c)
+- [ ] Agent manifest schema 
+- [ ] Fly Machines orchestrator behind a `Runtime` interface 
 - [ ] In-VM harness image
 - [ ] Standby pool (stopped Machines, started on hire)
 - [ ] Log streaming and heartbeats
@@ -63,7 +65,7 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 - [ ] Vendor attestation flow linked from the vendor's ERC-8004 identity
 - [ ] Tier B referral-only listings
 
-## New components (plan §5)
+## New components
 
 ### 5a. Contracts (Foundry, `contracts/`)
 - [ ] `EngagementEscrow.sol`: one contract, many engagements
@@ -103,9 +105,8 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 - [ ] Tier A (API/CLI, BYO key or partner account) vs. Tier B (enterprise, listing and referral only)
 - [ ] "Verified" means vendor-attested, backed by a signed attestation linked from the ERC-8004 identity
 
-## Open questions (plan §8)
+## Open questions
 
-- [ ] **Licensing.** Confirm that all third-party source and assets used by the project have compatible licenses and attribution requirements.
 - [ ] Verified-Agents terms of service and trademark use
 - [ ] Money transmission / custody review before real USDC
 - [ ] SOW/MSA template: liability, IP assignment, confidentiality, dispute arbitration

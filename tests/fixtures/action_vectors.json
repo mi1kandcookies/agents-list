@@ -1,0 +1,174 @@
+{
+  "actions": [
+    {
+      "kind": "engagement.fund",
+      "fields": {
+        "approval_id": "APR-0000000000A1",
+        "exp": 1790000000,
+        "engagement_id": "ENG-0000000000E1",
+        "sow_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "amount_micro": 25000000,
+        "payee_agent_id": "agt-sh8w-d5vp-p",
+        "payee_address": "0xAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCd",
+        "milestones": [
+          {
+            "idx": 0,
+            "amount_micro": 10000000,
+            "title_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "idx": 1,
+            "amount_micro": 15000000,
+            "title_hash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "screening_id": "SCR-0000000000S1",
+        "screening_ack": false
+      },
+      "action": {
+        "v": 1,
+        "kind": "engagement.fund",
+        "approval_id": "APR-0000000000A1",
+        "exp": 1790000000,
+        "engagement_id": "ENG-0000000000E1",
+        "sow_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "amount_micro": 25000000,
+        "payee_agent_id": "AGT-SH8W-D5VP-P",
+        "payee_address": "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd",
+        "milestones": [
+          {
+            "idx": 0,
+            "amount_micro": 10000000,
+            "title_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "idx": 1,
+            "amount_micro": 15000000,
+            "title_hash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "screening_id": "SCR-0000000000S1",
+        "screening_ack": false
+      },
+      "canonical": "{\"amount_micro\":25000000,\"approval_id\":\"APR-0000000000A1\",\"engagement_id\":\"ENG-0000000000E1\",\"exp\":1790000000,\"kind\":\"engagement.fund\",\"milestones\":[{\"amount_micro\":10000000,\"idx\":0,\"title_hash\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},{\"amount_micro\":15000000,\"idx\":1,\"title_hash\":\"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}],\"payee_address\":\"0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd\",\"payee_agent_id\":\"AGT-SH8W-D5VP-P\",\"screening_ack\":false,\"screening_id\":\"SCR-0000000000S1\",\"sow_hash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"v\":1}",
+      "action_hash": "0xe65c811a71706822cdfd63c8c5802403e36801b592acb7a453428931a2d86cdc",
+      "action_nonce": "5lyBGnFwaCLN_WPIxYAkA-NoAbWSrLekU0KJMaLYbNw"
+    },
+    {
+      "kind": "milestone.release",
+      "fields": {
+        "approval_id": "APR-0000000000A2",
+        "exp": 1790000180,
+        "engagement_id": "ENG-0000000000E1",
+        "sow_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "milestone_idx": 1,
+        "amount_micro": 15000000,
+        "payee_agent_id": "AGT-SH8W-D5VP-P",
+        "payee_address": "0xAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCd",
+        "screening_id": "SCR-0000000000S2",
+        "screening_ack": true
+      },
+      "action": {
+        "v": 1,
+        "kind": "milestone.release",
+        "approval_id": "APR-0000000000A2",
+        "exp": 1790000180,
+        "engagement_id": "ENG-0000000000E1",
+        "sow_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "amount_micro": 15000000,
+        "payee_agent_id": "AGT-SH8W-D5VP-P",
+        "payee_address": "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd",
+        "milestone_idx": 1,
+        "screening_id": "SCR-0000000000S2",
+        "screening_ack": true
+      },
+      "canonical": "{\"amount_micro\":15000000,\"approval_id\":\"APR-0000000000A2\",\"engagement_id\":\"ENG-0000000000E1\",\"exp\":1790000180,\"kind\":\"milestone.release\",\"milestone_idx\":1,\"payee_address\":\"0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd\",\"payee_agent_id\":\"AGT-SH8W-D5VP-P\",\"screening_ack\":true,\"screening_id\":\"SCR-0000000000S2\",\"sow_hash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"v\":1}",
+      "action_hash": "0x088eaee4c51c84f18ebf5e6f31a6fa3e2b854f04bc34a65bb789900c5c89c02c",
+      "action_nonce": "CI6u5MUchPGOv15vMab6PiuFTwS8NKZbt4mQDFyJwCw"
+    },
+    {
+      "kind": "manifest.publish",
+      "fields": {
+        "approval_id": "APR-0000000000A3",
+        "exp": 1790000300,
+        "payee_agent_id": "AGT-7XP1-9RR0-N",
+        "manifest_hash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "action": {
+        "v": 1,
+        "kind": "manifest.publish",
+        "approval_id": "APR-0000000000A3",
+        "exp": 1790000300,
+        "payee_agent_id": "AGT-7XP1-9RR0-N",
+        "manifest_hash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "canonical": "{\"approval_id\":\"APR-0000000000A3\",\"exp\":1790000300,\"kind\":\"manifest.publish\",\"manifest_hash\":\"0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"payee_agent_id\":\"AGT-7XP1-9RR0-N\",\"v\":1}",
+      "action_hash": "0x98067a1824705b69e672a29d44d910e6c87d3c779c68e9de6942c7b62f99b9cc",
+      "action_nonce": "mAZ6GCRwW2nmcqKdRNkQ5sh9PHecaOneaULHti-Zucw"
+    },
+    {
+      "kind": "subhire.fund",
+      "fields": {
+        "approval_id": "APR-0000000000A4",
+        "exp": 1790000400,
+        "engagement_id": "ENG-0000000000E2",
+        "parent_mandate_id": "MND-0000000000M1",
+        "sow_hash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "amount_micro": 3500000,
+        "payee_agent_id": "AGT-XXDA-484N-E",
+        "payee_address": "0xAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCdAbCd",
+        "screening_id": "SCR-0000000000S3",
+        "milestone_idx": null
+      },
+      "action": {
+        "v": 1,
+        "kind": "subhire.fund",
+        "approval_id": "APR-0000000000A4",
+        "exp": 1790000400,
+        "engagement_id": "ENG-0000000000E2",
+        "sow_hash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "amount_micro": 3500000,
+        "payee_agent_id": "AGT-XXDA-484N-E",
+        "payee_address": "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd",
+        "parent_mandate_id": "MND-0000000000M1",
+        "screening_id": "SCR-0000000000S3"
+      },
+      "canonical": "{\"amount_micro\":3500000,\"approval_id\":\"APR-0000000000A4\",\"engagement_id\":\"ENG-0000000000E2\",\"exp\":1790000400,\"kind\":\"subhire.fund\",\"parent_mandate_id\":\"MND-0000000000M1\",\"payee_address\":\"0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd\",\"payee_agent_id\":\"AGT-XXDA-484N-E\",\"screening_id\":\"SCR-0000000000S3\",\"sow_hash\":\"0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"v\":1}",
+      "action_hash": "0xe49e2d32ae37ac887d9c457918a13ea2cfde092e27b9ceaae5a1080ccedb9609",
+      "action_nonce": "5J4tMq43rIh9nEV5GKE-os_eCS4nuc6q5aEIDM7blgk"
+    },
+    {
+      "kind": "session.login",
+      "fields": {
+        "approval_id": "APR-0000000000A5",
+        "exp": 1790000500
+      },
+      "action": {
+        "v": 1,
+        "kind": "session.login",
+        "approval_id": "APR-0000000000A5",
+        "exp": 1790000500
+      },
+      "canonical": "{\"approval_id\":\"APR-0000000000A5\",\"exp\":1790000500,\"kind\":\"session.login\",\"v\":1}",
+      "action_hash": "0x9c97de35229c2bfda30df653df921aa9c1f17776ba97f09012dbb5cd12d642ce",
+      "action_nonce": "nJfeNSKcK_2jDfZT35IaqcHxd3a6l_CQEtu1zRLWQs4"
+    }
+  ],
+  "sows": [
+    {
+      "sow": {
+        "outcome": "Café menu — translate to 日本語 ✓",
+        "budget_micro": 25000000,
+        "milestones": [
+          {
+            "title": "Draft",
+            "acceptance": "Reviewed",
+            "amount_micro": 10000000
+          }
+        ]
+      },
+      "canonical": "{\"budget_micro\":25000000,\"milestones\":[{\"acceptance\":\"Reviewed\",\"amount_micro\":10000000,\"title\":\"Draft\"}],\"outcome\":\"Café menu — translate to 日本語 ✓\"}",
+      "sow_hash": "0x95662f5f41883930c7654809c861fea8cefbf97ea21aa092d6bd1b0f6f154303"
+    }
+  ]
+}

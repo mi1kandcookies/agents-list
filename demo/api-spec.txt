@@ -1,9 +1,0 @@
-POST /v1/users
-  body: {"email": string, "name": string}
-  returns 201 with an id, or 400 when email is invalid
-
-GET /v1/users/{id}
-  returns 200 with the user, or 404 when the id does not exist
-
-DELETE /v1/users/{id}
-  returns 204 when the user is deleted

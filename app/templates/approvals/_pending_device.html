@@ -1,0 +1,26 @@
+<div class="apr-panel" id="approval-pending">
+  {% if start_error %}
+  <p class="apr-muted" role="alert">The identity provider could not be reached. Try again.</p>
+  {% endif %}
+  {% if approval.state == 'created' %}
+    <p class="apr-muted">Approve this on your phone with World ID.</p>
+    <div class="apr-actions">
+      <a class="btn btn-primary" href="{{ url_for('approvals.start', approval_id=approval.id) }}">Get approval code</a>
+      <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
+    </div>
+  {% else %}
+    <p class="apr-muted">On your phone, open this link and approve with World ID:</p>
+    {% set link = approval.verification_uri_complete or approval.verification_uri %}
+    {% if link and (link.startswith('https://') or link.startswith('http://')) %}
+    <a class="apr-link" href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ link }}</a>
+    {% else %}
+    <div class="apr-link">{{ link }}</div>
+    {% endif %}
+    <p class="apr-muted">Check that your phone shows this code:</p>
+    <div class="apr-code" id="approval-user-code">{{ approval.user_code }}</div>
+    <p class="apr-muted">Waiting for approval. Expires in <span data-countdown>…</span>.</p>
+    <div class="apr-actions">
+      <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
+    </div>
+  {% endif %}
+</div>

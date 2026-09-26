@@ -1,0 +1,30 @@
+{
+  "domain": {
+    "name": "USD Coin",
+    "version": "2",
+    "chainId": "1",
+    "verifyingContract": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+  },
+  "from": "0x1111111111111111111111111111111111111111",
+  "messageType": "Permit",
+  "detectors": [
+    {
+      "code": "WALLET_DRAINER",
+      "description": "By signing this transaction, you will give approval for most of your ETH and ERC-20 tokens to a wallet drainer and lose them."
+    }
+  ],
+  "riskGroup": "High",
+  "assetsMovement": {
+    "approve": []
+  },
+  "addresses": [
+    {
+      "address": "0x2222222222222222222222222222222222222222",
+      "type": "eoa",
+      "detectors": [
+        "WALLET_DRAINER",
+        "KNOWN_MALICIOUS"
+      ]
+    }
+  ]
+}

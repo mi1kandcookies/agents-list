@@ -10,11 +10,17 @@ payouts             : Seller payouts tracked by the admin panel
 moderation_reports  : User-filed reports reviewed by admins
 reviews             : Buyer ratings and feedback per agent
 
+Custody-chain tables (docs/decisions/0001-custody-chain.md §11) live in
+sibling modules and are re-exported at the bottom of this file.
+
 Sample data for local development is loaded explicitly with `flask seed`.
 """
 from __future__ import annotations
 import json
 from datetime import datetime, timezone
+from sqlalchemy import event
+from sqlalchemy.orm.attributes import set_committed_value
+from app.common.agent_ids import from_db_id
 from app.extensions import db
 from chain.config import explorer_url
 
@@ -47,11 +53,6 @@ class Agent(db.Model):
     model_provider      = db.Column(db.String(40), nullable=True)
     model_name          = db.Column(db.String(80), nullable=True)
     deployer_wallet     = db.Column(db.String(64), nullable=True)
-    public_id           = db.Column(db.String(20), nullable=True, unique=True, index=True)
-    payout_address      = db.Column(db.String(64), nullable=True)
-    screening_address   = db.Column(db.String(64), nullable=True)
-    manifest            = db.Column(db.Text, nullable=False, default="{}")
-    ens_name            = db.Column(db.String(255), nullable=True, unique=True)
     # I/O token pricing in USDC micro-units per 1M tokens (0 = unset)
     input_price_per_1m  = db.Column(db.Integer, nullable=False, default=0)
     output_price_per_1m = db.Column(db.Integer, nullable=False, default=0)
@@ -59,6 +60,16 @@ class Agent(db.Model):
     _tags               = db.Column("tags", db.Text, nullable=False, default="[]")
     _capabilities       = db.Column("capabilities", db.Text, nullable=False, default="[]")
     created_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    # Custody chain (docs/decisions/0001-custody-chain.md §11)
+    public_id           = db.Column(db.String(16), nullable=True, unique=True, index=True)  # AGT-XXXX-XXXX-C
+    payout_address      = db.Column(db.String(64), nullable=True)
+    screening_address   = db.Column(db.String(64), nullable=True)   # mainnet address screened for Sepolia payouts
+    manifest_json       = db.Column(db.Text, nullable=True)
+    manifest_hash       = db.Column(db.String(66), nullable=True)
+    manifest_stamped_at = db.Column(db.DateTime, nullable=True)
+    manifest_stamp_approval_id = db.Column(db.String(32), nullable=True)
+    manifest_stamp_sub  = db.Column(db.String(255), nullable=True)
+    ens_name            = db.Column(db.String(255), nullable=True)
 
     @property
     def tags(self) -> list[str]:
@@ -100,11 +111,6 @@ class Agent(db.Model):
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "deployer_wallet": self.deployer_wallet,
-            "public_id": self.public_id,
-            "payout_address": self.payout_address,
-            "screening_address": self.screening_address,
-            "manifest": json.loads(self.manifest or "{}"),
-            "ens_name": self.ens_name,
             "input_price_per_1m": self.input_price_per_1m,
             "output_price_per_1m": self.output_price_per_1m,
             "input_price_display": round((self.input_price_per_1m or 0) / 1_000_000, 2),
@@ -115,6 +121,17 @@ class Agent(db.Model):
 
     def __repr__(self):
         return f"<Agent {self.id} {self.name!r}>"
+
+
+@event.listens_for(Agent, "after_insert")
+def _assign_public_id(mapper, connection, target):
+    """Derive public_id from the new primary key (same rule as the 0002 backfill)."""
+    if target.public_id is None:
+        public_id = from_db_id(target.id)
+        connection.execute(
+            Agent.__table__.update().where(Agent.__table__.c.id == target.id).values(public_id=public_id)
+        )
+        set_committed_value(target, "public_id", public_id)
 
 
 # ── Order ─────────────────────────────────────────────────────────────────────
@@ -311,342 +328,11 @@ class ChainTransaction(db.Model):
         }
 
 
-# ── Protected hiring flow ────────────────────────────────────────────────────
+# ── Custody chain ─────────────────────────────────────────────────────────────
 
-class HireIntent(db.Model):
-    """Immutable purchase terms and the server-owned task for one hire.
-
-    The intent is deliberately separate from the historical ``Order`` model.
-    It is the authorization boundary for the named-agent flow: an approval,
-    screening decision, payment requirements, and the delivered result all
-    refer back to this exact row.
-    """
-
-    __tablename__ = "hire_intents"
-
-    id                    = db.Column(db.String(32), primary_key=True)
-    agent_id              = db.Column(db.Integer, db.ForeignKey("agents.id"), nullable=True)
-    agent                 = db.relationship("Agent")
-    owner_id              = db.Column(db.String(160), nullable=False)
-    payer                 = db.Column(db.String(64), nullable=False)
-    specialist_name       = db.Column(db.String(255), nullable=False)
-    approved_endpoint     = db.Column(db.String(500), nullable=False)
-    pay_to                = db.Column(db.String(64), nullable=False)
-    chain_id              = db.Column(db.Integer, nullable=False)
-    network               = db.Column(db.String(80), nullable=False)
-    token_address         = db.Column(db.String(64), nullable=False)
-    amount_atomic         = db.Column(db.BigInteger, nullable=False)
-    task                  = db.Column(db.Text, nullable=False)
-    task_hash             = db.Column(db.String(66), nullable=False)
-    ens_snapshot          = db.Column(db.Text, nullable=False, default="{}")
-    canonical_terms       = db.Column(db.Text, nullable=False, default="{}")
-    policy_version        = db.Column(db.String(40), nullable=False, default="hire-v1")
-    intent_hash           = db.Column(db.String(66), nullable=False, unique=True)
-    status                = db.Column(db.String(32), nullable=False, default="awaiting_approval", index=True)
-    screening             = db.Column(db.Text, nullable=False, default="{}")
-    payment_fingerprint   = db.Column(db.String(64), nullable=True)
-    receipt               = db.Column(db.Text, nullable=False, default="{}")
-    result                = db.Column(db.Text, nullable=True)
-    denial_reason         = db.Column(db.Text, nullable=False, default="")
-    expires_at            = db.Column(db.DateTime, nullable=False)
-    claimed_at            = db.Column(db.DateTime, nullable=True)
-    created_at            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                                      onupdate=lambda: datetime.now(timezone.utc))
-
-    approval = db.relationship("HireApproval", back_populates="intent", uselist=False,
-                               cascade="all, delete-orphan")
-
-    def _json(self, value: str) -> dict:
-        try:
-            return json.loads(value or "{}")
-        except (TypeError, ValueError):
-            return {}
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "agentId": self.agent_id,
-            "ownerId": self.owner_id,
-            "payer": self.payer,
-            "specialistName": self.specialist_name,
-            "approvedEndpoint": self.approved_endpoint,
-            "payTo": self.pay_to,
-            "chainId": self.chain_id,
-            "network": self.network,
-            "tokenAddress": self.token_address,
-            "amountAtomic": str(self.amount_atomic),
-            "amountUSDC": self.amount_atomic / 1_000_000,
-            "taskHash": self.task_hash,
-            "intentHash": self.intent_hash,
-            "ensSnapshot": self._json(self.ens_snapshot),
-            "canonicalTerms": self._json(self.canonical_terms),
-            "policyVersion": self.policy_version,
-            "status": self.status,
-            "screening": self._json(self.screening),
-            "receipt": self._json(self.receipt),
-            "result": self.result,
-            "denialReason": self.denial_reason,
-            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-    def __repr__(self):
-        return f"<HireIntent {self.id} {self.status}>"
-
-
-class HireApproval(db.Model):
-    """Validated owner consent supplied by the identity/approval service."""
-
-    __tablename__ = "hire_approvals"
-
-    id                = db.Column(db.String(32), primary_key=True)
-    intent_id         = db.Column(db.String(32), db.ForeignKey("hire_intents.id"),
-                                  nullable=False, unique=True)
-    owner_id          = db.Column(db.String(160), nullable=False)
-    payer             = db.Column(db.String(64), nullable=False)
-    intent_hash       = db.Column(db.String(66), nullable=False)
-    state             = db.Column(db.String(24), nullable=False, default="pending")
-    proof_id          = db.Column(db.String(255), nullable=False, default="")
-    action_url        = db.Column(db.String(500), nullable=False, default="")
-    expires_at        = db.Column(db.DateTime, nullable=False)
-    denial_reason     = db.Column(db.Text, nullable=False, default="")
-    validated_at      = db.Column(db.DateTime, nullable=True)
-    created_at        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                                  onupdate=lambda: datetime.now(timezone.utc))
-
-    intent = db.relationship("HireIntent", back_populates="approval")
-
-    def to_dict(self) -> dict:
-        return {
-            "approvalId": self.id,
-            "intentId": self.intent_id,
-            "ownerId": self.owner_id,
-            "payer": self.payer,
-            "intentHash": self.intent_hash,
-            "state": self.state,
-            "proofId": self.proof_id,
-            "actionUrl": self.action_url,
-            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
-            "denialReason": self.denial_reason,
-            "validatedAt": self.validated_at.isoformat() if self.validated_at else None,
-        }
-
-    def __repr__(self):
-        return f"<HireApproval {self.id} {self.state}>"
-
-
-# ── Custody-chain foundation ────────────────────────────────────────────────
-
-class Human(db.Model):
-    __tablename__ = "humans"
-
-    id          = db.Column(db.String(40), primary_key=True)
-    world_sub   = db.Column(db.String(255), nullable=False, unique=True)
-    wallet      = db.Column(db.String(64), nullable=True)
-    auth_time   = db.Column(db.DateTime, nullable=True)
-    created_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                            onupdate=lambda: datetime.now(timezone.utc))
-
-    engagements = db.relationship("Engagement", back_populates="human")
-    approvals   = db.relationship("Approval", back_populates="human")
-
-
-class Engagement(db.Model):
-    __tablename__ = "engagements"
-
-    id                    = db.Column(db.String(32), primary_key=True)
-    human_id              = db.Column(db.String(40), db.ForeignKey("humans.id"), nullable=False)
-    parent_engagement_id  = db.Column(db.String(32), db.ForeignKey("engagements.id"), nullable=True)
-    agent_id              = db.Column(db.Integer, db.ForeignKey("agents.id"), nullable=True)
-    title                 = db.Column(db.String(255), nullable=False)
-    brief                 = db.Column(db.Text, nullable=False)
-    status                = db.Column(db.String(32), nullable=False, default="draft", index=True)
-    budget_atomic         = db.Column(db.BigInteger, nullable=False, default=0)
-    currency              = db.Column(db.String(16), nullable=False, default="USDC")
-    chain_id              = db.Column(db.Integer, nullable=False, default=11155111)
-    network               = db.Column(db.String(80), nullable=False, default="eip155:11155111")
-    deadline              = db.Column(db.DateTime, nullable=True)
-    sow_hash              = db.Column(db.String(66), nullable=True)
-    depth                 = db.Column(db.Integer, nullable=False, default=0)
-    created_at            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                                      onupdate=lambda: datetime.now(timezone.utc))
-
-    human        = db.relationship("Human", back_populates="engagements")
-    agent        = db.relationship("Agent", backref="engagements")
-    parent       = db.relationship("Engagement", remote_side=[id], back_populates="children")
-    children     = db.relationship("Engagement", back_populates="parent")
-    milestones   = db.relationship("Milestone", back_populates="engagement", cascade="all, delete-orphan")
-    ledger       = db.relationship("LedgerEntry", back_populates="engagement")
-    screenings   = db.relationship("Screening", back_populates="engagement")
-    names        = db.relationship("EnsName", back_populates="engagement")
-
-
-class Milestone(db.Model):
-    __tablename__ = "milestones"
-
-    id                  = db.Column(db.String(32), primary_key=True)
-    engagement_id       = db.Column(db.String(32), db.ForeignKey("engagements.id"), nullable=False)
-    ordinal             = db.Column(db.Integer, nullable=False)
-    title               = db.Column(db.String(255), nullable=False)
-    acceptance_criteria = db.Column(db.Text, nullable=False, default="[]")
-    amount_atomic       = db.Column(db.BigInteger, nullable=False, default=0)
-    status              = db.Column(db.String(32), nullable=False, default="pending", index=True)
-    due_at              = db.Column(db.DateTime, nullable=True)
-    auto_release_at     = db.Column(db.DateTime, nullable=True)
-    evidence_hash       = db.Column(db.String(66), nullable=True)
-    deliverable         = db.Column(db.Text, nullable=True)
-    submitted_at        = db.Column(db.DateTime, nullable=True)
-    approved_at         = db.Column(db.DateTime, nullable=True)
-    released_at         = db.Column(db.DateTime, nullable=True)
-    created_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                                    onupdate=lambda: datetime.now(timezone.utc))
-
-    engagement = db.relationship("Engagement", back_populates="milestones")
-
-
-class LedgerEntry(db.Model):
-    __tablename__ = "ledger_entries"
-
-    id                  = db.Column(db.String(32), primary_key=True)
-    engagement_id       = db.Column(db.String(32), db.ForeignKey("engagements.id"), nullable=False)
-    parent_entry_id     = db.Column(db.String(32), db.ForeignKey("ledger_entries.id"), nullable=True)
-    action              = db.Column(db.String(32), nullable=False)
-    from_address        = db.Column(db.String(64), nullable=True)
-    to_address          = db.Column(db.String(64), nullable=True)
-    amount_atomic       = db.Column(db.BigInteger, nullable=False, default=0)
-    asset               = db.Column(db.String(64), nullable=False)
-    chain_id            = db.Column(db.Integer, nullable=False, default=11155111)
-    tx_hash             = db.Column(db.String(66), nullable=True)
-    status              = db.Column(db.String(32), nullable=False, default="pending", index=True)
-    approval_id         = db.Column(db.String(32), db.ForeignKey("approvals.id"), nullable=True)
-    screening_id        = db.Column(db.String(32), db.ForeignKey("screenings.id"), nullable=True)
-    metadata_json       = db.Column(db.Text, nullable=False, default="{}")
-    created_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                                    onupdate=lambda: datetime.now(timezone.utc))
-
-    engagement = db.relationship("Engagement", back_populates="ledger")
-    approval   = db.relationship("Approval", back_populates="ledger_entries")
-    screening  = db.relationship("Screening", back_populates="ledger_entries")
-    parent     = db.relationship("LedgerEntry", remote_side=[id], back_populates="children")
-    children   = db.relationship("LedgerEntry", back_populates="parent")
-
-
-class Approval(db.Model):
-    __tablename__ = "approvals"
-
-    id             = db.Column(db.String(32), primary_key=True)
-    human_id       = db.Column(db.String(40), db.ForeignKey("humans.id"), nullable=False)
-    action_type    = db.Column(db.String(48), nullable=False)
-    action_hash    = db.Column(db.String(66), nullable=False, unique=True)
-    state          = db.Column(db.String(24), nullable=False, default="created", index=True)
-    expires_at     = db.Column(db.DateTime, nullable=False)
-    auth_time      = db.Column(db.DateTime, nullable=True)
-    jti            = db.Column(db.String(255), nullable=True, unique=True)
-    device_code    = db.Column(db.String(255), nullable=True, unique=True)
-    payload_json   = db.Column(db.Text, nullable=False, default="{}")
-    denial_reason  = db.Column(db.Text, nullable=False, default="")
-    consumed_at    = db.Column(db.DateTime, nullable=True)
-    created_at     = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at     = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                               onupdate=lambda: datetime.now(timezone.utc))
-
-    human         = db.relationship("Human", back_populates="approvals")
-    events        = db.relationship("ApprovalEvent", back_populates="approval", cascade="all, delete-orphan")
-    ledger_entries = db.relationship("LedgerEntry", back_populates="approval")
-
-
-class ApprovalEvent(db.Model):
-    __tablename__ = "approval_events"
-
-    id          = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    approval_id = db.Column(db.String(32), db.ForeignKey("approvals.id"), nullable=False, index=True)
-    event       = db.Column(db.String(32), nullable=False)
-    actor       = db.Column(db.String(120), nullable=False)
-    metadata_json = db.Column(db.Text, nullable=False, default="{}")
-    created_at  = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    approval = db.relationship("Approval", back_populates="events")
-
-
-class Mandate(db.Model):
-    __tablename__ = "mandates"
-
-    id                  = db.Column(db.String(32), primary_key=True)
-    parent_mandate_id   = db.Column(db.String(32), db.ForeignKey("mandates.id"), nullable=True)
-    engagement_id       = db.Column(db.String(32), db.ForeignKey("engagements.id"), nullable=True)
-    issuer_human_id     = db.Column(db.String(40), db.ForeignKey("humans.id"), nullable=False)
-    subject_agent_id    = db.Column(db.Integer, db.ForeignKey("agents.id"), nullable=True)
-    budget_atomic       = db.Column(db.BigInteger, nullable=False)
-    categories_json     = db.Column(db.Text, nullable=False, default="[]")
-    max_depth           = db.Column(db.Integer, nullable=False, default=0)
-    per_tx_max_atomic   = db.Column(db.BigInteger, nullable=False)
-    expires_at          = db.Column(db.DateTime, nullable=False)
-    token_jwt           = db.Column(db.Text, nullable=False)
-    token_hash          = db.Column(db.String(66), nullable=False, unique=True)
-    state               = db.Column(db.String(24), nullable=False, default="active", index=True)
-    revoked_at          = db.Column(db.DateTime, nullable=True)
-    created_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    parent       = db.relationship("Mandate", remote_side=[id], back_populates="children")
-    children     = db.relationship("Mandate", back_populates="parent")
-    engagement   = db.relationship("Engagement")
-    issuer       = db.relationship("Human")
-    subject_agent = db.relationship("Agent")
-
-
-class Screening(db.Model):
-    __tablename__ = "screenings"
-
-    id               = db.Column(db.String(32), primary_key=True)
-    engagement_id    = db.Column(db.String(32), db.ForeignKey("engagements.id"), nullable=True)
-    action_type      = db.Column(db.String(48), nullable=False)
-    subject_address  = db.Column(db.String(64), nullable=False)
-    decision         = db.Column(db.String(16), nullable=False)
-    verdict_id       = db.Column(db.String(255), nullable=False)
-    provider         = db.Column(db.String(80), nullable=False)
-    request_hash     = db.Column(db.String(66), nullable=False)
-    evidence_json    = db.Column(db.Text, nullable=False, default="{}")
-    checked_at       = db.Column(db.DateTime, nullable=False)
-    expires_at       = db.Column(db.DateTime, nullable=True)
-    created_at       = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    engagement    = db.relationship("Engagement", back_populates="screenings")
-    ledger_entries = db.relationship("LedgerEntry", back_populates="screening")
-
-
-class EnsName(db.Model):
-    __tablename__ = "ens_names"
-
-    id              = db.Column(db.String(32), primary_key=True)
-    engagement_id   = db.Column(db.String(32), db.ForeignKey("engagements.id"), nullable=True)
-    name            = db.Column(db.String(255), nullable=False, unique=True)
-    parent_name     = db.Column(db.String(255), nullable=True)
-    resolver        = db.Column(db.String(64), nullable=True)
-    address         = db.Column(db.String(64), nullable=True)
-    endpoint        = db.Column(db.String(500), nullable=True)
-    enabled         = db.Column(db.Boolean, nullable=False, default=True)
-    snapshot_json   = db.Column(db.Text, nullable=False, default="{}")
-    depth           = db.Column(db.Integer, nullable=False, default=0)
-    revoked_at      = db.Column(db.DateTime, nullable=True)
-    created_at      = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at      = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
-                                onupdate=lambda: datetime.now(timezone.utc))
-
-    engagement = db.relationship("Engagement", back_populates="names")
-
-
-class UsedIdTokenJti(db.Model):
-    __tablename__ = "used_id_token_jtis"
-
-    jti       = db.Column(db.String(255), primary_key=True)
-    human_id  = db.Column(db.String(40), db.ForeignKey("humans.id"), nullable=False)
-    used_at   = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    human = db.relationship("Human")
+from app.models.humans import Human  # noqa: E402,F401
+from app.models.screenings import Screening  # noqa: E402,F401
+from app.models.engagements import Engagement, LedgerEntry, Milestone  # noqa: E402,F401
+from app.models.approvals import Approval, ApprovalEvent, UsedIdTokenJti  # noqa: E402,F401
+from app.models.mandates import Mandate  # noqa: E402,F401
+from app.models.ens_names import EnsName  # noqa: E402,F401

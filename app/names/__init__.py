@@ -1,7 +1,9 @@
-"""ENS name-tree API boundary."""
+"""Names: agent and job names issued by the names sidecar.
 
+Routes: GET /api/names/tree, POST /api/names/<name>/retry, and the /names page.
+"""
 from flask import Blueprint
 
-bp = Blueprint("names", __name__, url_prefix="/api/names")
+bp = Blueprint("names", __name__)
 
 from app.names import routes  # noqa: E402,F401

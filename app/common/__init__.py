@@ -1,1 +1,1 @@
-"""Shared application primitives."""
+"""Helpers shared across blueprints: public agent ids and prefixed row ids."""
