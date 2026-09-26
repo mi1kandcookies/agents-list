@@ -18,7 +18,7 @@ instead of inventing.
 |---|---|---|
 | `m1-shred` | `requirements.json`, `compliance_matrix.csv`, `format_rules.json`, `bid-brief.md` | `shred_complete`, `matrix_consistent`, `format_rules_captured`, `dates_match_source`, builtins (files, JSON, CSV columns, sections, placeholders) |
 | `m2-outline` | `evidence_map.csv`, `gaps.md`, `outline.md` | `evidence_map_complete`, `outline_budget_ok`, builtins |
-| `m3-draft` | `proposal.md`, `compliance_matrix.csv`, `submission-checklist.md` (+ `questionnaire_answers.csv` in questionnaire mode) | `matrix_consistent` (all addressed), `draft_within_limits`, `claims_grounded`, `questionnaire_answers_grounded`, `ledger_verified`, builtins |
+| `m3-draft` | `proposal.md`, `compliance_matrix.csv`, `submission-checklist.md` (+ `questionnaire_answers.csv` in questionnaire mode) | `matrix_consistent` (all addressed), `draft_within_limits`, `claims_grounded`, `questionnaire_answers_grounded`, `ledger_verified`, `citations_resolve` (any `[C#]` is a ledger claim), builtins |
 
 Each milestone also has a rubric check (`rubrics/*.yaml`, scored by the grader
 model) and a human sign-off: the bid decision (m1), expert answers to the
