@@ -7,15 +7,13 @@ approval for the engagement.
                     deadline=1790000000, category="Development")
     sow_hash(sow)   # "0x…", stable for the same inputs
 
-When the scope was drafted from an uploaded document, ``source_document=
-{"filename", "sha256"}`` records which file (by digest) it came from, so the
-hash, and every approval bound to it, covers the document too.
-
 Money is integer micro-USDC; ``parse_usdc`` turns "12.5" / 12.5 into 12500000
 through Decimal, never float arithmetic.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -30,6 +28,7 @@ MAX_TITLE = 200
 MAX_ACCEPTANCE = 2000
 MAX_MILESTONES = 20
 MAX_BUDGET_MICRO = 1_000_000 * 1_000_000   # 1M USDC per engagement
+MAX_SOURCE_DOCUMENT_BYTES = 128 * 1024
 
 
 class SowError(ValueError):
@@ -90,24 +89,72 @@ def _text(value, field: str, limit: int, *, required: bool = True, multiline: bo
     return text
 
 
+def title_hash(title: str) -> str:
+    """Milestone title digest bound into approval actions (§1 ``title_hash``)."""
+    return sow_hash(title)
+
+
+def source_document_metadata(document) -> dict:
+    """Validate an uploaded text SOW and return only its binding metadata.
+
+    The raw document is deliberately not copied into the engagement row.  The
+    application binds the exact uploaded bytes into the canonical SOW by
+    filename, byte count and SHA-256 digest; the caller can retain the source
+    file locally or in its own document store without expanding the payment
+    database into an arbitrary file bucket.
+    """
+    if not isinstance(document, dict):
+        raise SowError("sow_document must be an object", "sow_document")
+    filename = str(document.get("filename") or "").strip()
+    content = document.get("content")
+    if not filename:
+        raise SowError("sow_document.filename is required", "sow_document.filename")
+    if len(filename) > 240 or os.path.basename(filename) != filename or filename in {".", ".."}:
+        raise SowError("sow_document.filename must be a plain file name", "sow_document.filename")
+    if not isinstance(content, str):
+        raise SowError("sow_document.content must be UTF-8 text", "sow_document.content")
+    raw = content.encode("utf-8")
+    if not raw:
+        raise SowError("sow_document.content is empty", "sow_document.content")
+    if len(raw) > MAX_SOURCE_DOCUMENT_BYTES:
+        raise SowError(f"sow_document is larger than {MAX_SOURCE_DOCUMENT_BYTES} bytes",
+                       "sow_document.content", code="SOW_DOCUMENT_TOO_LARGE")
+    return {"filename": filename, "bytes": len(raw),
+            "sha256": "0x" + hashlib.sha256(raw).hexdigest()}
+
+
 def normalize_source_document(value) -> dict | None:
-    """``{"filename", "sha256"}`` of the document the scope was drafted from
-    (see app/intake/sow_parse.py), or None."""
+    """Normalize metadata produced by the web uploader or MCP text upload.
+
+    The web flow already has a digest from its parser; the MCP flow supplies
+    UTF-8 text and byte-count metadata. Both shapes are canonicalized before
+    they enter the SOW hash so the approval binds one exact document.
+    """
     if value in (None, {}, ""):
         return None
     if not isinstance(value, dict):
         raise SowError("source_document must be an object", "source_document")
+    filename = str(value.get("filename") or "").strip()
+    if not filename:
+        raise SowError("source_document.filename is required", "source_document.filename")
+    filename = re.split(r"[\\/]", filename)[-1]
+    filename = _text(re.sub(r"[\x00-\x1f\x7f]", "", filename),
+                     "source_document.filename", 240)
     digest = str(value.get("sha256") or "").strip().lower()
+    if digest.startswith("0x"):
+        digest = digest[2:]
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise SowError("source_document.sha256 must be 64 hex characters", "source_document.sha256")
-    name = re.split(r"[\\/]", str(value.get("filename") or ""))[-1]
-    name = _text(re.sub(r"[\x00-\x1f\x7f]", "", name), "source_document.filename", 200)
-    return {"filename": name, "sha256": digest}
-
-
-def title_hash(title: str) -> str:
-    """Milestone title digest bound into approval actions (§1 ``title_hash``)."""
-    return sow_hash(title)
+        raise SowError("source_document.sha256 must be 64 hex characters",
+                       "source_document.sha256")
+    if "bytes" not in value:
+        return {"filename": filename, "sha256": digest}
+    byte_count = value.get("bytes")
+    if isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count <= 0:
+        raise SowError("source_document.bytes must be a positive integer", "source_document.bytes")
+    if byte_count > MAX_SOURCE_DOCUMENT_BYTES:
+        raise SowError(f"source_document is larger than {MAX_SOURCE_DOCUMENT_BYTES} bytes",
+                       "source_document.bytes", code="SOW_DOCUMENT_TOO_LARGE")
+    return {"filename": filename, "bytes": byte_count, "sha256": "0x" + digest}
 
 
 def default_milestones(outcome: str, budget_micro: int) -> list[dict]:

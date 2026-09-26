@@ -72,6 +72,22 @@ def api_agent(agent_id):
     return jsonify(agent)
 
 
+@bp.route("/agents/ref/<agent_ref>")
+def api_agent_by_ref(agent_ref):
+    """Resolve the public AGT identifier used by MCP and job SOWs."""
+    from app.models import Agent as AgentModel
+    from app.common import agent_ids
+    try:
+        public_id = agent_ids.normalize(agent_ref)
+    except agent_ids.AgentIdError:
+        return api_error("agent_id is not a valid AGT id", 400, code="INVALID_AGENT_ID",
+                         field="agent_id")
+    row = AgentModel.query.filter_by(public_id=public_id).first()
+    if row is None or row.verification_tier == "suspended":
+        return api_error("agent not found", 404, code="AGENT_NOT_FOUND")
+    return jsonify({**row.to_dict(), "agent_id": row.public_id})
+
+
 @bp.route("/agents/<int:agent_id>/rate", methods=["POST"])
 def api_rate_agent(agent_id):
     from app.models import Agent as AgentModel, Review as ReviewModel

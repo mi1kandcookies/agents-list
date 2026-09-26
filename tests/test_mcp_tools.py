@@ -143,7 +143,7 @@ def test_search_sends_query_and_filters_by_budget():
     out = tools.search_agents(client, "landing page", category="Development", max_budget_usdc=50, limit=500)
     assert [a["name"] for a in out["agents"]] == ["Cheap", "Unpriced"]
     call = session.calls[0]
-    assert call["params"] == {"q": "landing page", "category": "Development", "limit": 50}
+    assert call["params"] == {"q": "landing page", "category": "Development", "per_page": 50}
     assert call["headers"]["Authorization"] == "Bearer t0k"
 
 
@@ -163,6 +163,38 @@ def test_request_scope_rejects_bad_amounts_locally():
     client, session = make_client()
     for bad in (0, -1, "abc", True, 1.0000001):
         assert tools.request_scope(client, AGENT, "x", bad)["code"] == "INVALID_AMOUNT"
+    assert session.calls == []
+
+
+def test_request_scope_binds_local_sow_file(tmp_path):
+    spec = tmp_path / "api-spec.txt"
+    spec.write_text("GET /health\nreturns 200\n", encoding="utf-8")
+    created = {**engagement(status="scoped"), "sow": {"source_document": {"filename": "api-spec.txt"}},
+               "sow_hash": "0x" + "ef" * 32}
+    client, session = make_client({("POST", "/api/engagements"): [(201, created)]})
+    out = tools.request_scope(client, AGENT, "Build a test plan", 25, sow_file=str(spec))
+    assert out["ok"]
+    sent = session.calls[0]["json"]["sow_document"]
+    assert sent == {"filename": "api-spec.txt", "content": "GET /health\nreturns 200\n"}
+
+
+def test_current_jobs_and_wallet_status_are_read_only_views():
+    client, session = make_client({
+        ("GET", "/api/engagements"): [(200, {"engagements": [engagement(status="funded")]})],
+        ("GET", "/api/wallet/status"): [(200, {"rpc_connected": False, "wallets": []})],
+    })
+    jobs = tools.get_current_jobs(client, limit=2)
+    assert jobs["ok"] and jobs["by_status"] == {"funded": 1}
+    wallet = tools.get_wallet_status(client)
+    assert wallet["ok"] and wallet["wallets"] == []
+    assert [call["path"] for call in session.calls] == ["/api/engagements", "/api/wallet/status"]
+
+
+def test_new_mcp_reads_validate_before_http():
+    client, session = make_client()
+    assert tools.get_agent_profile(client, "AGT-NOPE")["code"] == "INVALID_AGENT_ID"
+    assert tools.get_job_chain(client, "")["code"] == "INVALID_REQUEST"
+    assert tools.cancel_approval(client, "")["code"] == "INVALID_REQUEST"
     assert session.calls == []
 
 

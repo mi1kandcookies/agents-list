@@ -110,6 +110,36 @@ def _flow(value, default: str) -> str:
 
 
 # ── JSON API ──────────────────────────────────────────────────────────────
+@bp.route("/api/engagements", methods=["GET"])
+@_api
+def api_list():
+    """List jobs for terminal clients and the signed-in jobs summary.
+
+    A configured MCP bearer token is an application integration credential,
+    so it may read the jobs it is operating.  Mandate tokens and approval
+    credentials are never included in this summary.
+    """
+    from app.models import Engagement
+    try:
+        limit = min(100, max(1, int(request.args.get("limit", 25))))
+    except (TypeError, ValueError):
+        raise EngagementError("limit must be an integer", "INVALID_REQUEST", 400, "limit")
+    raw_status = (request.args.get("status") or "").strip()
+    statuses = {s for s in raw_status.split(",") if s}
+    allowed = {"draft", "scoped", "awaiting_approval", "funded", "in_progress",
+               "held", "completed", "cancelled", "refused"}
+    unknown = statuses - allowed
+    if unknown:
+        raise EngagementError("unknown engagement status", "INVALID_REQUEST", 400, "status")
+    query = Engagement.query
+    if statuses:
+        query = query.filter(Engagement.status.in_(sorted(statuses)))
+    rows = query.order_by(Engagement.created_at.desc()).limit(limit).all()
+    jobs = [svc.engagement_json(row, detail=False) for row in rows]
+    return jsonify({"engagements": jobs, "count": len(jobs), "limit": limit,
+                    "statuses": sorted(statuses)})
+
+
 @bp.route("/api/engagements", methods=["POST"])
 @_api
 def api_create():
@@ -119,7 +149,8 @@ def api_create():
         agent=agent, outcome=body.get("outcome"),
         budget_micro=_usdc(body.get("budget_usdc"), "budget_usdc"),
         milestones=body.get("milestones"), deadline=body.get("deadline"),
-        source_document=body.get("source_document"))
+        source_document=body.get("source_document"),
+        sow_document=body.get("sow_document"))
     return jsonify({**svc.engagement_json(eng), "screening": svc.screening_json(preview)}), 201
 
 
@@ -241,8 +272,7 @@ def jobs_new():
     agent = db.session.get(Agent, request.values.get("agent", type=int) or 0)
     if agent is None or agent.verification_tier == "suspended":
         return redirect(url_for("catalog.marketplace"))
-    form = {"outcome": "", "budget_usdc": "", "deadline": "", "milestones": "",
-            "source_filename": "", "source_sha256": ""}
+    form = {"outcome": "", "budget_usdc": "", "deadline": "", "milestones": ""}
     error = None
     if request.method == "POST":
         form.update({k: request.form.get(k, "") for k in form})
@@ -250,9 +280,7 @@ def jobs_new():
             eng, _ = svc.create_engagement(
                 agent=agent, outcome=form["outcome"],
                 budget_micro=_usdc(form["budget_usdc"], "budget_usdc"),
-                milestones=_milestone_lines(form["milestones"]), deadline=form["deadline"] or None,
-                source_document={"filename": form["source_filename"], "sha256": form["source_sha256"]}
-                if form["source_sha256"] else None)
+                milestones=_milestone_lines(form["milestones"]), deadline=form["deadline"] or None)
             return redirect(url_for("engagements.jobs_detail", engagement_id=eng.id))
         except EngagementError as exc:
             error = exc.message

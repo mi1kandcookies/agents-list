@@ -27,8 +27,11 @@ except ImportError:  # pragma: no cover - both ship with mcp
 
 INSTRUCTIONS = """\
 Agent's List lets you find, scope and hire listed AI agents and pay them in USDC
-from escrow. Workflow: search_agents -> request_scope -> hire -> (work happens)
--> release_milestone, checking get_engagement_status after each money step.
+from escrow. The terminal workflow mirrors the web UI: search_agents or
+get_agent_profile -> request_scope (optionally with a local SOW file) -> hire
+-> work/submit_milestone -> release_milestone, checking status after each step.
+Use get_current_jobs for the dashboard summary and get_wallet_status or
+get_protocol_status for public chain readiness.
 
 If the human gives you a statement of work (a file path or pasted text), start
 with submit_sow: it reads the document into outcome, milestones, acceptance
@@ -62,7 +65,7 @@ def _run(fn, **kwargs):
 def build_server():
     if _Server is None or Field is None:
         raise RuntimeError("the mcp package is not installed; run: pip install -r requirements-mcp.txt")
-    server = _Server("agents-list", instructions=INSTRUCTIONS)
+    server = _Server("agentlist", instructions=INSTRUCTIONS)
     AgentId = Annotated[str, Field(description="Agent id, AGT-XXXX-XXXX-C (validated locally before any request)")]
     EngagementId = Annotated[str, Field(description="Engagement id, ENG-..., from request_scope")]
 
@@ -79,18 +82,50 @@ def build_server():
                           max_budget_usdc=max_budget_usdc, limit=limit)
 
     @server.tool()
+    async def get_agent_profile(agent_id: AgentId) -> dict:
+        """Read one complete marketplace profile by its checked AGT identifier,
+        including ENS/payout and payment-screening evidence when available."""
+        return await _run(tools.get_agent_profile, agent_id=agent_id)
+
+    @server.tool()
     async def request_scope(
         agent_id: AgentId,
         outcome: Annotated[str, Field(description="The result the human wants delivered")],
         budget_usdc: Annotated[float, Field(description="Total budget in USDC (max 6 decimals)")],
         milestones: Annotated[list[dict] | None, Field(
             description="Optional [{title, acceptance, amount_usdc}]; amounts should sum to budget_usdc")] = None,
+        deadline: Annotated[str | int | None, Field(
+            description="Optional future ISO-8601 date/time or Unix timestamp")] = None,
+        sow_file: Annotated[str | None, Field(
+            description="Optional local UTF-8 SOW path; its SHA-256 is bound into the approval")]=None,
     ) -> dict:
         """Draft a scoped engagement (statement of work + milestones) with an agent. Does NOT move
         money. Returns engagement_id, SOW and sow_hash: show them to the human and only call hire
         once they agree to the total."""
         return await _run(tools.request_scope, agent_id=agent_id, outcome=outcome,
-                          budget_usdc=budget_usdc, milestones=milestones)
+                          budget_usdc=budget_usdc, milestones=milestones,
+                          deadline=deadline, sow_file=sow_file)
+
+    @server.tool()
+    async def get_current_jobs(
+        status: Annotated[str | None, Field(description="Optional status filter, e.g. funded or completed")] = None,
+        limit: Annotated[int, Field(description="Max jobs to return, 1-100")]=20,
+    ) -> dict:
+        """Return the terminal job dashboard summary: jobs, statuses, SOW hashes,
+        milestones and ENS-linked agent names. Read-only."""
+        return await _run(tools.get_current_jobs, status=status, limit=limit)
+
+    @server.tool()
+    async def get_wallet_status() -> dict:
+        """Show public operator-wallet addresses and Sepolia ETH/USDC balances.
+        Private keys never leave the app host and are never returned."""
+        return await _run(tools.get_wallet_status)
+
+    @server.tool()
+    async def get_protocol_status() -> dict:
+        """Show configured Sepolia contracts, wallet readiness and whether the
+        ENS, Intercepta fail-closed, and World approval integrations are wired."""
+        return await _run(tools.get_protocol_status)
 
     @server.tool()
     async def submit_sow(
@@ -130,6 +165,17 @@ def build_server():
         return await _run(tools.release_milestone, engagement_id=engagement_id, milestone_index=milestone_index)
 
     @server.tool()
+    async def submit_milestone(
+        engagement_id: EngagementId,
+        milestone_index: Annotated[int, Field(description="Zero-based milestone index")],
+        evidence: Annotated[str, Field(description="Evidence or deliverable summary, max 4000 characters")],
+    ) -> dict:
+        """Mark funded work as submitted. This does not release funds; the human
+        must inspect and approve the separate release action."""
+        return await _run(tools.submit_milestone, engagement_id=engagement_id,
+                          milestone_index=milestone_index, evidence=evidence)
+
+    @server.tool()
     async def get_engagement_status(
         engagement_id: EngagementId,
         wait_seconds: Annotated[int, Field(description="Block up to this many seconds (max 25) for a "
@@ -140,6 +186,16 @@ def build_server():
         money_moved is true only when the ledger shows a confirmed or simulated transfer for that
         approval; until then, do not tell the human they have paid."""
         return await _run(tools.get_engagement_status, engagement_id=engagement_id, wait_seconds=wait_seconds)
+
+    @server.tool()
+    async def get_job_chain(engagement_id: EngagementId) -> dict:
+        """Read the delegation chain and narrowing mandate for a job."""
+        return await _run(tools.get_job_chain, engagement_id=engagement_id)
+
+    @server.tool()
+    async def cancel_approval(approval_id: Annotated[str, Field(description="Approval id, APR-...")]) -> dict:
+        """Cancel a still-open approval. It is single-use and never authorizes a payment."""
+        return await _run(tools.cancel_approval, approval_id=approval_id)
 
     @server.tool(description="Sub-hire another agent under your mandate for a parent engagement. Allocates from "
                  "the parent escrow (ledger only) within the mandate's budget, categories and depth, after "

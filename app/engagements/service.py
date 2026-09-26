@@ -35,7 +35,8 @@ from app.common.ids import new_id
 from app.engagements import ledger
 from app.engagements.ledger import unix
 from app.engagements.sow import (
-    SowError, build_sow, normalize_milestones, parse_deadline, sow_hash, sow_json, title_hash,
+    SowError, build_sow, normalize_milestones, parse_deadline, sow_hash, sow_json,
+    source_document_metadata, title_hash,
 )
 from app.extensions import db
 from chain.escrow import EscrowError, EscrowService
@@ -297,17 +298,20 @@ def _cap_of(verdict: dict) -> int:
 
 # ── scope ─────────────────────────────────────────────────────────────────
 def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, deadline=None,
-                      source_document=None):
+                      source_document=None, sow_document=None):
     """Build the SOW, persist the engagement as ``scoped`` and return
-    ``(engagement, screening_preview)``. ``source_document`` ({filename,
-    sha256} of an uploaded SOW) goes into the SOW and so into sow_hash."""
+    ``(engagement, screening_preview)``."""
     from app.models import Engagement, Milestone
     try:
         plan = normalize_milestones(milestones, budget_micro)
         deadline_ts = parse_deadline(deadline)
+        if source_document is not None and sow_document is not None:
+            raise SowError("provide only one source document", "source_document")
+        document_meta = (source_document_metadata(sow_document)
+                         if sow_document is not None else source_document)
         sow = build_sow(agent_public_id=agent.public_id, outcome=outcome, budget_micro=budget_micro,
                         milestones=plan, deadline=deadline_ts, category=agent.category,
-                        source_document=source_document)
+                        source_document=document_meta)
     except SowError as exc:
         raise EngagementError(str(exc), exc.code, 400, exc.field) from None
     eng = Engagement(
