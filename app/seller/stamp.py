@@ -1,8 +1,9 @@
 """Operator stamps: a verified human signs off on one exact agent configuration.
 
 An agent's manifest (model, tools, MCP servers, skills, price range, payout
-address) is canonical JSON, hashed like any action
-(docs/decisions/0001-custody-chain.md §1). The operator stamps it with a
+address and, optionally, the hash of its private runtime spec) is canonical
+JSON, hashed like any action (docs/decisions/0001-custody-chain.md §1 and
+its 2026-09-26 amendment). The operator stamps it with a
 fresh World ID approval of kind ``manifest.publish`` bound to that hash, the
 way an engineer stamps one specific set of drawings. Editing the manifest
 does not touch the stamp, so the hashes stop matching and the listing needs a
@@ -48,6 +49,7 @@ MAX_TEXT = 200
 # Marks stamps written by `flask seed-stamps`; never a real World ID subject.
 DEV_STAMP_SUB = "simulated:dev-seed"
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+_SPEC_HASH_RE = re.compile(r"^0x[0-9a-f]{64}$")
 
 CODES = ("NOT_STAMPED", "RESTAMP_REQUIRED", "OPERATOR_BANNED", "PAYEE_REFUSED")
 REASONS = {
@@ -101,12 +103,24 @@ def _micro(value, field: str) -> int:
     return int(micro)
 
 
+def _spec_hash(value) -> Optional[str]:
+    """Lowercase ``0x`` + 64 hex, or None when absent or blank."""
+    digest = value.strip().lower() if isinstance(value, str) else value
+    if digest is None or digest == "":
+        return None
+    if not isinstance(digest, str) or not _SPEC_HASH_RE.fullmatch(digest):
+        raise ManifestError("spec hash must be 0x followed by 64 hex characters", "spec_hash")
+    return digest
+
+
 def build_manifest(agent, *, model, tools=(), mcp_servers=(), skills=(), price_min_usdc=None,
                    price_max_usdc=None, payout_address=None, price_min_micro=None,
-                   price_max_micro=None) -> dict:
+                   price_max_micro=None, spec_hash=None) -> dict:
     """Validate and normalize a manifest for ``agent``. Lists are de-duplicated
     and sorted so the hash does not depend on entry order; money is integer
-    micro-USDC; the address is lowercase."""
+    micro-USDC; the address is lowercase. ``spec_hash`` (optional, lowercase
+    ``0x`` + 64 hex) commits to the agent's private runtime spec; when absent
+    the key is left out, so manifests without one hash exactly as before."""
     model = _text(model, "model")
     if not model:
         raise ManifestError("model is required", "model")
@@ -118,13 +132,17 @@ def build_manifest(agent, *, model, tools=(), mcp_servers=(), skills=(), price_m
     if not _ADDRESS_RE.match(payout):
         raise ManifestError("payout address must be a 0x-prefixed 20-byte hex address",
                             "payout_address")
-    return {
+    spec = _spec_hash(spec_hash)
+    manifest = {
         "v": MANIFEST_VERSION, "agent_id": agent.public_id, "model": model,
         "tools": _items(tools, "tools"), "mcp_servers": _items(mcp_servers, "mcp_servers"),
         "skills": _items(skills, "skills"),
         "price_min_micro": int(lo), "price_max_micro": int(hi),
         "payout_address": payout.lower(),
     }
+    if spec is not None:
+        manifest["spec_hash"] = spec
+    return manifest
 
 
 def manifest_hash(manifest: dict) -> str:
