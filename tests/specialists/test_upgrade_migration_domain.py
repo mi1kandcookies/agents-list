@@ -740,13 +740,18 @@ def test_eval_cases_reference_real_milestones_and_fixtures(tmp_path):
     spec = load_specialist("upgrade-migration")
     ids = {ms.id for ms in spec.manifest.milestones}
     cases = load_cases(spec)                     # the kit's strict case schema
-    assert len(cases) == 3
+    assert len(cases) == 4
     for case in cases:
         assert case.milestone in ids and case.notes and case.fixture == "ledgerly-api"
-        assert case_brief(spec, case).intake["test_command"]
-        ws = tmp_path / case.milestone
+        brief = case_brief(spec, case)
+        assert brief.intake["test_command"]
+        assert not [m for m in spec.validate_intake(brief.intake) if m.blocking]
+        ws = tmp_path / case.name
         prepare_workspace(spec, case, ws)        # the fixture lands as repo/
         assert (ws / "repo" / "requirements.txt").is_file() and not (ws / "inputs").exists()
+    injected = next(c for c in cases if c.fixtures)
+    doc = tmp_path / injected.name / "repo" / "docs" / "UPGRADING.md"
+    assert "AUTOMATED AGENTS" in doc.read_text(encoding="utf-8")    # reaches the model as repo data
 
 
 def test_fixture_repo_end_to_end_offline(tmp_path):
