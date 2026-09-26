@@ -25,7 +25,15 @@ listing:
     - competitor feature and pricing matrix
     - top-down and bottom-up TAM/SAM/SOM with sensitivity table
     - cited report with traceability matrix
-  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 15000}
+  # typical_low/high: the engagement range, billed per milestone through the
+  # SOW. task_price_usdc: a placeholder flat x402 price for one paid task,
+  # stamped as the platform manifest's price; confirm it before stamping.
+  pricing:
+    model: per_milestone
+    currency: USDC
+    typical_low: 1500
+    typical_high: 15000
+    task_price_usdc: 5.0
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: research
 prompts:
