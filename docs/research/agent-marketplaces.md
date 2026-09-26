@@ -39,7 +39,7 @@ figures are self-reported by each project unless noted.
 | [NEAR AI Agent Market](https://market.near.ai/) | Post task → agents bid → escrow → deliver → dispute agent | Yes, single job | Bids only | Unclear | Agent's own | Claims Claude/Codex/OpenClaw support (MCP unverified) | Live since 2026-02 |
 | [OKX.AI](https://okx.ai/) | Agent marketplace + task marketplace | Yes, escrow contracts (USDT/USDG) | No | Yes, carries across job types | Unclear | Unverified | Public since 2026-06-30 |
 | [Virtuals ACP](https://app.virtuals.io/acp) | On-chain job phases with an evaluator | Yes, single job | Negotiation phase | Ratings | Agent's own | SDKs, chat front end (Butler) | Live on Base; claims 1.77M jobs, but ~17 events/day on 2026-09-23 per agenteconomy.to |
-| [AI Agent Store "Claw Earn"](https://aiagentstore.ai/) | Funded bounties | Yes, USDC on Base | No | No | Hosted agents | No | Live |
+| [AI Agent Store "Claw Earn"](https://aiagentstore.ai/) | Funded task rewards | Yes, USDC on Base | No | No | Hosted agents | No | Live |
 | [Upwork MCP](https://www.upwork.com) | Hire humans via MCP | Yes, milestones | Job posts | Job success score | n/a | Yes, MCP | Live since 2026-08 |
 | [Olas Mech + Pearl](https://olas.network/) | Pay-per-request between agents; desktop agent store | No | No | No | User's machine | No | Live; 18.2M tx |
 
@@ -123,7 +123,7 @@ figures are self-reported by each project unless noted.
   design for `EngagementEscrow`.
 
 ### Small escrow / hiring projects
-- [BountyBook](https://www.bountybook.ai/): USDC bounties on Base with an AI oracle; escrow sold over x402.
+- An AI-oracle task-reward market on Base: USDC rewards with escrow sold over x402.
 - [Agoragentic](https://agoragentic.com/): agent-to-agent API marketplace with an internal USDC ledger; 3% fee.
 - [AIProx](https://aiprox.dev/): open MCP registry for hiring agents (claims 16 agents).
 - [dealwork.ai](https://dealwork.ai/), [toku.agency](https://toku.agency/), [ClawGig](https://clawgig.ai/): small job boards with escrow (Stripe or Base USDC).
@@ -146,7 +146,7 @@ figures are self-reported by each project unless noted.
 - [Poe](https://poe.com): creators set a price per message on bots.
 
 ### Directories
-- [AI Agents Directory](https://aiagentsdirectory.com/) (~2.9k), [AI Agent Store](https://aiagentstore.ai/) (1.3k+, plus hosted agents and Claw Earn escrow bounties), [AI Agents List](https://aiagentslist.com/) (~620, "Founder Verified" badge), [agent.market](https://agent.market/) (content unclear).
+- [AI Agents Directory](https://aiagentsdirectory.com/) (~2.9k), [AI Agent Store](https://aiagentstore.ai/) (1.3k+, plus hosted agents and Claw Earn escrowed task rewards), [AI Agents List](https://aiagentslist.com/) (~620, "Founder Verified" badge), [agent.market](https://agent.market/) (content unclear).
 
 ### Freelance platforms
 - [Upwork](https://www.upwork.com): MCP server (2026-08-10) and the Uma work agent. Escrow, milestones and reputation, but for humans.
@@ -196,7 +196,7 @@ Stars and last-push dates as of 2026-09-26.
 
 ## Gaps nobody fills well
 
-1. **Scoping before pricing.** Everyone prices by seat, call, task, bounty or
+1. **Scoping before pricing.** Everyone prices by seat, call, task, reward or
    bid on an already-defined job. Nobody turns a vague goal into a scoped SOW
    with milestones, acceptance criteria, a duration and a cost estimate.
 2. **Multi-milestone escrow for long work.** Existing escrow (ACP, ERC-8183,
