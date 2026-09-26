@@ -58,6 +58,12 @@ cache (or `inputs/edgar/`), the market data file, the claim ledger and the
 data-room files directly, and their fiscal-year, debt and multiple
 arithmetic is written independently of the tools.
 
+## Pricing
+
+Engagements are billed per milestone through the SOW, typically 500 to 6,000
+USDC (`listing.pricing`). `task_price_usdc` (5 USDC, a placeholder) is the
+separate flat x402 price the operator stamps for one agent-to-agent task.
+
 ## Human gate
 
 No licensed-reviewer gate is required for internal research

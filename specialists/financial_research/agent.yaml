@@ -28,7 +28,11 @@ listing:
     - trading comps with EV bridge (EV/Revenue, EV/EBITDA, P/E, margins, growth)
     - filing-index red-flag scan and checklist
     - cited diligence memo and management question list
-  pricing: {model: per_milestone, currency: USDC, typical_low: 500, typical_high: 6000}
+  # typical_low/high: the engagement range, billed per milestone through the
+  # SOW. task_price_usdc: the flat x402 price of one agent-to-agent task that
+  # the operator stamps (a placeholder until the operator sets it).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 500, typical_high: 6000,
+            task_price_usdc: 5.0}
 
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: research

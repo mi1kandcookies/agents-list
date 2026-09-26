@@ -18,7 +18,7 @@ import pytest
 from agentkit.__main__ import main
 from agentkit.evals import load_cases, run_case
 from agentkit.events import MemorySink
-from agentkit.evidence import evidence_hash
+from agentkit.evidence import EVIDENCE_MAX_CHARS, evidence_hash, platform_evidence
 from agentkit.llm import ScriptedAdapter
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
@@ -367,6 +367,12 @@ def _assert_ready(spec, ws: Path, sub: Submission, events: MemorySink, deliverab
     assert sub.evidence_hash.startswith("0x") and len(sub.evidence_hash) == 66
     saved = json.loads(spec.submission_path(ws, sub.milestone_id).read_text(encoding="utf-8"))
     assert saved["evidence_hash"] == sub.evidence_hash == evidence_hash(Submission.from_dict(saved))
+    # ... through the evidence text a harness posts for the milestone's SOW
+    # index (the manifest's order, since the brief lists no milestones)
+    assert sub.milestone_idx == [m.id for m in spec.manifest.milestones].index(sub.milestone_id)
+    text = platform_evidence(sub)
+    assert len(text) <= EVIDENCE_MAX_CHARS and json.loads(text)["milestone_idx"] == sub.milestone_idx
+    assert sub.evidence_hash == "0x" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def test_registry_loads_the_subclass_with_domain_tools_and_checks(spec):
