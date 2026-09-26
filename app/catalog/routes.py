@@ -87,11 +87,15 @@ def marketplace():
     except ValueError:
         pass
 
+    # Price sorts use the token prices shown on the cards: output first (it
+    # dominates most jobs' cost), then input.
     relevance = (AgentModel.featured.desc(), AgentModel.verified.desc(),
-                 AgentModel.rating.desc(), AgentModel.current_price.asc())
+                 AgentModel.rating.desc(), AgentModel.output_price_per_1m.asc())
     order_by = {
-        "price_low":  (AgentModel.current_price.asc(),) + relevance,
-        "price_high": (AgentModel.current_price.desc(),) + relevance,
+        "price_low":  (AgentModel.output_price_per_1m.asc(),
+                       AgentModel.input_price_per_1m.asc()) + relevance,
+        "price_high": (AgentModel.output_price_per_1m.desc(),
+                       AgentModel.input_price_per_1m.desc()) + relevance,
         "rating":     (AgentModel.rating.desc(),) + relevance,
         "newest":     (AgentModel.id.desc(),),
     }.get(sort, relevance)

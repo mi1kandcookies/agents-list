@@ -191,6 +191,9 @@
 .est-confidence p { margin: 0; }
 .est-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-right: 8px; }
 .est-num { font-size: 20px; font-weight: 600; color: var(--ink); }
+.est-tokens { display: flex; align-items: baseline; gap: 6px; }
+.est-tokens .est-num { font-size: 17px; }
+.est-unit { font-size: 13px; color: var(--ink-3); }
 .est-sub { font-size: 13px; color: var(--ink-2); }
 .est-method { font-size: 13px; color: var(--ink-3); }
 .est-tips { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }

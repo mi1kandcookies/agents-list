@@ -6,21 +6,25 @@ default milestones and estimate constants. It is sent to the browser as JSON
 ``estimate()`` below and ``estimate()`` in flow.js implement the same rules
 and must be kept in step.
 
-The estimate is deliberately simple and deterministic: the escrowed total is
-exactly the milestone sum, and the upper bound adds a revision buffer that
-shrinks as the job is specified more precisely. A scoping agent will replace
-this later; nothing here claims to be market data.
+The estimate is deterministic. Cost is token based: the job's estimated input
+and output tokens (app/intake/token_model.py) times the chosen agent's token
+prices. The escrowed total is exactly the milestone sum, which is the buyer's
+budget and the cap; the token cost estimate never changes it. Duration is
+days per milestone plus a buffer that shrinks as the job is specified more
+precisely. Nothing here claims to be market data.
 """
 from __future__ import annotations
 
 import math
 from datetime import date
 
+from app.intake.token_model import estimate_tokens, model_config, token_cost
+
 # Days a delivered milestone stays open for review before funds release
 # automatically. Placeholder until the escrow release policy is settled.
 AUTO_RELEASE_DAYS = 7
 
-# Revision buffer applied to the upper cost bound, by confidence level.
+# Buffer applied to the upper duration bound (twice this), by confidence level.
 BUFFER = {"low": 0.30, "medium": 0.20, "good": 0.10}
 
 CATEGORIES: list[dict] = [
@@ -150,23 +154,39 @@ def confidence(outcome: str, criteria_counts: list[int]) -> tuple[str, list[str]
     return level, tips
 
 
-def estimate(*, outcome: str, milestones: list[dict], category: str | None,
-             deadline: date | None = None, today: date | None = None) -> dict:
-    """Cost and duration ranges.
+def _criteria_list(value) -> list[str]:
+    return [str(c) for c in (value or []) if str(c).strip()]
 
-    ``milestones``: ``[{"amount_cents": int, "criteria": int}]``.
+
+def estimate(*, outcome: str, milestones: list[dict], category: str | None,
+             deadline: date | None = None, today: date | None = None,
+             input_price_per_1m: int = 0, output_price_per_1m: int = 0,
+             token_config: dict | None = None) -> dict:
+    """Tokens, cost and duration ranges.
+
+    ``milestones``: ``[{"title": str, "amount_cents": int, "criteria": [str, ...]}]``.
+    Prices are the agent's, in USDC micro-units per 1M tokens; with no prices
+    the cost fields are None.
     """
     cat = category_for(category)
     per = cat["days_per_milestone"] if cat else DEFAULT_DAYS_PER_MILESTONE
     total = sum(int(m.get("amount_cents") or 0) for m in milestones)
-    level, tips = confidence(outcome, [int(m.get("criteria") or 0) for m in milestones])
+    crit = [_criteria_list(m.get("criteria")) for m in milestones]
+    level, tips = confidence(outcome, [len(c) for c in crit])
     buffer = BUFFER[level]
     days_low = max(1, per * len(milestones))
     days_high = math.ceil(round(days_low * (1 + 2 * buffer), 6))
+    tokens = estimate_tokens({
+        "category": cat["key"] if cat else None, "outcome": outcome,
+        "milestones": [{"title": m.get("title") or "", "criteria": c} for m, c in zip(milestones, crit)],
+    }, token_config or model_config())
+    cost = token_cost(tokens, input_price_per_1m, output_price_per_1m)
     result = {
         "total_cents": total,
-        "cost_low_cents": total,
-        "cost_high_cents": math.ceil(math.floor(total * (1 + buffer) + 0.5) / 500) * 500,
+        "tokens": tokens,
+        "cost_low_micro": cost["low_micro"] if cost else None,
+        "cost_high_micro": cost["high_micro"] if cost else None,
+        "over_budget": bool(cost) and cost["high_micro"] > total * 10_000,
         "days_low": days_low,
         "days_high": days_high,
         "confidence": level,
@@ -178,3 +198,42 @@ def estimate(*, outcome: str, milestones: list[dict], category: str | None,
         result["deadline_fit"] = ("ok" if left >= days_high else
                                   "tight" if left >= days_low else "short")
     return result
+
+
+def estimate_text(est: dict) -> dict:
+    """Display strings for an ``estimate()`` result, for the server-rendered
+    estimate page. flow.js ``estimateText()`` builds the same strings in the
+    browser; keep the wording in step."""
+    from app.common.money import format_usdc
+    from app.intake.token_model import format_tokens
+
+    def rng(lo: str, hi: str) -> str:
+        return lo if lo == hi else f"{lo} to {hi}"
+
+    tok = est["tokens"]
+    tokens_in = rng(format_tokens(tok["input"]["low"]), format_tokens(tok["input"]["high"]))
+    tokens_out = rng(format_tokens(tok["output"]["low"]), format_tokens(tok["output"]["high"]))
+    priced = est["cost_low_micro"] is not None
+    cost = (rng(format_usdc(est["cost_low_micro"], unit=False), format_usdc(est["cost_high_micro"], unit=False))
+            if priced else "Not listed")
+    if not priced:
+        cost_note = "This agent has not listed token prices."
+    elif est["over_budget"]:
+        cost_note = "The upper figure is above your budget. The budget still caps what is paid."
+    else:
+        cost_note = "Estimated tokens times this agent's token prices."
+    if tok["basis"] == "calibrated":
+        method = (f"Estimated from {tok['runs']:,} measured run{'s' if tok['runs'] != 1 else ''} "
+                  "of similar jobs and this agent's token prices.")
+    else:
+        method = ("Estimated from your milestones and this agent's token prices. Token use per "
+                  "milestone is a rule of thumb for this kind of work, so the range is wide.")
+    usage = f"About {tokens_in} input and {tokens_out} output tokens"
+    usage += f", {cost} USDC at this agent's prices." if priced else "."
+    return {
+        "cost": cost, "cost_note": cost_note,
+        "tokens_in": tokens_in, "tokens_out": tokens_out,
+        "cap": format_usdc(est["total_cents"], "cents", unit=False),
+        "cap_note": "Held in escrow. The agent is never paid more than this.",
+        "method": method, "usage": usage,
+    }

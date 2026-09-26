@@ -217,8 +217,8 @@ def step_list(api: Api, res: Results, wanted: str | None) -> tuple[dict | None, 
         say("  No agents. Run `flask --app wsgi seed-demo` on the server first.")
         return None, agents
     say(table([[a.get("agent_id"), a["name"][:34], a["category"],
-                f"${a['min_price']:.2f}-${a['max_price']:.2f}/min"
-                if a.get("billing") == "per_minute" else a.get("billing"),
+                f"${a['input_price_display']:g} in, ${a['output_price_display']:g} out per 1M"
+                if a.get("input_price_per_1m") else "on request",
                 "yes" if a.get("operator_stamped") else "no"]
                for a in agents[:12]], ["agent id", "name", "category", "price", "stamped"]))
     if wanted:

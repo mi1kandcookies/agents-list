@@ -38,6 +38,9 @@ def test_agents_have_valid_agt_ids_and_full_profiles(db):
         assert agent_ids.is_valid(a.public_id), a.public_id
         assert a.category and a.description and a.capabilities
         assert 0 < a.min_price <= a.current_price <= a.max_price
+        assert a.billing == "per_token"
+        assert 0 < a.input_price_per_1m < a.output_price_per_1m
+        assert a.input_price_per_1m % 10_000 == 0 and a.output_price_per_1m % 10_000 == 0
         profile = demo_profile(a.name)
         for key in ("specialty", "does", "doesnt", "tools", "models", "sample_outputs", "faq"):
             assert profile[key], (a.name, key)
@@ -89,8 +92,9 @@ def test_cli_dev_stamp_refused_in_production(app, monkeypatch):
 
 
 def test_demo_track_record_is_flagged_bounded_and_stable(db):
-    """Demo listings carry an illustrative track record, always flagged as
-    demo, within realistic bounds and identical on every run."""
+    """Demo listings carry an illustrative track record (flagged in the data,
+    not rendered), within realistic bounds and identical on every run. No
+    turnaround is seeded: it depends on the job, so it is not shown."""
     from app.models import Agent, Review
     seed_demo_agents(db, Agent)
     first = {a.name: (a.tasks_completed, a.avg_completion_time, a.on_time_rate, a.repeat_hire_rate)
@@ -99,7 +103,7 @@ def test_demo_track_record_is_flagged_bounded_and_stable(db):
         assert a.demo_listing is True
         assert 26 <= a.tasks_completed <= 164
         assert 0.88 <= a.on_time_rate <= 0.99 and 0.22 <= a.repeat_hire_rate <= 0.61
-        assert a.avg_completion_time.endswith(("hours", "days"))
+        assert a.avg_completion_time.strip() == "-"
         assert a.verified is False and a.featured is False
     assert Review.query.count() == 0          # reviews are seeded separately
     seed_demo_agents(db, Agent)
@@ -172,3 +176,35 @@ def test_demo_agents_render_and_list_with_agt_ids(client, db):
         assert client.get(f"/agent/{a.id}").status_code == 200
     listed = client.get("/api/agents?per_page=50").get_json()["agents"]
     assert {a.public_id for a in rows} <= {x["agent_id"] for x in listed}
+
+
+def test_demo_token_prices_follow_model_list_price_and_margin(db):
+    """Token prices = the model's list price x the operator margin, in USDC
+    micro-units per 1M tokens, the same on every run."""
+    from app.demo_seed import DEMO_AGENTS, MODEL_LIST_PRICES, token_prices
+    from app.models import Agent
+    seed_demo_agents(db, Agent)
+    rows = {a.name: a for a in _demo_rows()}
+    for spec in DEMO_AGENTS:
+        list_in, list_out = MODEL_LIST_PRICES[spec["model"][1]]
+        assert 1.0 < spec["margin"] < 2.0
+        row = rows[spec["name"]]
+        assert (row.input_price_per_1m, row.output_price_per_1m) == token_prices(spec)
+        assert abs(row.input_price_per_1m - list_in * spec["margin"] * 1e6) <= 5_000
+        assert abs(row.output_price_per_1m - list_out * spec["margin"] * 1e6) <= 5_000
+    audit = rows["Keelhaul Audit"]      # claude-opus at $5 / $25, margin 1.4
+    assert (audit.input_price_per_1m, audit.output_price_per_1m) == (7_000_000, 35_000_000)
+    seed_demo_agents(db, Agent)
+    assert {a.name: (a.input_price_per_1m, a.output_price_per_1m) for a in _demo_rows()} == \
+        {n: (r.input_price_per_1m, r.output_price_per_1m) for n, r in rows.items()}
+
+
+def test_demo_icon_overrides_are_known_icons(db):
+    from app.common.agent_icons import ICONS, icon_for
+    from app.models import Agent
+    seed_demo_agents(db, Agent)
+    rows = {a.name: a for a in _demo_rows()}
+    assert rows["Attest SOC 2 Readiness"].icon == "clipboard-check"
+    assert rows["Keelhaul Audit"].icon is None
+    assert icon_for(rows["Keelhaul Audit"]) == "shield-check"     # from its category
+    assert all(icon_for(a) in ICONS for a in rows.values())

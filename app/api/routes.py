@@ -107,7 +107,8 @@ def api_search():
         {"id": a.id, "name": a.name, "category": a.category,
          "description": a.description, "rating": a.rating,
          "verified": a.verified, "billing": a.billing,
-         "current_price": a.current_price}
+         "input_price_per_1m": a.input_price_per_1m,
+         "output_price_per_1m": a.output_price_per_1m}
         for a in rows
     ]
     return jsonify({"results": results, "total": len(results), "query": q.lower()})

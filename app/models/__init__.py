@@ -52,11 +52,14 @@ class Agent(db.Model):
     on_time_rate        = db.Column(db.Float, nullable=True)       # 0..1, None = no data yet
     repeat_hire_rate    = db.Column(db.Float, nullable=True)       # 0..1, None = no data yet
     demo_listing        = db.Column(db.Boolean, nullable=False, default=False)  # sample listing
+    icon                = db.Column(db.String(40), nullable=True)  # icon key override (app/common/agent_icons.py)
     # On-chain identity (each agent is an independently-deployed entity)
     model_provider      = db.Column(db.String(40), nullable=True)
     model_name          = db.Column(db.String(80), nullable=True)
     deployer_wallet     = db.Column(db.String(64), nullable=True)
-    # I/O token pricing in USDC micro-units per 1M tokens (0 = unset)
+    # I/O token pricing in USDC micro-units per 1M tokens (0 = unset):
+    # 3_000_000 = $3 per 1M tokens. This is the listing's displayed price and
+    # what job estimates are computed from (app/intake/token_model.py).
     input_price_per_1m  = db.Column(db.Integer, nullable=False, default=0)
     output_price_per_1m = db.Column(db.Integer, nullable=False, default=0)
     # JSON-encoded lists
@@ -114,14 +117,16 @@ class Agent(db.Model):
             "on_time_rate": self.on_time_rate,
             "repeat_hire_rate": self.repeat_hire_rate,
             "demo_listing": bool(self.demo_listing),
+            "icon": self.icon,
             "ens_name": self.ens_name,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "deployer_wallet": self.deployer_wallet,
             "input_price_per_1m": self.input_price_per_1m,
             "output_price_per_1m": self.output_price_per_1m,
-            "input_price_display": round((self.input_price_per_1m or 0) / 1_000_000, 2),
-            "output_price_display": round((self.output_price_per_1m or 0) / 1_000_000, 2),
+            # USDC per 1M tokens, unrounded (0.6 means $0.60 per 1M tokens)
+            "input_price_display": (self.input_price_per_1m or 0) / 1_000_000,
+            "output_price_display": (self.output_price_per_1m or 0) / 1_000_000,
             "tags": self.tags,
             "capabilities": self.capabilities,
             **self._screening_fields(),
