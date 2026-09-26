@@ -27,7 +27,7 @@ Run the CLI from outside the workspace (e.g. the repo root): `python -m`
 puts the working directory first on sys.path, so files the agent writes
 there could otherwise shadow modules the kit imports. run, check and eval
 refuse a working directory inside their workspace (or eval's --out), and a
-specialist package that would be loaded from anywhere but its own
+specialist package that Python would load from anywhere but its own
 directory (see agentkit.registry).
 
 Models come from the manifest (models.primary, fallbacks, grader), so a
