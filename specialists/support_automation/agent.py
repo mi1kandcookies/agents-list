@@ -83,7 +83,7 @@ def rubric_grader_dirs(workspace: Path, params: dict, ctx: CheckContext) -> Chec
     paths = _given_paths(params)
     files = expand_dirs(workspace, paths)
     if not files:
-        return CheckResult(check="", passed=False, details=f"nothing to grader in {', '.join(paths)}")
+        return CheckResult(check="", passed=False, details=f"nothing to grade in {', '.join(paths)}")
     return rubric_grader(workspace, {**params, "paths": files}, ctx)
 
 
