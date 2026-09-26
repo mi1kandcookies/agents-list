@@ -597,3 +597,19 @@ def test_injection_fixture_is_not_shredded_and_fails_grounding(tmp_path):
            "[KB:capabilities.md#p1].\n")
     result = C.claims_grounded(ws, {})
     assert result["passed"] is False and "FedRAMP" in result["details"] and "500" in result["details"]
+
+
+def test_kb_must_be_customer_input_and_headings_are_scanned(m3_ws):
+    _write(m3_ws, "work/kb/fake.md", "We hold FedRAMP High authorization.")
+    with pytest.raises(ToolError, match="inputs/"):
+        T.kb_search(m3_ws, query="FedRAMP", kb_dir="work/kb")
+    _write(m3_ws, T.DRAFT_PATH, DRAFT.replace("## Past Performance", "## 20 Years of Past Performance"))
+    assert "uncited claims" in C.claims_grounded(m3_ws, {})["details"]
+
+
+def test_crlf_sources_shred_the_same(rfp_ws, tmp_path):
+    lf = T.shred_text((rfp_ws / RFP).read_text(encoding="utf-8"), RFP)
+    crlf_path = rfp_ws / "inputs" / "solicitation" / "crlf.md"
+    crlf_path.write_bytes((rfp_ws / RFP).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    crlf = T.shred_text(T.read_text(rfp_ws, "inputs/solicitation/crlf.md"), RFP)
+    assert [(r["text"], r["section"], r["page"]) for r in crlf] == [(r["text"], r["section"], r["page"]) for r in lf]

@@ -581,6 +581,10 @@ def kb_passages(workspace: Path, kb_dir: str = KB_DIR) -> dict[str, str]:
     """{"<file>#p<N>": paragraph text} for every KB file; N counts non-heading
     paragraphs from 1, so ids are stable while a file is unchanged."""
     root = resolve(workspace, kb_dir)
+    # Evidence must be customer material: a KB under deliverables/ or work/
+    # would let a draft cite text the agent wrote itself.
+    if not relpath(workspace, root).startswith("inputs/"):
+        raise ToolError(f"the knowledge base must be under inputs/: {kb_dir}")
     if not root.is_dir():
         raise ToolError(f"no knowledge-base folder at {kb_dir}")
     passages: dict[str, str] = {}
@@ -605,25 +609,30 @@ def tokenize(text: str) -> list[str]:
     return [t for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in _STOPWORDS]
 
 
-def bm25_rank(query: str, passages: dict[str, str], k1: float = 1.5,
-              b: float = 0.75) -> list[tuple[str, float]]:
-    """Okapi BM25 scores of every passage for the query, best first."""
+def bm25_index(passages: dict[str, str]) -> dict[str, Any]:
+    """Term frequencies, document frequencies and lengths, built once per KB."""
     docs = {pid: tokenize(text) for pid, text in passages.items()}
-    if not docs:
-        return []
-    avg = sum(len(t) for t in docs.values()) / len(docs) or 1.0
-    df = Counter(term for toks in docs.values() for term in set(toks))
-    n = len(docs)
+    return {"tf": {pid: Counter(toks) for pid, toks in docs.items()},
+            "len": {pid: len(toks) for pid, toks in docs.items()},
+            "df": Counter(term for toks in docs.values() for term in set(toks)),
+            "avg": (sum(len(t) for t in docs.values()) / len(docs) or 1.0) if docs else 1.0,
+            "n": len(docs)}
+
+
+def bm25_rank(query: str, passages: dict[str, str] | None = None, k1: float = 1.5,
+              b: float = 0.75, index: dict[str, Any] | None = None) -> list[tuple[str, float]]:
+    """Okapi BM25 scores of every passage for the query, best first."""
+    index = index or bm25_index(passages or {})
+    n, df, avg = index["n"], index["df"], index["avg"]
     q_terms = set(tokenize(query))
     scores = []
-    for pid, toks in docs.items():
-        tf = Counter(toks)
+    for pid, tf in index["tf"].items():
         score = 0.0
         for term in q_terms:
             if term not in tf:
                 continue
             idf = math.log(1 + (n - df[term] + 0.5) / (df[term] + 0.5))
-            score += idf * tf[term] * (k1 + 1) / (tf[term] + k1 * (1 - b + b * len(toks) / avg))
+            score += idf * tf[term] * (k1 + 1) / (tf[term] + k1 * (1 - b + b * index["len"][pid] / avg))
         if score > 0:
             scores.append((pid, round(score, 4)))
     return sorted(scores, key=lambda s: (-s[1], s[0]))
@@ -647,14 +656,14 @@ def build_evidence_map(workspace: Path, *, fetch=None, run=None,
     candidates: read each mapped passage and demote it to a gap if it does
     not actually support the requirement."""
     doc = load_requirements(workspace, requirements)
-    passages = kb_passages(workspace, kb_dir)
+    index = bm25_index(kb_passages(workspace, kb_dir))
     rows, gaps = [], []
     for req in doc["requirements"]:
         if req.get("type") in COMPLIANCE_ONLY_TYPES:
             rows.append({"req_id": req["id"], "type": req["type"], "status": "not_applicable",
                          "note": "format/submission rule or customer-signed form; tracked in the checklist"})
             continue
-        ranked = bm25_rank(req.get("text", ""), passages)
+        ranked = bm25_rank(req.get("text", ""), index=index)
         best = ranked[0][1] if ranked else 0.0
         keep = [pid for pid, score in ranked[:top_k] if score >= max(min_score, 0.6 * best)]
         if keep:
@@ -812,7 +821,8 @@ def scan_grounding(text: str, passages: dict[str, str],
     unresolved, unsupported, uncited = [], [], []
     cited = 0
     for sec in draft_sections(text):
-        body = _COMMENT.sub(" ", sec["body"])
+        # The heading is scanned as its own line: claims hide in titles too.
+        body = sec["heading"] + "\n\n" + _COMMENT.sub(" ", sec["body"])
         for s in split_sentences(body):
             sentence = s["text"]
             cites = _CITATION.findall(sentence)
