@@ -2,7 +2,7 @@
 {% from "intake/_macros.html" import estimate_card, contract %}
 {% block title %}Describe your job{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=2">
 {% endblock %}
 
 {% block content %}
@@ -52,12 +52,12 @@
         <section class="flow-step" data-step="2" data-name="Category" aria-labelledby="s2-h" hidden>
           <h2 id="s2-h" tabindex="-1">What kind of work is it?</h2>
           <p class="flow-lede">This picks sensible default milestones and which agents we show you.</p>
-          <fieldset class="chips chips-cards" id="f-category" aria-describedby="f-cat-hint e-2">
+          <fieldset class="opts opts-cards" id="f-category" aria-describedby="f-cat-hint e-2">
             <legend class="sr-only">Category</legend>
             {% for c in config.categories %}
-            <label class="chip">
+            <label class="opt">
               <input type="radio" name="category" value="{{ c.key }}">
-              <span class="chip-body"><span class="chip-title">{{ c.label }}</span><span class="chip-hint">{{ c.hint }}</span></span>
+              <span class="opt-body"><span class="opt-title">{{ c.label }}</span><span class="opt-hint">{{ c.hint }}</span></span>
             </label>
             {% endfor %}
           </fieldset>
@@ -93,12 +93,12 @@
         <section class="flow-step" data-step="5" data-name="Deadline" aria-labelledby="s5-h" hidden>
           <h2 id="s5-h" tabindex="-1">When do you need it?</h2>
           <p class="flow-lede">We compare this with the estimate so you know early if it is tight.</p>
-          <fieldset class="chips" id="f-deadline" aria-describedby="e-5">
+          <fieldset class="opts" id="f-deadline" aria-describedby="e-5">
             <legend class="sr-only">Timing</legend>
-            <label class="chip"><input type="radio" name="deadline" value="asap"><span class="chip-body"><span class="chip-title">As soon as possible</span></span></label>
-            <label class="chip"><input type="radio" name="deadline" value="week"><span class="chip-body"><span class="chip-title">Within 1 week</span></span></label>
-            <label class="chip"><input type="radio" name="deadline" value="month"><span class="chip-body"><span class="chip-title">Within 1 month</span></span></label>
-            <label class="chip"><input type="radio" name="deadline" value="flexible"><span class="chip-body"><span class="chip-title">Flexible</span></span></label>
+            <label class="opt"><input type="radio" name="deadline" value="asap"><span class="opt-body"><span class="opt-title">As soon as possible</span></span></label>
+            <label class="opt"><input type="radio" name="deadline" value="week"><span class="opt-body"><span class="opt-title">Within 1 week</span></span></label>
+            <label class="opt"><input type="radio" name="deadline" value="month"><span class="opt-body"><span class="opt-title">Within 1 month</span></span></label>
+            <label class="opt"><input type="radio" name="deadline" value="flexible"><span class="opt-body"><span class="opt-title">Flexible</span></span></label>
           </fieldset>
           <label class="flabel" for="f-date">Or pick a date</label>
           <input type="date" id="f-date" class="finput mono" aria-describedby="e-5">
@@ -109,10 +109,10 @@
         <section class="flow-step" data-step="6" data-name="Budget" aria-labelledby="s6-h" hidden>
           <h2 id="s6-h" tabindex="-1">What is your budget?</h2>
           <p class="flow-lede">Your milestones are rescaled to match. Nothing is charged until you approve the contract.</p>
-          <fieldset class="chips" id="f-budget-mode">
+          <fieldset class="opts" id="f-budget-mode">
             <legend class="sr-only">Budget</legend>
-            <label class="chip"><input type="radio" name="budget_mode" value="custom"><span class="chip-body"><span class="chip-title">Set my budget</span></span></label>
-            <label class="chip"><input type="radio" name="budget_mode" value="suggest"><span class="chip-body"><span class="chip-title">Let the scoper suggest</span></span></label>
+            <label class="opt"><input type="radio" name="budget_mode" value="custom"><span class="opt-body"><span class="opt-title">Set my budget</span></span></label>
+            <label class="opt"><input type="radio" name="budget_mode" value="suggest"><span class="opt-body"><span class="opt-title">Let the scoper suggest</span></span></label>
           </fieldset>
           <div class="budget-custom" id="budget-custom">
             <label class="flabel" for="f-budget">Budget in USDC</label>
