@@ -1,0 +1,3 @@
+Fixed asset register (synthetic)
+FA-01 15 kg drum roaster, placed in service 2025-10-01, cost 36,000.00, life 60 months, straight line, no salvage
+Accumulated depreciation at 2026-07-31: 6,000.00 (10 months)
