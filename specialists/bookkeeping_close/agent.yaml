@@ -1,0 +1,290 @@
+schema_version: 1
+slug: bookkeeping-close
+name: Bookkeeping & Month-End Close
+version: 0.1.0
+summary: >-
+  Categorizes bank activity, reconciles cash to the cent, drafts accrual,
+  prepaid, deferral and depreciation entries, and assembles a tie-out close
+  package for an accountant or CPA to review and post. Works from CSV exports;
+  never posts to a ledger, moves money or files anything.
+listing:
+  category: Accounting
+  description: >-
+    Month-end close from your bank statement and general-ledger exports:
+    rules-first transaction categorization with an exceptions queue, a bank
+    reconciliation with $0.00 unexplained difference, draft adjusting journal
+    entries with support, trial balance, flux commentary and financial
+    statements. Every number is recomputed by deterministic checks, nothing is
+    plugged, and all work product goes to your accountant or CPA for approval.
+  tags: [bookkeeping, month-end-close, reconciliation, accruals, trial-balance, flux-analysis]
+  capabilities:
+    - Rules-first categorization of bank activity with confidence and an exceptions queue
+    - Bank reconciliation to the cent with outstanding and unrecorded items listed
+    - Draft adjusting entries (prepaids, accruals, deferred revenue, depreciation) marked do-not-post
+    - Adjusted trial balance, flux analysis with commentary, P&L and balance sheet
+    - Opening-balance tie-out and chart-of-accounts mapping for new clients
+  pricing: {model: per_milestone, currency: USDC, typical_low: 300, typical_high: 2500}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: regulated-draft
+prompts:
+  system: prompts/system.md
+  include: [playbook/close-method.md, playbook/reconciliation.md, playbook/adjusting-entries.md]
+tools:
+  - read_document
+  - read_file
+  - write_file
+  - edit_file
+  - list_files
+  - search_files
+  - record_source
+  - record_claim
+  - ask_client
+  - post_progress
+  - submit_milestone
+  - parse_bank_statement
+  - categorize_transactions
+  - find_exceptions
+  - reconcile_bank
+  - draft_journal_entry
+  - build_accrual_schedule
+  - build_trial_balance
+  - flux_analysis
+  - tie_opening_balances
+  - build_account_map
+  - build_financial_statements
+shell: {allow: [], timeout_seconds: 600}
+egress: {mode: none, allow: []}
+limits: {max_steps: 120, max_tokens: 3000000, max_usd: 40, max_wall_minutes: 180}
+human_gate:
+  required: true
+  reviewer_role: accountant or CPA
+  disclaimer: >-
+    Draft bookkeeping work product prepared for review by the client's
+    accountant or CPA. This is not an audit, review, compilation or other
+    attest engagement, and it is not tax advice. Journal entries are drafts:
+    nothing has been posted to any ledger. A qualified human must review,
+    approve and post every entry and sign off the period.
+  checklist:
+    - Categorization of every low-confidence and exceptions-queue item is correct
+    - Each draft journal entry is supported and approved before it is posted
+    - Bank reconciliation outstanding and unrecorded items are genuine, not forced
+    - Suspense and Ask My Accountant balances are resolved or accepted as itemized
+    - Accrual estimates, capitalization and owner-draw or tax-sensitive reclasses are approved
+    - Period is signed off and locked in the ledger by a human
+intake:
+  - field: entity_name
+    question: What is the legal name of the business whose books we are closing?
+    required: true
+  - field: period
+    question: Which month are we closing (YYYY-MM)?
+    required: true
+  - field: bank_statement
+    question: >-
+      Please upload the bank statement for the period as CSV (date, description,
+      amount, running balance) to inputs/bank_statement.csv.
+    required: true
+  - field: gl_export
+    question: >-
+      Please upload the general-ledger detail export (entry id, date, account,
+      description, debit, credit), including opening balances, to inputs/gl_detail.csv.
+    required: true
+  - field: chart_of_accounts
+    question: Please upload the chart of accounts (account, name, type) to inputs/chart_of_accounts.csv.
+    required: true
+  - field: cash_account
+    question: Which GL account number is the bank account on this statement?
+    required: true
+  - field: prior_trial_balance
+    question: >-
+      Please upload the prior period's closing trial balance (or the balances
+      from the last filed return) to inputs/prior_trial_balance.csv.
+    required: true
+  - field: statement_ending_balance
+    question: What ending balance is printed on the bank statement (for cross-checking the CSV)?
+    required: false
+  - field: accrual_schedule
+    question: >-
+      Do you have prepaid, accrual, deferred-revenue or fixed-asset schedules?
+      If so, upload them to inputs/accrual_schedule.csv.
+    required: false
+  - field: categorization_rules
+    question: >-
+      Do you have vendor-to-account rules (or last month's categorized
+      transactions) we should follow? Upload to inputs/categorization_rules.csv.
+    required: false
+  - field: materiality
+    question: >-
+      What flux thresholds should require commentary (default: changes of at
+      least $1,000 and 10%)?
+    required: false
+estimate: {usd_per_hour: 6.0}
+milestones:
+  - id: m1-onboarding
+    title: Books diagnostic and close setup
+    description: >-
+      Map every GL account to a statement line, tie opening balances to the
+      prior closing trial balance, write the categorization rulebook and an
+      entity-specific close checklist, and summarize findings in a diagnostic memo.
+    deliverables:
+      - deliverables/m1-onboarding/diagnostic.md
+      - deliverables/m1-onboarding/account_map.csv
+      - deliverables/m1-onboarding/opening_balance_tieout.csv
+      - deliverables/m1-onboarding/categorization_rulebook.csv
+      - deliverables/m1-onboarding/close_checklist.md
+    hours: [2, 6]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m1-onboarding/diagnostic.md
+            - deliverables/m1-onboarding/account_map.csv
+            - deliverables/m1-onboarding/opening_balance_tieout.csv
+            - deliverables/m1-onboarding/categorization_rulebook.csv
+            - deliverables/m1-onboarding/close_checklist.md
+      - check: account_map_complete
+        description: Every account used in the GL is in the chart of accounts and mapped to a statement line
+        params:
+          chart_of_accounts: inputs/chart_of_accounts.csv
+          gl: inputs/gl_detail.csv
+          account_map: deliverables/m1-onboarding/account_map.csv
+      - check: opening_balances_tie
+        description: Opening balances tie to the prior closing trial balance within $1 or each difference is explained
+        params:
+          gl: inputs/gl_detail.csv
+          prior_trial_balance: inputs/prior_trial_balance.csv
+          tieout: deliverables/m1-onboarding/opening_balance_tieout.csv
+          tolerance: "1.00"
+      - check: csv_columns
+        params:
+          path: deliverables/m1-onboarding/categorization_rulebook.csv
+          columns: [pattern, account, confidence]
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-onboarding/diagnostic.md
+          sections: [Summary, Chart of accounts, Opening balances, Categorization rules, Open questions]
+      - check: no_placeholders
+        params:
+          paths: [deliverables/m1-onboarding/diagnostic.md, deliverables/m1-onboarding/close_checklist.md]
+      - check: disclaimer_present
+        params: {path: deliverables/m1-onboarding/diagnostic.md}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/diagnostic.yaml
+          paths: [deliverables/m1-onboarding/diagnostic.md, deliverables/m1-onboarding/close_checklist.md]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Accountant or CPA approves the account map, rulebook and threshold policy
+  - id: m2-period-close
+    title: Period close workpapers
+    description: >-
+      Categorize the period's bank activity, queue exceptions, reconcile the
+      bank account to the cent, draft adjusting entries from the schedules and
+      the reconciliation, and build the adjusted trial balance. No plugs.
+    deliverables:
+      - deliverables/m2-period-close/categorized.csv
+      - deliverables/m2-period-close/exceptions.csv
+      - deliverables/m2-period-close/bank_reconciliation.json
+      - deliverables/m2-period-close/accrual_schedule.csv
+      - deliverables/m2-period-close/journal_entries.csv
+      - deliverables/m2-period-close/trial_balance.csv
+    hours: [4, 12]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m2-period-close/categorized.csv
+            - deliverables/m2-period-close/exceptions.csv
+            - deliverables/m2-period-close/bank_reconciliation.json
+            - deliverables/m2-period-close/accrual_schedule.csv
+            - deliverables/m2-period-close/journal_entries.csv
+            - deliverables/m2-period-close/trial_balance.csv
+      - check: json_valid
+        params: {path: deliverables/m2-period-close/bank_reconciliation.json}
+      - check: categorization_complete
+        description: Categorized count and dollars equal the bank feed; low-confidence items are queued
+        params:
+          statement: inputs/bank_statement.csv
+          categorized: deliverables/m2-period-close/categorized.csv
+          exceptions: deliverables/m2-period-close/exceptions.csv
+      - check: bank_rec_ties
+        description: Recomputed bank reconciliation has $0.00 unexplained difference and matches the reported one
+        params:
+          statement: inputs/bank_statement.csv
+          gl: inputs/gl_detail.csv
+          reconciliation: deliverables/m2-period-close/bank_reconciliation.json
+      - check: journal_entries_balanced
+        description: Every draft entry balances, cites support, uses known accounts and is marked draft
+        params:
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
+          chart_of_accounts: inputs/chart_of_accounts.csv
+      - check: trial_balance_ties
+        description: Adjusted trial balance recomputes from the GL plus draft entries; debits equal credits
+        params:
+          gl: inputs/gl_detail.csv
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
+          trial_balance: deliverables/m2-period-close/trial_balance.csv
+      - check: no_plugs
+        description: Suspense and Ask My Accountant balances are zero or itemized; no forcing entries
+        params:
+          gl: inputs/gl_detail.csv
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
+          chart_of_accounts: inputs/chart_of_accounts.csv
+          exceptions: deliverables/m2-period-close/exceptions.csv
+          reconciliation: deliverables/m2-period-close/bank_reconciliation.json
+      - check: human_signoff
+        kind: human
+        description: Accountant or CPA approves each draft entry and the exceptions queue before posting
+  - id: m3-close-package
+    title: Close package, flux and financial statements
+    description: >-
+      Explain every material movement against the prior period, produce the
+      P&L and balance sheet from the adjusted trial balance, and write the
+      close package memo for the reviewer.
+    deliverables:
+      - deliverables/m3-close-package/flux.csv
+      - deliverables/m3-close-package/financial_statements.json
+      - deliverables/m3-close-package/close_package.md
+    hours: [2, 6]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m3-close-package/flux.csv
+            - deliverables/m3-close-package/financial_statements.json
+            - deliverables/m3-close-package/close_package.md
+      - check: trial_balance_ties
+        params:
+          gl: inputs/gl_detail.csv
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
+          trial_balance: deliverables/m2-period-close/trial_balance.csv
+      - check: flux_commentary_complete
+        description: Every variance at or above the thresholds has commentary and the amounts recompute
+        params:
+          current: deliverables/m2-period-close/trial_balance.csv
+          prior: [inputs/prior_trial_balance.csv, inputs/prior_month_pl.csv]
+          flux: deliverables/m3-close-package/flux.csv
+      - check: financial_statements_tie
+        description: Statements recompute from the adjusted trial balance and the balance sheet balances
+        params:
+          trial_balance: deliverables/m2-period-close/trial_balance.csv
+          chart_of_accounts: inputs/chart_of_accounts.csv
+          statements: deliverables/m3-close-package/financial_statements.json
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-close-package/close_package.md
+          sections: [Summary, Reconciliations, Adjusting entries, Flux commentary, Financial statements, Open items, Reviewer sign-off]
+      - check: no_placeholders
+        params: {paths: [deliverables/m3-close-package/close_package.md]}
+      - check: disclaimer_present
+        params: {path: deliverables/m3-close-package/close_package.md}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/close_package.yaml
+          paths: [deliverables/m3-close-package/close_package.md, deliverables/m3-close-package/flux.csv]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Accountant or CPA signs off the period and posts the approved entries
