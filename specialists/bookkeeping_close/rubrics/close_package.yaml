@@ -1,0 +1,30 @@
+name: Month-end close package
+criteria:
+  - id: traceability
+    description: >-
+      Every amount in the memo matches a delivered workpaper and cites it
+      (reconciliation, entry id, trial balance account or flux row).
+    weight: 0.3
+  - id: flux_explanations
+    description: >-
+      Commentary for each flagged variance names the underlying activity
+      (entries, invoices, schedule items) rather than restating the change or
+      saying "timing" without detail.
+    weight: 0.25
+  - id: open_items_honest
+    description: >-
+      Unresolved exceptions, suspense balances and any open differences are
+      listed with amount, reason and who must act; nothing is presented as
+      resolved without evidence.
+    weight: 0.2
+  - id: reviewer_ready
+    description: >-
+      The Reviewer sign-off section lists each draft entry and judgment call
+      that needs approval before posting, and the disclaimer is present.
+    weight: 0.15
+  - id: owner_readable
+    description: >-
+      The summary explains the month to a non-accountant owner in a few plain
+      sentences: cash, profit, what changed and what they need to do.
+    weight: 0.1
+threshold: 0.75
