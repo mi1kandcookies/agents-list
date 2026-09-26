@@ -1,0 +1,19 @@
+{
+  "intents": [
+    {"id": "refund_request", "label": "Refund for damaged or unwanted box", "keywords": ["refund", "money back", "spoiled"], "automation": "with_tools"},
+    {"id": "skip_delivery", "label": "Skip a delivery", "keywords": ["skip"], "automation": "with_tools"},
+    {"id": "pause_subscription", "label": "Pause subscription", "keywords": ["pause"], "automation": "with_tools"},
+    {"id": "cancel_subscription", "label": "Cancel subscription", "keywords": ["cancel my subscription", "cancel"], "automation": "with_tools"},
+    {"id": "delivery_status", "label": "Late or missing delivery", "keywords": ["where is my box", "delivery is late", "tracking", "never arrived"], "automation": "with_tools"},
+    {"id": "address_change", "label": "Change delivery address", "keywords": ["delivery address", "moved"], "automation": "answer_only"},
+    {"id": "login_help", "label": "Login and password", "keywords": ["password", "log in"], "automation": "answer_only"},
+    {"id": "promo_code", "label": "Promo codes", "keywords": ["promo code", "promo"], "automation": "answer_only"},
+    {"id": "allergen_question", "label": "Allergen questions", "keywords": ["allergy", "peanut", "contain"], "automation": "answer_only"},
+    {"id": "billing_issue", "label": "Billing and payment", "keywords": ["charged twice", "update my card", "card"], "automation": "with_tools"},
+    {"id": "billing_dispute", "label": "Chargeback or dispute", "keywords": ["chargeback", "dispute"], "automation": "human_only"},
+    {"id": "legal_threat", "label": "Legal threat", "keywords": ["lawyer", "attorney", "sue"], "automation": "human_only"},
+    {"id": "food_safety", "label": "Illness or safety", "keywords": ["sick", "unsafe", "urgent care"], "automation": "human_only"},
+    {"id": "account_security", "label": "Account takeover", "keywords": ["hacked", "changed my email"], "automation": "human_only"},
+    {"id": "bereavement", "label": "Bereavement", "keywords": ["passed away"], "automation": "human_only"}
+  ]
+}

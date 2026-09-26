@@ -368,3 +368,45 @@ def test_manifest_files_and_rubrics_exist():
                 assert rubric["name"] and 0 < rubric["threshold"] <= 1
                 assert abs(sum(weights) - 1.0) < 1e-9
                 assert all({"id", "description", "weight"} <= set(c) for c in rubric["criteria"])
+
+
+# --- eval fixtures --------------------------------------------------------------
+
+FIXTURE = PKG / "evals" / "fixtures" / "larkspur"
+
+
+@pytest.fixture()
+def larkspur(tmp_path: Path) -> Path:
+    import shutil
+    shutil.copytree(FIXTURE / "inputs", tmp_path / "inputs")
+    (tmp_path / M1).mkdir(parents=True)
+    shutil.copy(FIXTURE / "reference" / "intent_rules.json", tmp_path / M1 / "intent_rules.json")
+    return tmp_path
+
+
+def test_fixture_pipeline_meets_m1_acceptance(larkspur):
+    red = tools.redact_tickets(larkspur)
+    assert red["rows"] == 70 and all(red["redactions"].values())
+    tools.build_intent_taxonomy(larkspur)
+    gaps = dict(tools.kb_coverage(larkspur)["gaps"])
+    assert {"pause_subscription", "cancel_subscription", "delivery_status"} <= set(gaps)
+    assert "login_help" not in gaps and "skip_delivery" not in gaps
+    assert C.taxonomy_reconciles(larkspur, M1_PARAMS)["passed"] is True
+    assert C.gap_map_consistent(larkspur, {**M1_PARAMS, "gap_map": f"{M1}/kb_gap_map.csv"})["passed"] is True
+    assert C.no_pii_remaining(larkspur, {"paths": [M1]})["passed"] is True
+    found = tools.find_contradictions(larkspur, terms=["refund"], paths=["inputs/policies/refunds.md"],
+                                      tickets_path="inputs/tickets.csv")
+    refund = [c for c in found["conflicts"] if c["term"] == "refund" and c["unit"] == "days"]
+    assert refund and {"14 days", "30 days"} <= set(refund[0]["values"])
+
+
+def test_eval_cases_are_well_formed():
+    m = _manifest()
+    ids = {ms["id"] for ms in m["milestones"]}
+    cases = sorted((PKG / "evals" / "cases").glob("*.json"))
+    assert len(cases) >= 3
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert {"name", "brief", "milestone", "notes"} <= set(case)
+        assert case["milestone"] in ids and case["brief"]["specialist"] == "support-automation"
+        assert (PKG / case["fixtures"]).is_dir()
