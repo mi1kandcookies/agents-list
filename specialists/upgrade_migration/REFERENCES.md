@@ -8,6 +8,7 @@ copied. Copyleft projects were consulted through their public docs only.
 | google/osv-scanner | Apache-2.0 | Scan pinned versions against OSV; rank candidate upgrades by advisories fixed per change; present in-place / relock / override as risk tiers |
 | OSV schema and API (osv.dev) | Apache-2.0 (schema), CC-BY-4.0 (data) | `querybatch` + per-id records; evaluate `introduced` / `fixed` / `last_affected` events locally |
 | FIRST CVSS v3.1 specification | public standard | Base-score formula and severity bands, implemented from the spec |
+| pip requirements-file format, PEP 508 / 621 / 735, and the uv, Poetry, Pipenv, npm, yarn and pnpm lockfile formats | public format docs | Parsers written from the documented file formats (continuations, per-requirement options, peer suffixes, workspace entries) |
 | dependabot/dependabot-core | MIT | Per-ecosystem parse / resolve / update split; pull changelogs into the context for breaking changes (interface ideas only) |
 | renovatebot/renovate | AGPL-3.0 (docs only) | Minimum release age as a supply-chain guard; grouping coupled packages |
 | anthropics/code-migration-kit-with-claude-code | Apache-2.0 | Build or validate the grader before changing code; settle translation decisions once as rules; recurring failures amend the rules, with human approval |

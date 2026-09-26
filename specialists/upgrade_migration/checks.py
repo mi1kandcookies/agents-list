@@ -208,14 +208,23 @@ def _client_run(entry: dict, argv: list[str], cwd: str) -> bool:
     return entry.get("argv") == argv and entry.get("cwd") == cwd
 
 
+def _at_baseline(state: dict | None, base_state: dict) -> bool:
+    """The run tested the baseline's exact pins. Packages the baseline left
+    unpinned, and packages it did not have, are free: a lockfile the
+    environment setup generated (npm install, uv sync) does not rule a run
+    out."""
+    return state is not None and all(state.get(k) == v for k, v in base_state.items() if v)
+
+
 def _baseline_run(workspace: Path, runs: list[dict], argv: list[str], cwd: str,
                   base_state: dict) -> int | None:
     """Index of the baseline test run: the client's command, in cwd, at the
-    baseline dependency versions; the one with most passing tests (earliest
-    on a tie), so an early run on a half-set-up machine cannot lower it."""
+    baseline dependency pins; the one with most passing tests (earliest on a
+    tie), so an early run on a half-set-up machine cannot lower it."""
     best = None
     for i, entry in enumerate(runs):
-        if not _client_run(entry, argv, cwd) or T.load_run_state(workspace, entry) != base_state:
+        if not (_client_run(entry, argv, cwd)
+                and _at_baseline(T.load_run_state(workspace, entry), base_state)):
             continue
         if best is None or entry["counts"]["passed"] > runs[best]["counts"]["passed"]:
             best = i

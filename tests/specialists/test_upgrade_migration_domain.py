@@ -1002,6 +1002,28 @@ def test_m1_names_dependency_files_it_could_not_read(tmp_path):
     assert C.plan_covers_findings(tmp_path, {})["passed"] is True
 
 
+def test_a_lockfile_generated_by_setup_still_counts_as_baseline(tmp_path):
+    """A repo without a lockfile gets one from `npm install` before any test
+    can run. The baseline's own pins are unchanged, so that run is the
+    baseline; a run after a baseline pin moved is not."""
+    def setup(ws: Path, fastjsonx: str) -> None:
+        write(ws, "repo/requirements.txt", "fastjsonx==2.2.0\n")
+        write(ws, "repo/package.json", json.dumps({"dependencies": {"left-trim-lite": "^1.1.0"}}))
+        T.record_test_command(ws, ["pytest"])
+        T.inventory_dependencies(ws)
+        write(ws, "repo/requirements.txt", f"fastjsonx=={fastjsonx}\n")
+        write(ws, "repo/package-lock.json", json.dumps({"lockfileVersion": 3, "packages": {
+            "": {"dependencies": {"left-trim-lite": "^1.1.0"}},
+            "node_modules/left-trim-lite": {"version": "1.1.9"}, "node_modules/tiny-dep": {"version": "0.3.1"}}}))
+        T.run_tests(ws, run=fake_run("5 passed"), argv=["pytest"], label="baseline")
+
+    setup(tmp_path / "a", "2.2.0")
+    assert C.tests_pass(tmp_path / "a", {}, run=fake_run("5 passed"))["passed"] is True
+    assert "5 passed in run-1" in C.tests_pass(tmp_path / "a", {}, run=fake_run("4 passed"))["details"]
+    setup(tmp_path / "b", "2.4.1")                                          # a baseline pin moved first
+    assert "no baseline run" in C.tests_pass(tmp_path / "b", {}, run=fake_run("5 passed"))["details"]
+
+
 def test_unpinning_or_removing_a_vulnerable_package_resolves_nothing(tmp_path):
     ws = upgraded_workspace(tmp_path)             # yamlette 5.0 (no fix) is still open
     req = (ws / "repo" / "requirements.txt").read_text(encoding="utf-8")
