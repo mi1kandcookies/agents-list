@@ -79,10 +79,10 @@ in `agent.yaml` say so.
   latest 10-K figure for its period, so restatements flow through.
 - Market cap uses the client's `shares_outstanding` when given, else
   weighted-average diluted shares for the fiscal year (an approximation).
-- The red-flag window is three years back from the latest filing. SEC's
-  index JSON holds only recent filings; `edgar_submissions(since=...)` loads
-  the older pages, and the check fails a window the loaded index does not
-  cover.
+- The red-flag window is at least three years back from the latest filing,
+  stated in each checklist section. SEC's index JSON holds only recent
+  filings; `edgar_submissions(since=...)` loads the older pages, and the
+  check fails a window the loaded index does not cover.
 - The data-room index marks readable only what `read_document` can read
   (text, Markdown, CSV, JSON, HTML, Word); PDFs, spreadsheets and decks are
   listed with a note asking for an export.
