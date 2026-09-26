@@ -318,3 +318,38 @@ def test_check_defs_are_callable():
     for fn in C.CHECK_DEFS.values():
         out = fn(Path("."), {}, run=None)
         assert set(out) == {"passed", "details", "score"} and out["passed"] is False
+
+
+# --- manifest -----------------------------------------------------------------
+
+import yaml  # noqa: E402
+
+# Names from the kit contract (agentkit tools/ and checks/builtin.py).
+KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+             "http_fetch", "web_search", "read_document", "record_source", "record_claim",
+             "ask_client", "post_progress", "submit_milestone"}
+KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+              "json_valid", "csv_columns", "command_succeeds", "ledger_verified", "citations_resolve",
+              "disclaimer_present", "rubric_grader", "human_signoff"}
+
+
+def _manifest() -> dict:
+    return yaml.safe_load((PKG / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_manifest_parses_and_names_resolve():
+    m = _manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "support-automation" and m["profile"] == "docs"
+    domain_tools = {d["name"] for d in tools.TOOL_DEFS}
+    assert set(m["tools"]) <= KIT_TOOLS | domain_tools
+    assert domain_tools <= set(m["tools"])
+    ids = [ms["id"] for ms in m["milestones"]]
+    assert len(ids) == 3 == len(set(ids))
+    for ms in m["milestones"]:
+        assert all(d.startswith(f"deliverables/{ms['id']}/") for d in ms["deliverables"])
+        for crit in ms["acceptance"]:
+            assert crit["check"] in KIT_CHECKS | set(C.CHECK_DEFS), crit["check"]
+            assert crit.get("kind", "automated") in ("automated", "rubric", "human")
+    assert m["human_gate"]["required"] is False and m["human_gate"]["disclaimer"]
+    assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
+    assert m["listing"]["pricing"]["currency"] == "USDC"
