@@ -104,7 +104,7 @@ No ratings yet
     {{ monogram(agent) }}
     <div class="agent-card-title">
       <h3 class="agent-card-name"><a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a></h3>
-      <div class="agent-card-operator">by {{ operator_label(agent) }} in {{ agent.category }}</div>
+      <div class="agent-card-operator">{% if agent.demo_listing %}<span class="demo-tag" title="Sample listing with illustrative track record">Demo listing</span> {% endif %}by {{ operator_label(agent) }} in {{ agent.category }}</div>
     </div>
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>

@@ -88,13 +88,35 @@ def test_cli_dev_stamp_refused_in_production(app, monkeypatch):
     assert out.exit_code != 0 and "Refusing --dev-stamp" in out.output
 
 
-def test_no_fake_track_record(db):
+def test_demo_track_record_is_flagged_bounded_and_stable(db):
+    """Demo listings carry an illustrative track record, always flagged as
+    demo, within realistic bounds and identical on every run."""
     from app.models import Agent, Review
     seed_demo_agents(db, Agent)
+    first = {a.name: (a.tasks_completed, a.avg_completion_time, a.on_time_rate, a.repeat_hire_rate)
+             for a in _demo_rows()}
     for a in _demo_rows():
-        assert (a.rating, a.reviews, a.tasks_completed, a.seller_rating) == (0.0, 0, 0, 0.0)
+        assert a.demo_listing is True
+        assert 26 <= a.tasks_completed <= 164
+        assert 0.88 <= a.on_time_rate <= 0.99 and 0.22 <= a.repeat_hire_rate <= 0.61
+        assert a.avg_completion_time.endswith(("hours", "days"))
         assert a.verified is False and a.featured is False
-    assert Review.query.count() == 0
+    assert Review.query.count() == 0          # reviews are seeded separately
+    seed_demo_agents(db, Agent)
+    assert first == {a.name: (a.tasks_completed, a.avg_completion_time, a.on_time_rate,
+                              a.repeat_hire_rate) for a in _demo_rows()}
+
+
+def test_reseed_keeps_existing_ratings_and_reviews(db):
+    from app.models import Agent
+    seed_demo_agents(db, Agent)
+    row = _demo_rows()[0]
+    row.rating, row.reviews = 4.6, 400
+    db.session.commit()
+    seed_demo_agents(db, Agent)
+    row = next(a for a in _demo_rows() if a.id == row.id)
+    assert (row.rating, row.reviews) == (4.6, 400)
+    assert row.tasks_completed >= row.reviews   # never fewer jobs than reviews
 
 
 def test_without_map_payouts_are_unmapped_placeholders(db):

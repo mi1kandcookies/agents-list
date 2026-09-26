@@ -28,6 +28,7 @@
         {{ monogram(agent) }}
         <div>
           <h1>{{ agent.name }}</h1>
+          {% if agent.demo_listing %}<span class="demo-tag demo-tag--lg" title="Sample listing with illustrative track record">Demo listing</span>{% endif %}
           <p class="profile-specialty">{{ agent.description }}</p>
           <div class="profile-operator">
             <span>Operated by {{ operator_label(agent) }}</span>
@@ -46,9 +47,9 @@
 
     <div class="stat-row" aria-label="Track record">
       {{ mono_stat('{:,}'.format(agent.tasks_completed or 0), 'Jobs delivered') }}
-      {{ mono_stat(None, 'On-time rate') }}
+      {{ mono_stat(((agent.on_time_rate * 100)|round|int ~ '%') if agent.on_time_rate is not none else None, 'On-time rate') }}
       {{ mono_stat(turnaround if turnaround not in ('', '-', '—') else None, 'Avg turnaround') }}
-      {{ mono_stat(None, 'Repeat hires') }}
+      {{ mono_stat(((agent.repeat_hire_rate * 100)|round|int ~ '%') if agent.repeat_hire_rate is not none else None, 'Repeat hires') }}
       {{ mono_stat('%.1f'|format(agent.rating) if agent.reviews else None, ('Rating from ' ~ agent.reviews ~ ' review' ~ ('s' if agent.reviews != 1 else '')) if agent.reviews else 'Rating', unit='out of 5' if agent.reviews else None) }}
     </div>
     {{ screening_risk(agent) }}
