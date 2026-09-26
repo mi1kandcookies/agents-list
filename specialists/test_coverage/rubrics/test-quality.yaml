@@ -1,0 +1,18 @@
+name: Unit test quality
+criteria:
+  - id: meaningful-assertions
+    description: Each test asserts on a specific outcome that would change if the code were wrong; no snapshot-everything or assert-not-None-only tests.
+    weight: 3
+  - id: unit-not-mocked
+    description: The unit under test is never mocked; only its collaborators at process boundaries (network, clock, filesystem, randomness) are faked.
+    weight: 3
+  - id: one-behavior-per-test
+    description: Test names state the behavior and condition (e.g. rejects_negative_quantity), and each test checks one behavior.
+    weight: 2
+  - id: matches-house-style
+    description: Tests follow the repository's existing framework, fixtures, file layout and naming, so the customer's team can maintain them.
+    weight: 2
+  - id: honest-report
+    description: The report states the measured deltas, surviving mutants worth attention, runtime impact and anything left undone, without overstating.
+    weight: 2
+threshold: 0.75

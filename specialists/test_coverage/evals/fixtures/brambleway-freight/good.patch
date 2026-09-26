@@ -1,0 +1,33 @@
+diff --git a/tests/test_fares.py b/tests/test_fares.py
+new file mode 100644
+index 0000000..3b1f0c2
+--- /dev/null
++++ b/tests/test_fares.py
+@@ -0,0 +1,27 @@
++import pytest
++
++from brambleway import zones
++from brambleway.fares import bulk_discount, fare
++
++
++@pytest.fixture(autouse=True)
++def clear_zone_cache():
++    zones._CACHE.clear()
++
++
++def test_standard_fare_zone_a():
++    assert fare(2, "AB1 2CD") == 6.70
++
++
++def test_express_multiplies_by_one_and_a_half():
++    assert fare(2, "AB1 2CD", express=True) == 10.05
++
++
++def test_heavy_surcharge_applies_above_30_kg():
++    assert fare(31, "ZE2 9XX") - fare(30, "ZE2 9XX") == pytest.approx(13.10)
++
++
++@pytest.mark.parametrize("parcels,expected", [(9, 100), (10, 93.0), (50, 85.0)])
++def test_bulk_discount_tiers(parcels, expected):
++    assert bulk_discount(100, parcels) == expected
++

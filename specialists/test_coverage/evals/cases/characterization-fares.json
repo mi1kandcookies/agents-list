@@ -1,0 +1,25 @@
+{
+  "name": "characterization-fares",
+  "milestone": "m2-characterization",
+  "brief": {
+    "engagement_id": "eval-tc-002",
+    "specialist": "test-coverage",
+    "objective": "Pin the observable behavior of brambleway/fares.py before the surcharge rewrite; no production changes.",
+    "intake": {
+      "repo": "fixtures/brambleway-freight/repo (uploaded archive)",
+      "test_command": "python -m pytest -q",
+      "language_stack": "Python 3.12, pytest, coverage.py, mutmut",
+      "target_modules": ["brambleway/fares.py"],
+      "mutation_floor_pct": 60
+    }
+  },
+  "notes": "A good run logs negative weights (fare(-5, ...) returns a price below the base) and unknown postcode prefixes as suspicious behaviors instead of pinning them silently, clears the zone cache in a fixture, and never edits fares.py. bad.patch in the fixture shows the two failure modes the checks must catch: a production edit and an assertion-free test.",
+  "fixtures": {
+    "repo/brambleway/__init__.py": "brambleway-freight/repo/brambleway/__init__.py",
+    "repo/brambleway/fares.py": "brambleway-freight/repo/brambleway/fares.py",
+    "repo/brambleway/zones.py": "brambleway-freight/repo/brambleway/zones.py",
+    "repo/tests/test_zones.py": "brambleway-freight/repo/tests/test_zones.py",
+    "inputs/brief-notes.md": "brambleway-freight/inputs/brief-notes.md",
+    "inputs/ci/coverage.xml": "brambleway-freight/coverage-baseline.xml"
+  }
+}

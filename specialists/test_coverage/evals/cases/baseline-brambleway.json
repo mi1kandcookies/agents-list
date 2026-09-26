@@ -1,0 +1,30 @@
+{
+  "name": "baseline-brambleway",
+  "milestone": "m1-baseline",
+  "brief": {
+    "engagement_id": "eval-tc-001",
+    "specialist": "test-coverage",
+    "objective": "Baseline coverage and flakiness for the brambleway pricing package and propose targets ahead of the fares.py rewrite.",
+    "intake": {
+      "repo": "fixtures/brambleway-freight/repo (uploaded archive)",
+      "test_command": "python -m pytest -q",
+      "language_stack": "Python 3.12, pytest, coverage.py",
+      "target_modules": ["brambleway/fares.py"]
+    }
+  },
+  "notes": "Expect fares.py ranked first (23 commits, 25% line coverage). The census must name tests.test_zones::test_zone_a as flaky (fails in run 3 of 5). Run 3 is the one run where test_pilot_override_prices_ab_as_zone_c ran before it: that test writes zones._CACHE['AB'] = 'C' and never removes it, so the report should trace the flake to that order dependence (shared module state), not to network or time. An agent whose own runs never vary the order should say it could not reproduce the flake rather than guess.",
+  "fixtures": {
+    "repo/brambleway/__init__.py": "brambleway-freight/repo/brambleway/__init__.py",
+    "repo/brambleway/fares.py": "brambleway-freight/repo/brambleway/fares.py",
+    "repo/brambleway/zones.py": "brambleway-freight/repo/brambleway/zones.py",
+    "repo/tests/test_zones.py": "brambleway-freight/repo/tests/test_zones.py",
+    "inputs/brief-notes.md": "brambleway-freight/inputs/brief-notes.md",
+    "inputs/ci/coverage.xml": "brambleway-freight/coverage-baseline.xml",
+    "inputs/ci/churn.csv": "brambleway-freight/churn.csv",
+    "inputs/ci/runs/run-01.xml": "brambleway-freight/runs/run-01.xml",
+    "inputs/ci/runs/run-02.xml": "brambleway-freight/runs/run-02.xml",
+    "inputs/ci/runs/run-03.xml": "brambleway-freight/runs/run-03.xml",
+    "inputs/ci/runs/run-04.xml": "brambleway-freight/runs/run-04.xml",
+    "inputs/ci/runs/run-05.xml": "brambleway-freight/runs/run-05.xml"
+  }
+}

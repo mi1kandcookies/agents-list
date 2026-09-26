@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="pytest" tests="3" failures="1"><testcase classname="tests.test_zones" name="test_pilot_override_prices_ab_as_zone_c" time="0.001"/><testcase classname="tests.test_zones" name="test_zone_a" time="0.001"><failure message="AssertionError: assert 'C' == 'A'"/></testcase><testcase classname="tests.test_zones" name="test_zone_c" time="0.001"/></testsuite></testsuites>

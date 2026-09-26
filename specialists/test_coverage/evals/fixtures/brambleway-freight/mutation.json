@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1",
+  "thresholds": {"high": 80, "low": 60},
+  "files": {
+    "brambleway/fares.py": {
+      "language": "python",
+      "mutants": [
+        {"id": "f1", "mutatorName": "ArithmeticOperator", "status": "Killed", "location": {"start": {"line": 9, "column": 27}}},
+        {"id": "f2", "mutatorName": "EqualityOperator", "status": "Killed", "location": {"start": {"line": 12, "column": 8}}},
+        {"id": "f3", "mutatorName": "EqualityOperator", "status": "Survived", "location": {"start": {"line": 12, "column": 8}}},
+        {"id": "f4", "mutatorName": "NumericLiteral", "status": "Killed", "location": {"start": {"line": 13, "column": 18}}},
+        {"id": "f5", "mutatorName": "EqualityOperator", "status": "Killed", "location": {"start": {"line": 18, "column": 8}}},
+        {"id": "f6", "mutatorName": "NumericLiteral", "status": "Timeout", "location": {"start": {"line": 19, "column": 30}}},
+        {"id": "f7", "mutatorName": "EqualityOperator", "status": "Survived", "location": {"start": {"line": 20, "column": 8}}},
+        {"id": "f8", "mutatorName": "NumericLiteral", "status": "CompileError", "location": {"start": {"line": 7, "column": 1}}}
+      ]
+    }
+  }
+}

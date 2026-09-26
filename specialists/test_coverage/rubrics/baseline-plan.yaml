@@ -1,0 +1,21 @@
+name: Baseline and test plan
+criteria:
+  - id: reproducible
+    description: The Reproduce section gives exact commands, versions and services so a customer engineer can re-run the baseline and land within one percentage point.
+    weight: 3
+  - id: complete-inventory
+    description: Every module in the coverage report appears in the coverage table; nothing is silently excluded, and any exclusion is listed with a reason under Out of scope.
+    weight: 2
+  - id: flake-evidence
+    description: Each flaky or broken test is named with the runs it failed in and a likely cause (ordering, time, network, shared state), not just a count.
+    weight: 2
+  - id: risk-reasoning
+    description: The ranked targets are explained in terms the customer recognizes (churn, size, uncovered share, planned refactors from intake), and the top targets are actionable.
+    weight: 3
+  - id: realistic-thresholds
+    description: Proposed per-module floors and the mutation floor are achievable within the budgeted hours and justified against the current numbers.
+    weight: 2
+  - id: environment-needs
+    description: Services, fixtures, credentials (sandbox only) and data the suite needs are listed with what is missing.
+    weight: 1
+threshold: 0.75
