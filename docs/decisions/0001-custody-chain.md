@@ -34,10 +34,11 @@ Action object `v1` (every action carries `approval_id` and `exp`, so each hash/n
   "parent_mandate_id": "MND-…",
   "manifest_hash": "0x…",
   "screening_id": "SCR-…",
+  "payer_screening_id": "SCR-…",
   "screening_ack": true
 }
 ```
-Fields not relevant to a kind are omitted (not null). `payee_source` (amendment) records whether `payee_address` was confirmed by the agent's ENS payout record (`ens`) or taken from the profile (`profile`); see `resolve_payee` in `app/names/service.py`. Functions: `build_action(kind, **fields) -> dict`, `canonical(obj) -> bytes`, `action_hash(obj) -> str`, `action_nonce(obj) -> str`, `sow_hash(sow) -> str`, `describe(action) -> list[tuple[str, str]]` (human-readable summary rows). Golden vectors live in `tests/fixtures/action_vectors.json`.
+Fields not relevant to a kind are omitted (not null). `payee_source` (amendment) records whether `payee_address` was confirmed by the agent's ENS payout record (`ens`) or taken from the profile (`profile`); see `resolve_payee` in `app/names/service.py`. `payer_screening_id` is present when the payer identity boundary has supplied a wallet, and is evaluated alongside `screening_id`. Functions: `build_action(kind, **fields) -> dict`, `canonical(obj) -> bytes`, `action_hash(obj) -> str`, `action_nonce(obj) -> str`, `sow_hash(sow) -> str`, `describe(action) -> list[tuple[str, str]]` (human-readable summary rows). Golden vectors live in `tests/fixtures/action_vectors.json`.
 
 ## 2. World identity client — `app/identity/world.py`
 
@@ -110,7 +111,7 @@ screen(hop, *, chain_address, amount_micro, engagement_id=None, agent_id=None, t
   "created_at": 0, "expires_at": 0
 }
 ```
-Default policy: error / timeout (`SCREENING_TIMEOUT_SECONDS=4`) / missing key / unmapped address → REFUSE, `fail_closed=true`. Blocklisted trait or score ≥ 80 → REFUSE. 60–79 or signature riskGroup high/critical → ASK_HUMAN. 30–59 → CAP (`SCREENING_CAP_USDC`, default 10). Otherwise PAY. Screening runs when the action is created (verdict id bound into the action) and again in `consume()` immediately before sending. Sepolia addresses are screened as mapped mainnet addresses (`agents.screening_address`, `SCREENING_ADDRESS_MAP`).
+Default policy: error / timeout (`SCREENING_TIMEOUT_SECONDS=4`) / missing key / unmapped address → REFUSE, `fail_closed=true`. Blocklisted trait or score ≥ 80 → REFUSE. 60–79 or signature riskGroup high/critical → ASK_HUMAN. 30–59 → CAP (`SCREENING_CAP_USDC`, default 10). Otherwise PAY. Screening runs when the action is created (verdict id bound into the action) and again in `consume()` immediately before sending. Agent-to-agent hops screen the payer and payee; fund/release actions screen the World-bound `engagements.buyer_address` when the identity boundary has established it. Sepolia addresses are screened as mapped mainnet addresses (`agents.screening_address`, `SCREENING_ADDRESS_MAP`).
 
 ## 5. Mandate token — `app/mandates/tokens.py`
 
@@ -148,7 +149,7 @@ Fund: vault signs EIP-3009 to the escrow address, submitted via the existing fac
 | `GET /api/engagements/<id>` | | engagement + milestones, ledger (explorer links), approvals, mandate, chain_url |
 | `POST /api/engagements/<id>/subhire` (`Authorization: Mandate …`) | `{agent_id, outcome, budget_usdc, category}` | 201 child engagement or 202 approval (ASK_HUMAN) |
 | `GET /api/engagements/<id>/chain` | | `{nodes, edges}` |
-| `POST /api/agents/<AGT>/tasks` (`X-PAYMENT`, `Authorization: Mandate …`) | `{task}` | 402 x402 v2 PaymentRequirements without payment; 200 task receipt once the payment verifies, the payer is the mandate's agent, screening (`subhire.hop`) passes and the mandate is charged (amendment; `chain/x402_v2.py`) |
+| `POST /api/agents/<AGT>/tasks` (`X-PAYMENT`, `Authorization: Mandate …`) | `{task}` | 402 x402 v2 PaymentRequirements without payment; 200 task receipt once the payment verifies, the payer is the mandate's agent, payer and payee screening pass, and the mandate is charged (amendment; `chain/x402_v2.py`) |
 | `GET /api/approvals/<id>`, `POST …/cancel` | | approval |
 
 Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`, plus (amendment) `PAYEE_MISMATCH` (403: the agent's ENS payout record differs from its profile) and `PAYEE_UNRESOLVED` (503). MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).

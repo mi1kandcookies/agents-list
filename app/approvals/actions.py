@@ -34,11 +34,12 @@ KINDS = {
 FIELDS = (
     "engagement_id", "sow_hash", "amount_micro", "payee_agent_id", "payee_address",
     "payee_source", "payee_name", "milestones", "milestone_idx", "parent_mandate_id", "manifest_hash",
-    "screening_id", "screening_ack",
+    "screening_id", "payer_screening_id", "screening_ack",
 )
 _INT_FIELDS = {"amount_micro", "milestone_idx"}
 _HASH_FIELDS = {"sow_hash", "manifest_hash"}
-_ID_PREFIXES = {"engagement_id": "ENG-", "parent_mandate_id": "MND-", "screening_id": "SCR-"}
+_ID_PREFIXES = {"engagement_id": "ENG-", "parent_mandate_id": "MND-",
+                "screening_id": "SCR-", "payer_screening_id": "SCR-"}
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _ENS_NAME_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$")
 _HASH_RE = re.compile(r"^0x[0-9a-f]{64}$")
@@ -179,6 +180,7 @@ def describe(action: dict) -> list[tuple[str, str]]:
         ("manifest_hash", "Manifest", str),
         ("screening_id", "Risk screening", lambda s: s + (
             " (warning acknowledged)" if action.get("screening_ack") else "")),
+        ("payer_screening_id", "Payer risk screening", str),
     )
     for key, label, fmt in labels:
         if key in action:

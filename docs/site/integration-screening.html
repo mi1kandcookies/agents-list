@@ -35,7 +35,7 @@
       <h1>Integration notes: Payment screening</h1>
       <p class="lede">Working notes on the Intercepta payment-screening integration: where it is called, what the docs told us, and what live use shows.</p>
 
-      <p class="note">The provider is called from the payer before signing, then by the resource server to screen the payer and payee before settlement. Credentials stay outside the repository.</p>
+      <p class="note">The provider is called from the payer before signing, then by the resource server to screen the payer and payee before settlement. Approval-backed fund and release actions use the payer wallet bound by the identity boundary. Credentials stay outside the repository.</p>
       <section>
         <h2 id="files">Which files call the API</h2>
         <ul>
