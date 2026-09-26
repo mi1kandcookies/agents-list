@@ -10,11 +10,12 @@ import functools
 import hmac
 import os
 
-from flask import current_app, jsonify, redirect, render_template, request, url_for
+from flask import current_app, g, jsonify, redirect, render_template, request, url_for
 
 from app.approvals.actions import format_usdc
 from app.engagements import bp
 from app.engagements import service as svc
+from app.engagements import subhire as sub
 from app.engagements.service import EngagementError
 from app.engagements.sow import SowError, parse_usdc
 from app.extensions import db
@@ -38,15 +39,18 @@ def _error(exc: EngagementError):
 
 def _api(fn):
     """Bearer MCP_API_TOKEN when configured (no-op otherwise, like
-    require_api_key); EngagementError → {error, code, field}."""
+    require_api_key); EngagementError → {error, code, field}. Sets
+    ``g.api_token_ok`` only when a configured token was presented."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         token = current_app.config.get("MCP_API_TOKEN") or os.environ.get("MCP_API_TOKEN")
+        g.api_token_ok = False
         if token:
             provided = request.headers.get("Authorization", "")
             if not hmac.compare_digest(provided.encode(), f"Bearer {token}".encode()):
                 return jsonify({"error": "missing or invalid bearer token",
                                 "code": "UNAUTHORIZED"}), 401
+            g.api_token_ok = True
         try:
             return fn(*args, **kwargs)
         except EngagementError as exc:
@@ -93,7 +97,9 @@ def api_create():
 def api_get(engagement_id):
     eng = svc.get_engagement(engagement_id)
     svc.refresh(eng)
-    return jsonify(svc.engagement_json(eng, detail=True))
+    # The hired agent's mandate token is a bearer credential: only callers
+    # holding the configured API token (the agent's MCP server) receive it.
+    return jsonify(svc.engagement_json(eng, detail=True, with_token=g.api_token_ok))
 
 
 @bp.route("/api/engagements/<engagement_id>/hire", methods=["POST"])
@@ -123,6 +129,22 @@ def api_release(engagement_id, idx):
     eng = svc.get_engagement(engagement_id)
     approval = svc.request_release(eng, idx, flow=_flow(body.get("flow"), "device"))
     return jsonify(svc.approval_json(approval)), 202
+
+
+@bp.route("/api/engagements/<engagement_id>/subhire", methods=["POST"])
+def api_subhire(engagement_id):
+    """Authenticated by the caller's mandate (``Authorization: Mandate
+    <jwt>``), not the API token: the mandate is the authority being used."""
+    try:
+        token = sub.mandate_from_header(request.headers.get("Authorization"))
+        body = _body()
+        status, out = sub.subhire(
+            engagement_id, token, agent_ref=body.get("agent_id"), outcome=body.get("outcome"),
+            budget_micro=_usdc(body.get("budget_usdc"), "budget_usdc"),
+            category=body.get("category"))
+    except EngagementError as exc:
+        return _error(exc)
+    return jsonify(out), status
 
 
 # ── pages ─────────────────────────────────────────────────────────────────
@@ -176,6 +198,15 @@ def jobs_detail(engagement_id, error: str | None = None, status: int = 200):
     svc.refresh(eng)
     return render_template("jobs/detail.html", job=svc.engagement_json(eng, detail=True),
                            error=error), status
+
+
+@bp.route("/jobs/<engagement_id>/chain")
+def jobs_chain(engagement_id):
+    try:
+        eng = svc.get_engagement(engagement_id)
+    except EngagementError:
+        return render_template("404.html"), 404
+    return render_template("jobs/chain.html", chain=sub.chain_tree(eng))
 
 
 @bp.route("/jobs/<engagement_id>/hire", methods=["POST"])
