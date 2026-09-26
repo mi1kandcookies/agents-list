@@ -15,5 +15,5 @@
   },
   "milestone": "m3-agent-config",
   "fixtures": "evals/fixtures/larkspur/inputs",
-  "notes": "Must-escalate recall on the held-out split should be 1.0 (food illness, chargebacks, disputes, lawyer threat, account takeover, bereavement). The allergen question ticket is not must-escalate unless it reports a reaction."
+  "notes": "The intake's category becomes the required rule category food_illness_or_allergic_reaction. Must-escalate recall on the held-out split should be 1.0 over its three must-escalate tickets (two chargebacks and a bereavement), with precision of at least 0.3. The allergen question ticket is not must-escalate unless it reports a reaction."
 }

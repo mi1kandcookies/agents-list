@@ -16,5 +16,5 @@
   },
   "milestone": "m2-knowledge",
   "fixtures": "evals/fixtures/larkspur/inputs",
-  "notes": "Articles must cite inputs/policies/*.md; refund wording must use 14 days only; the allergen article must never call a kit safe for an allergy; no article may present the $20 credit as a right."
+  "notes": "Articles must cite inputs/policies/*.md; refund wording must use 14 days only; the allergen article must never call a kit safe for an allergy; no article may present the $20 credit as a right, mention 90 days, or cite a held-out ticket."
 }
