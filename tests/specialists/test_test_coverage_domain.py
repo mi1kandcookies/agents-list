@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agentkit.errors import ToolError
+from specialists.test_coverage import checks as C
 from specialists.test_coverage import tools as T
 
 COBERTURA_BEFORE = """<?xml version="1.0" ?>
@@ -337,3 +338,127 @@ def test_tool_defs_are_well_formed():
     for d in T.TOOL_DEFS:
         assert callable(d["function"]) and d["risk"] in ("read", "write", "exec", "network")
         assert d["input_schema"]["type"] == "object" and d["description"]
+
+
+# --- checks ------------------------------------------------------------------
+
+
+def test_coverage_summary_matches_and_forgery_fails(tmp_path):
+    write(tmp_path, "deliverables/m1-baseline/coverage.xml", COBERTURA_BEFORE)
+    T.parse_coverage(tmp_path, path="deliverables/m1-baseline/coverage.xml",
+                     out="deliverables/m1-baseline/coverage-summary.json")
+    params = {"report": "deliverables/m1-baseline/coverage.xml",
+              "summary": "deliverables/m1-baseline/coverage-summary.json"}
+    assert C.coverage_summary_matches(tmp_path, params)["passed"] is True
+    forged = json.loads((tmp_path / params["summary"]).read_text())
+    forged["totals"]["line_pct"] = 91.5
+    forged["files"]["ledgerly/rates.py"]["lines_covered"] = 4
+    (tmp_path / params["summary"]).write_text(json.dumps(forged))
+    res = C.coverage_summary_matches(tmp_path, params)
+    assert res["passed"] is False and "line_pct" in res["details"]
+    assert C.coverage_summary_matches(tmp_path, {"report": "nope.xml", "summary": "x"})["passed"] is False
+
+
+def test_coverage_delta_min_pass_fail_and_shrinking_denominator(tmp_path):
+    write(tmp_path, "b.xml", COBERTURA_BEFORE)
+    write(tmp_path, "a.xml", COBERTURA_AFTER)
+    ok = C.coverage_delta_min(tmp_path, {"before": "b.xml", "after": "a.xml",
+                                         "scope": ["ledgerly"], "min_delta_pp": 20})
+    assert ok["passed"] is True and ok["score"] == 1.0
+    low = C.coverage_delta_min(tmp_path, {"before": "b.xml", "after": "a.xml",
+                                          "scope": ["ledgerly"], "min_delta_pp": 50})
+    assert low["passed"] is False
+    # "After" report that drops the uncovered lines instead of testing them
+    gamed = COBERTURA_BEFORE.replace('<line number="3" hits="0"/>', "").replace(
+        '<line number="4" hits="0" branch="true" condition-coverage="0% (0/2)"/>', "")
+    write(tmp_path, "gamed.xml", gamed)
+    res = C.coverage_delta_min(tmp_path, {"before": "b.xml", "after": "gamed.xml",
+                                          "scope": ["ledgerly"], "min_delta_pp": 10})
+    assert res["passed"] is False and "measured lines fell" in res["details"]
+    assert C.coverage_delta_min(tmp_path, {"before": "b.xml", "after": "a.xml",
+                                           "scope": ["nothing/"], "min_delta_pp": 1})["passed"] is False
+
+
+def test_diff_and_patch_checks(tmp_path):
+    write(tmp_path, "ok.patch", PATCH_TESTS_ONLY)
+    write(tmp_path, "bad.patch", PATCH_TOUCHES_SRC)
+    write(tmp_path, "empty.patch", "")
+    assert C.diff_test_paths_only(tmp_path, {"patch": "ok.patch"})["passed"] is True
+    assert C.diff_test_paths_only(tmp_path, {"patch": "bad.patch"})["passed"] is False
+    assert C.diff_test_paths_only(tmp_path, {"patch": "empty.patch"})["passed"] is False
+    assert C.patch_size_max(tmp_path, {"patch": "ok.patch", "max_changed_lines": 400})["passed"] is True
+    assert C.patch_size_max(tmp_path, {"patch": "ok.patch", "max_changed_lines": 3})["passed"] is False
+    assert C.no_assertion_free_tests(tmp_path, {"patch": "ok.patch"})["passed"] is True
+    hollow = PATCH_TESTS_ONLY.replace("+    assert convert(0, 2) == 0", "+    convert(0, 2)")
+    write(tmp_path, "hollow.patch", hollow)
+    res = C.no_assertion_free_tests(tmp_path, {"patch": "hollow.patch"})
+    assert res["passed"] is False and "test_convert_zero" in res["details"]
+    assert C.patch_secret_free(tmp_path, {"patch": "ok.patch"})["passed"] is True
+    leaky = PATCH_TESTS_ONLY + ("diff --git a/tests/fixtures/k.pem b/tests/fixtures/k.pem\n"
+                                "--- /dev/null\n+++ b/tests/fixtures/k.pem\n@@ -0,0 +1 @@\n"
+                                "+-----BEGIN " + "RSA PRIVATE KEY-----\n")
+    write(tmp_path, "leaky.patch", leaky)
+    assert C.patch_secret_free(tmp_path, {"patch": "leaky.patch"})["passed"] is False
+    assert C.diff_test_paths_only(tmp_path, {})["passed"] is False  # missing params
+
+
+def _runs(ws: Path, n: int, flaky_on: int | None = None, prefix: str = "runs"):
+    for i in range(1, n + 1):
+        bad = flaky_on == i
+        write(ws, f"{prefix}/run-{i:02d}.xml", junit([("a", "passed"), ("b", "failed" if bad else "passed")]))
+
+
+def test_tests_stable(tmp_path):
+    _runs(tmp_path, 10)
+    assert C.tests_stable(tmp_path, {"runs": "runs/run-*.xml"})["passed"] is True
+    assert C.tests_stable(tmp_path, {"runs": "runs/run-*.xml", "require_tests": ["::b"]})["passed"] is True
+    assert C.tests_stable(tmp_path, {"runs": "runs/run-*.xml", "require_tests": ["::zz"]})["passed"] is False
+    assert C.tests_stable(tmp_path, {"runs": "runs/run-*.xml", "min_runs": 11})["passed"] is False
+    _runs(tmp_path, 10, flaky_on=7, prefix="flaky")
+    res = C.tests_stable(tmp_path, {"runs": "flaky/run-*.xml"})
+    assert res["passed"] is False and "flaky" in res["details"]
+
+
+def test_flake_census_matches(tmp_path):
+    _runs(tmp_path, 5, flaky_on=3)
+    census = T.parse_test_results(tmp_path, paths="runs/run-*.xml", out="deliverables/census.json")
+    assert census["flaky"] == ["tests.test_rates::b"]
+    params = {"census": "deliverables/census.json", "runs": "runs/run-*.xml"}
+    assert C.flake_census_matches(tmp_path, params)["passed"] is True
+    forged = dict(census, flaky=[])  # hide the flaky test
+    (tmp_path / "deliverables/census.json").write_text(json.dumps(forged))
+    assert C.flake_census_matches(tmp_path, params)["passed"] is False
+
+
+def test_mutation_score_min(tmp_path):
+    write(tmp_path, "mut.json", json.dumps(MUTATION))
+    ok = C.mutation_score_min(tmp_path, {"report": "mut.json", "min_score_pct": 50})
+    assert ok["passed"] is True and ok["score"] == 0.5
+    assert C.mutation_score_min(tmp_path, {"report": "mut.json", "min_score_pct": 60})["passed"] is False
+    assert C.mutation_score_min(tmp_path, {"report": "mut.json", "min_score_pct": 10,
+                                           "scope": ["other/"]})["passed"] is False
+
+
+def test_targets_ranking_matches(tmp_path):
+    write(tmp_path, "cov.xml", COBERTURA_BEFORE)
+    write(tmp_path, "churn.csv", "path,commits\nledgerly/rates.py,12\nledgerly/util.py,40\n")
+    T.rank_targets(tmp_path, coverage="cov.xml", churn="churn.csv", out="t.csv")
+    params = {"targets": "t.csv", "coverage": "cov.xml", "churn": "churn.csv"}
+    assert C.targets_ranking_matches(tmp_path, params)["passed"] is True
+    rows = (tmp_path / "t.csv").read_text().splitlines()
+    swapped = [rows[0], rows[2].replace("2,", "1,", 1), rows[1].replace("1,", "2,", 1)]
+    (tmp_path / "t.csv").write_text("\n".join(swapped) + "\n")
+    assert C.targets_ranking_matches(tmp_path, params)["passed"] is False
+    T.rank_targets(tmp_path, coverage="cov.xml", churn="churn.csv", out="t.csv")
+    text = (tmp_path / "t.csv").read_text().replace(",12,", ",99,")  # inflated churn
+    (tmp_path / "t.csv").write_text(text)
+    assert C.targets_ranking_matches(tmp_path, params)["passed"] is False
+    # a top-1 list that skips the riskiest file
+    (tmp_path / "t.csv").write_text(rows[0] + "\n" + rows[2].replace("2,", "1,", 1) + "\n")
+    assert C.targets_ranking_matches(tmp_path, params)["passed"] is False
+
+
+def test_check_defs_signature():
+    for name, fn in C.CHECK_DEFS.items():
+        out = fn(Path("."), {})
+        assert set(out) == {"passed", "details", "score"} and out["passed"] is False, name
