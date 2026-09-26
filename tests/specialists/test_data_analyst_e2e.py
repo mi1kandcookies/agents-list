@@ -24,6 +24,7 @@ from agentkit.evals import case_brief, load_cases, prepare_workspace
 from agentkit.events import MemorySink
 from agentkit.evidence import evidence_hash, sha256_file
 from agentkit.llm import ScriptedAdapter
+from agentkit.manifest import load_manifest, operator_fields, spec_hash, task_price_micro
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
 from agentkit.types import (AcceptanceCriterion, Message, MilestoneSpec, ModelResponse, Submission,
@@ -642,6 +643,8 @@ def test_cli_lists_shows_estimates_validates_and_checks(spec, tmp_path):
     assert code == 0 and json.loads(out)["tools"] == spec.manifest.tools
     code, out = cli("milestones", "data-analyst")
     assert code == 0 and [m["id"] for m in json.loads(out)] == [M1, M2, M3]
+    code, out = cli("spec-hash", "data-analyst")
+    assert code == 0 and out.strip() == spec_hash(spec.manifest)
     code, out = cli("estimate", "data-analyst", "--intake", str(intake))
     assert code == 0 and json.loads(out) == spec.estimate().to_dict()
     code, out = cli("validate-intake", "data-analyst", "--intake", str(intake))
@@ -655,3 +658,27 @@ def test_cli_lists_shows_estimates_validates_and_checks(spec, tmp_path):
     code, out = cli("check", "data-analyst", "--milestone", M1, "--workspace", str(ws))
     failed = {r["check"] for r in json.loads(out) if r["passed"] is False}
     assert code == 1 and failed == {"markdown_sections", "no_placeholders"}
+
+
+# --- listing and stamped manifest ------------------------------------------------------------
+
+def test_listing_and_operator_fields_fit_the_stamped_manifest(spec):
+    from types import SimpleNamespace
+
+    from app.seller.stamp import build_manifest
+
+    strict = load_manifest(Path(spec.manifest.base_dir) / "agent.yaml")
+    listing = strict.public_listing()
+    assert listing["category"] == "Data & Analytics"
+    assert listing["pricing"]["model"] == "per_milestone"
+    assert (listing["pricing"]["typical_low"], listing["pricing"]["typical_high"]) == (300, 2500)
+    price = task_price_micro(strict)
+    assert price == 5_000_000                            # the flat x402 per-task price, exact micro-USDC
+    fields = operator_fields(strict)
+    assert fields["model"] == strict.models.primary and fields["spec_hash"] == spec_hash(strict)
+    platform = {k: v for k, v in fields.items() if k != "spec_hash"}
+    stamped = build_manifest(SimpleNamespace(public_id="agt_test"), **platform, price_min_micro=price,
+                             price_max_micro=price, payout_address="0x" + "c" * 40)
+    for key in ("model", "tools", "skills", "mcp_servers"):
+        assert stamped[key] == fields[key], key          # stored exactly as the spec gives them
+    assert stamped["price_min_micro"] == stamped["price_max_micro"] == price
