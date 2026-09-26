@@ -1738,22 +1738,23 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 @media (prefers-reduced-motion: reduce) { .view-all-link svg { transition: none; } }
 
 /* ── Banner variants (field / surf) ──────────────────────────────────────
+   Ocean (surf) is the default; the field set is opt-in via the toggle.
    Only the active variant is displayed, so the other's lazy image never
    downloads until someone switches. */
-html:not(.banner-surf) [data-variant="surf"],
-html.banner-surf [data-variant="field"] { display: none; }
-html.banner-surf .hero { background: #49b6b8; }
-html.banner-surf .site-footer--scene { background: #7eb1cd; }
-html.banner-surf .hero-media img { object-position: 76% 42%; }
-html.banner-surf .footer-scene img { object-position: 50% 62%; }
-@media (max-width: 640px) { html.banner-surf .hero-media img { object-position: 82% 42%; } }
+html.banner-field [data-variant="surf"],
+html:not(.banner-field) [data-variant="field"] { display: none; }
+html:not(.banner-field) .hero { background: #49b6b8; }
+html:not(.banner-field) .site-footer--scene { background: #7eb1cd; }
+html:not(.banner-field) .hero-media img { object-position: 76% 42%; }
+html:not(.banner-field) .footer-scene img { object-position: 50% 62%; }
+@media (max-width: 640px) { html:not(.banner-field) .hero-media img { object-position: 82% 42%; } }
 [data-banner-toggle] { cursor: text; }
-html.banner-surf .hero-scrim {
+html:not(.banner-field) .hero-scrim {
   background:
     linear-gradient(180deg, rgb(255 255 255 / .55) 0%, rgb(255 255 255 / .18) 14%, rgb(255 255 255 / 0) 28%),
     linear-gradient(180deg, transparent 66%, color-mix(in srgb, var(--bg) 50%, transparent) 84%, var(--bg) 100%);
 }
-html.banner-surf .site-footer--scene .footer-bar::before {
+html:not(.banner-field) .site-footer--scene .footer-bar::before {
   background: linear-gradient(180deg,
     rgb(246 251 255 / 0) 0%, rgb(246 251 255 / .2) 38%, rgb(246 251 255 / .46) 70%, rgb(246 251 255 / .6) 100%);
 }
