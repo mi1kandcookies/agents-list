@@ -279,21 +279,6 @@ p  { color: var(--text-2); }
   flex-shrink: 0;
 }
 
-/* ── Logo SVGs ─────────────────────────────────────────────────────────── */
-.logo-lockup {
-  display: block;
-  height: 40px;
-  width: auto;
-  flex-shrink: 0;
-}
-
-.logo-mark-svg {
-  display: block;
-  height: 34px;
-  width: auto;
-  flex-shrink: 0;
-}
-
 .logo-mark {
   display: block;
   width: 34px;
@@ -3332,10 +3317,6 @@ tbody tr:hover { background: var(--card-2); }
 .theme-toggle .icon-sun  { display: none;  }
 [data-theme="light"] .theme-toggle .icon-moon { display: none; }
 [data-theme="light"] .theme-toggle .icon-sun  { display: block; }
-
-/* Logo wordmark - AGENT tspan colour per theme */
-.logo-agent { fill: #ffffff; }
-[data-theme="light"] .logo-agent { fill: #000000; }
 
 /* Light mode nav */
 [data-theme="light"] .nav {
