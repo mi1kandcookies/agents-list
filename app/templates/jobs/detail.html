@@ -67,7 +67,7 @@
       <tbody>
       {% for e in job.ledger %}
         <tr style="border-top:1px solid var(--border);">
-          <td style="padding:6px; font-family:var(--font-mono);">{{ e.ledger_id }}</td>
+          <td style="padding:6px; font-family:var(--font-mono);">{{ e.id }}</td>
           <td style="padding:6px;">{{ e.kind }}</td>
           <td style="padding:6px; font-family:var(--font-mono);">{{ e.amount_micro|usdc }}</td>
           <td style="padding:6px;">{{ e.status }}</td>

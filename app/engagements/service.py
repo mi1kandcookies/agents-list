@@ -203,7 +203,8 @@ def _approvals():
 def _create_approval(kind: str, fields: dict, *, flow: str, engagement, milestone=None,
                      screening_id: str):
     """Build the §1 action (fresh approval_id + exp → single-use hash) and
-    hand it to the approval service; device flows are started right away."""
+    hand it to the approval service. An approval the service creates
+    ``blocked`` (screening REFUSE, banned buyer, weekly cap) is an error."""
     svc = _approvals()
     action = build_action(kind, approval_id=new_id("APR"), exp=int(time.time()) + _ttl_seconds(),
                           **fields)
@@ -212,23 +213,49 @@ def _create_approval(kind: str, fields: dict, *, flow: str, engagement, mileston
             kind, action, flow=flow, engagement_id=engagement.id,
             milestone_id=milestone.id if milestone else None, agent_id=engagement.agent_id,
             screening_id=screening_id)
-        if flow == "device" and not approval.user_code:
-            approval = svc.start_device(approval)
     except Exception as exc:
         code = getattr(exc, "code", None)
         if not code:
             raise
         db.session.rollback()
         raise EngagementError(str(exc), code, _HTTP_FOR_CODE.get(code, 409)) from None
+    if approval.state == "blocked":
+        code = approval.failure_code or "BLOCKED"
+        text = getattr(svc, "failure_text", lambda c: c)(code) or "approval blocked"
+        raise EngagementError(text, code, _HTTP_FOR_CODE.get(code, 403))
     return approval
 
 
-def _refuse(engagement, verdict: dict, *, terminal: bool) -> None:
+def _start(approval):
+    """Start the device flow right away so the response carries the user
+    code. A provider error leaves the approval ``created``; it can be
+    started again from its page."""
+    if approval.flow != "device" or approval.state != "created":
+        return approval
+    try:
+        return _approvals().start_device(approval)
+    except Exception as exc:
+        log.warning("device start failed for %s: %s", approval.id, str(exc)[:200])
+        raise EngagementError("could not start sign-in with the identity provider; open the "
+                              f"approval page to retry: /approvals/{approval.id}",
+                              "IDP_ERROR", 502) from None
+
+
+def _refuse(engagement, verdict: dict, *, terminal: bool,
+            message: str = "payment refused by risk screening") -> None:
+    """No approval is created. A definitive REFUSE at hire ends the job; a
+    fail-closed refusal (screener down) does not."""
     if terminal and not verdict.get("fail_closed"):
         engagement.status = "refused"
     db.session.commit()
-    raise EngagementError("payment refused by risk screening", "SCREENING_REFUSED", 403,
-                          screening=screening_json(verdict))
+    raise EngagementError(message, "SCREENING_REFUSED", 403, screening=screening_json(verdict))
+
+
+def _cap_of(verdict: dict) -> int:
+    cap = verdict.get("cap_micro")
+    if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+        return cap
+    return _default_cap_micro()
 
 
 # ── scope ─────────────────────────────────────────────────────────────────
@@ -279,6 +306,12 @@ def hire(eng, *, flow: str, confirm_micro: int):
                      engagement=eng, agent=agent)
     if verdict["verdict"] == "REFUSE":
         _refuse(eng, verdict, terminal=True)
+    if verdict["verdict"] == "CAP" and eng.total_micro > _cap_of(verdict):
+        # The escrow is funded in full, and consume() re-screens the same
+        # amount; a capped payee can only take a job within the cap.
+        _refuse(eng, verdict, terminal=False,
+                message=f"risk screening caps payments to this agent at "
+                        f"{format_usdc(_cap_of(verdict))}; scope a smaller job")
     approval = _create_approval("engagement.fund", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": eng.total_micro,
         "payee_agent_id": agent.public_id, "payee_address": payee,
@@ -288,7 +321,7 @@ def hire(eng, *, flow: str, confirm_micro: int):
     }, flow=flow, engagement=eng, screening_id=verdict["id"])
     eng.status = "awaiting_approval"
     db.session.commit()
-    return approval
+    return _start(approval)
 
 
 # ── submit ────────────────────────────────────────────────────────────────
@@ -327,19 +360,14 @@ def request_release(eng, idx, *, flow: str):
                      engagement=eng, agent=agent)
     if verdict["verdict"] == "REFUSE":
         _refuse(eng, verdict, terminal=False)
-    amount = remaining
-    if verdict["verdict"] == "CAP":
-        cap = verdict.get("cap_micro")
-        cap = cap if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0 \
-            else _default_cap_micro()
-        amount = min(remaining, cap)
+    amount = min(remaining, _cap_of(verdict)) if verdict["verdict"] == "CAP" else remaining
     approval = _create_approval("milestone.release", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": amount,
         "payee_agent_id": agent.public_id, "payee_address": payee, "milestone_idx": m.idx,
         "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
     }, flow=flow, engagement=eng, milestone=m, screening_id=verdict["id"])
     db.session.commit()
-    return approval
+    return _start(approval)
 
 
 # ── executors (run inside approvals.consume) ──────────────────────────────
@@ -486,27 +514,31 @@ def milestone_json(m) -> dict:
 
 
 def approval_json(approval) -> dict:
-    from app.models import LedgerEntry, Screening
-    action = approval.action
-    scr = db.session.get(Screening, approval.screening_id) if approval.screening_id else None
-    entries = LedgerEntry.query.filter_by(approval_id=approval.id).order_by(LedgerEntry.created_at).all()
-    tx = next((ledger.entry_json(e) for e in entries if e.kind != "hold"), None)
-    return {
-        "approval_id": approval.id, "kind": approval.kind, "state": approval.state,
-        "flow": approval.flow, "user_code": approval.user_code,
-        "verification_uri": approval.verification_uri,
-        "verification_uri_complete": approval.verification_uri_complete,
-        "expires_at": unix(approval.expires_at), "action_hash": approval.action_hash,
-        "summary": [list(row) for row in describe(action)],
-        "screening": {"id": scr.id, "verdict": scr.verdict, "cap_micro": scr.cap_micro,
-                      "reasons": scr.reasons, "fail_closed": scr.fail_closed} if scr else None,
-        "failure_code": approval.failure_code,
-        "result": {"ledger_ids": [e.id for e in entries],
-                   "tx": {"tx_hash": tx["tx_hash"], "status": tx["status"],
-                          "explorer": tx["explorer"]} if tx else None},
-        "milestone_idx": action.get("milestone_idx"),
-        "url": f"/approvals/{approval.id}",
-    }
+    """The §7 approval object (the approval service's ``to_dict``), with the
+    result's ledger ids and transaction filled in from this engagement's
+    ledger, plus ``milestone_idx`` and the approval page ``url``."""
+    from app.models import LedgerEntry
+    try:
+        out = dict(_approvals().to_dict(approval))
+    except (EngagementError, AttributeError):
+        out = {"approval_id": approval.id, "kind": approval.kind, "state": approval.state,
+               "flow": approval.flow, "user_code": approval.user_code,
+               "verification_uri": approval.verification_uri,
+               "verification_uri_complete": approval.verification_uri_complete,
+               "expires_at": unix(approval.expires_at), "action_hash": approval.action_hash,
+               "summary": [list(row) for row in describe(approval.action)],
+               "screening": None, "failure_code": approval.failure_code, "result": None}
+    entries = (LedgerEntry.query.filter_by(approval_id=approval.id)
+               .order_by(LedgerEntry.created_at).all())
+    if entries:
+        tx = next((ledger.entry_json(e) for e in entries if e.kind != "hold"), None)
+        out["result"] = {**(out.get("result") or {}),
+                         "ledger_ids": [e.id for e in entries],
+                         "tx": {"tx_hash": tx["tx_hash"], "status": tx["status"],
+                                "explorer": tx["explorer"]} if tx else None}
+    out["milestone_idx"] = approval.action.get("milestone_idx")
+    out["url"] = f"/approvals/{approval.id}"
+    return out
 
 
 def engagement_json(eng, *, detail: bool = False) -> dict:

@@ -120,7 +120,7 @@ def _roll_back(engagement, entry) -> None:
 def entry_json(entry) -> dict:
     linked = entry.tx_hash and entry.status != "simulated" and not entry.tx_hash.startswith("sim-")
     return {
-        "ledger_id": entry.id, "kind": entry.kind, "amount_micro": int(entry.amount_micro),
+        "id": entry.id, "kind": entry.kind, "amount_micro": int(entry.amount_micro),
         "milestone_id": entry.milestone_id, "from": entry.from_addr, "to": entry.to_addr,
         "tx_hash": entry.tx_hash, "status": entry.status, "simulated": entry.status == "simulated",
         "explorer": explorer_url("tx", entry.tx_hash) if linked else None,
