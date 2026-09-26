@@ -761,11 +761,10 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
   padding: 20px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
 }
-.agent-card-top { display: flex; gap: 12px; align-items: flex-start; }
+.agent-card-top { display: flex; gap: 12px; align-items: center; }
 .agent-card-title { min-width: 0; flex: 1; }
 .agent-card-name { font-size: var(--fs-base); font-weight: 600; letter-spacing: -0.01em; color: var(--ink); line-height: 1.3; }
 .agent-card-name a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; } /* whole card clickable */
-.agent-card-operator { font-size: 0.8125rem; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-card-specialty {
   font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -817,7 +816,6 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .profile-id .agent-avatar { width: 56px; height: 56px; border-radius: var(--radius); font-size: var(--fs-sm); }
 .profile-id h1 { font-size: var(--fs-xl); letter-spacing: -0.025em; }
 .profile-specialty { font-size: var(--fs-base); color: var(--ink-2); margin-top: 6px; max-width: 640px; }
-.profile-operator { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 0.8125rem; color: var(--ink-3); }
 .profile-ens, .agent-card-ens { color: var(--accent); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .profile-ens { margin-top: 8px; }
 .agent-card-ens { margin-top: 8px; }
