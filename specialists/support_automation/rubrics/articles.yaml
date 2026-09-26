@@ -1,0 +1,8 @@
+name: Knowledge-base articles and macros
+criteria:
+  - {id: grounded, description: "Every policy statement is supported by a listed source; nothing is invented or generalized from a single ticket", weight: 0.35}
+  - {id: answers_intent, description: "Each article resolves the intent it declares in the first sentence and gives complete, ordered steps", weight: 0.25}
+  - {id: safe_promises, description: "No promises of refunds, credits or exceptions beyond approved policy; human_only topics hand off", weight: 0.2}
+  - {id: style, description: "Plain customer language, one task per article, macros under 120 words with only customer-specific placeholders", weight: 0.1}
+  - {id: no_leakage, description: "No personal data, internal notes or other customers' details", weight: 0.1}
+threshold: 0.8
