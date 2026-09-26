@@ -137,9 +137,12 @@ def test_matching_api_offers_only_hireable_agents(client, db, agent):
 
 
 def test_flow_and_mcp_ask_for_hireable_agents():
+    """The flow asks the matchmaker, which builds hireable candidates on the
+    server (tests/test_matchmaker.py); MCP search asks for hireable agents."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    assert '"/api/agents?hireable=1&"' in (root / "app/static/js/flow.js").read_text()
+    flow = (root / "app/static/js/flow.js").read_text()
+    assert '"/api/intake/match"' in flow and "/api/agents" not in flow
     assert '"hireable": 1' in (root / "agentslist_mcp/client.py").read_text()
 
 

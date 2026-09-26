@@ -11,6 +11,15 @@
     <p style="color:var(--text-2); font-size:.9375rem;">Describe the outcome and budget. We turn it into a statement of work; nothing is paid until you approve funding.</p>
   </div>
 
+  {% if not_hireable %}
+  <div class="card card-sm" role="alert" style="border-color:var(--red-border); background:var(--red-dim); color:var(--red); margin-bottom:20px;">
+    {{ agent.name }} can't be hired right now. {{ not_hireable }}
+  </div>
+  <div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <a class="btn btn-primary" href="{{ url_for('intake.new_job') }}">Describe your job</a>
+    <a class="btn btn-secondary" href="{{ url_for('catalog.marketplace', category=agent.category) }}">Back to browsing</a>
+  </div>
+  {% else %}
   {% if error %}
   <div class="card card-sm" role="alert" style="border-color:var(--red-border); background:var(--red-dim); color:var(--red); margin-bottom:20px;">{{ error }}</div>
   {% endif %}
@@ -44,6 +53,7 @@
     </div>
     <button type="submit" class="btn btn-gradient btn-lg">Create statement of work</button>
   </form>
+  {% endif %}
 </div>
 {% endblock %}
 

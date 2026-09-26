@@ -90,6 +90,10 @@ class AgentListClient:
     def parse_sow_text(self, text: str) -> dict:
         return self.request("POST", "/api/sow/parse", json={"text": text})
 
+    def match_job(self, payload: dict) -> dict:
+        """The matchmaker's answer for a job: the agent that can do it, if any."""
+        return self.request("POST", "/api/intake/match", json=payload)
+
     def create_engagement(self, payload: dict) -> dict:
         return self.request("POST", "/api/engagements", json=payload)
 

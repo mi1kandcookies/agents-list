@@ -31,14 +31,18 @@ def new_job():
     preselects an agent (the "Get estimate" link on an agent profile)."""
     prefill = (request.args.get("q") or "").strip()[:MAX_PREFILL]
     agent = get_agent(request.args.get("agent")) if request.args.get("agent") else None
-    preselect = None
-    # Only an agent that can be hired right now is preselected; the flow
-    # would otherwise offer it and fail at approval.
+    preselect = notice = None
+    # Only an agent that can be hired right now is offered to the matchmaker;
+    # for any other the buyer is told why, and the matchmaker looks for one
+    # that can do the job.
     if agent and agent.get("operator_stamped"):
         cat = category_for(agent["category"])
         preselect = dict(agent, category_key=cat["key"] if cat else None)
+    elif agent:
+        notice = (f"{agent['name']} can't be hired right now. {agent.get('stamp_reason') or ''} "
+                  "Describe your job and we will check the marketplace for an agent that can do it.")
     return render_template("intake/new.html", prefill=prefill, config=flow_config(),
-                           agent=preselect, auto_release_days=AUTO_RELEASE_DAYS)
+                           agent=preselect, agent_notice=notice, auto_release_days=AUTO_RELEASE_DAYS)
 
 
 def _criteria(acceptance: str) -> list[str]:
@@ -112,3 +116,17 @@ def _parse_multipart() -> dict:
         raise sow_parse.SowParseError("Choose a file to upload.")
     data = upload.read(sow_parse.MAX_BYTES + 1)
     return sow_parse.parse_upload(data, upload.filename)
+
+
+# ── Matchmaker ────────────────────────────────────────────────────────────
+@bp.route("/api/intake/match", methods=["POST"])
+@limiter.limit("20/minute")
+@_api
+def api_intake_match():
+    """The job from the guided flow (outcome, category, milestones with
+    criteria, deadline, budget, optional statement-of-work excerpt) → the
+    matchmaker's answer (app/intake/matchmaker.py). Candidates come from the
+    database; nothing about agents is read from the request."""
+    from app.intake import matchmaker
+    job = matchmaker.parse_job(request.get_json(silent=True))
+    return jsonify(matchmaker.match(job))
