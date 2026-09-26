@@ -410,7 +410,7 @@ def execute_fund(approval, action: dict) -> ExecutionResult:
         return _failed("engagement is already funded")
     escrow = get_escrow()
     try:
-        tx = escrow.fund_from_vault(amount_micro=eng.total_micro, ref=f"{eng.id}:fund")
+        tx = escrow.fund_from_vault(amount_micro=eng.total_micro, ref=f"{eng.id}:fund#{ledger.failed_count(eng.id, 'fund')}")
     except EscrowError as exc:
         return _failed(f"escrow refused funding: {exc.code}")
     except Exception as exc:
@@ -447,7 +447,8 @@ def execute_release(approval, action: dict) -> ExecutionResult:
     escrow = get_escrow()
     try:
         tx = escrow.release(to=target.payee, amount_micro=amount,
-                            ref=f"{eng.id}:m{m.idx}:release@{already}")
+                            ref=f"{eng.id}:m{m.idx}:release@{already}"
+                                f"#{ledger.failed_count(eng.id, 'release', m.id)}")
     except EscrowError as exc:
         return _failed(f"escrow refused release: {exc.code}")
     except Exception as exc:

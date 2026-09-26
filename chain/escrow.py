@@ -184,7 +184,11 @@ class EscrowService:
         """Submit a buyer-signed EIP-3009 permit whose recipient is the escrow."""
         if not isinstance(permit, dict):
             raise EscrowError("INVALID_PERMIT", "permit must be a dict")
-        _positive_int("permit.value", int(permit.get("value", 0)))
+        try:
+            value = int(permit.get("value", 0))
+        except (TypeError, ValueError):
+            raise EscrowError("INVALID_PERMIT", "permit.value must be an integer") from None
+        _positive_int("permit.value", value)
         if self.mode == "onchain" and str(permit.get("to", "")).lower() != self.escrow_address:
             raise EscrowError("WRONG_RECIPIENT", "permit recipient is not the escrow address")
         self._claim(ref, "ALREADY_FUNDED")

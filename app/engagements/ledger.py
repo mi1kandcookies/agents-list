@@ -51,6 +51,17 @@ def has_live_fund(engagement_id: str) -> bool:
         LedgerEntry.status.in_(LIVE)).first() is not None
 
 
+def failed_count(engagement_id: str, kind: str, milestone_id: int | None = None) -> int:
+    """Failed attempts so far; part of the escrow idempotency ref so a retry
+    after an on-chain failure gets a new ref (and EIP-3009 nonce) while any
+    in-flight attempt keeps blocking a duplicate."""
+    from app.models import LedgerEntry
+    q = LedgerEntry.query.filter_by(engagement_id=engagement_id, kind=kind, status="failed")
+    if milestone_id is not None:
+        q = q.filter_by(milestone_id=milestone_id)
+    return q.count()
+
+
 def released_micro(milestone) -> int:
     """Micro-USDC already paid out (or in flight) for a milestone."""
     from app.models import LedgerEntry
