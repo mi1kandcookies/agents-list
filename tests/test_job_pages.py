@@ -187,6 +187,18 @@ def test_held_completed_and_refused_jobs(client, db, rows):
     assert "Risk screening refused" in html and "Approve &amp;" not in html
 
 
+def test_sub_job_has_no_fund_button_and_links_its_chain(client, db, rows):
+    parent = rows.job("funded")
+    child = rows.job("scoped")
+    child.parent_engagement_id, child.depth = parent.id, 1
+    db.session.commit()
+    html = _html(client, f"/jobs/{child.id}")
+    assert "Approve &amp; fund" not in html and f"/jobs/{child.id}/hire" not in html
+    assert "data-subhire" in html and f'href="/jobs/{parent.id}"' in html
+    assert f'href="/jobs/{child.id}/chain"' in html
+    assert client.get(f"/jobs/{child.id}/chain").status_code == 200
+
+
 def test_names_tab_links_to_the_job_name(client, db, rows):
     eng = rows.job("scoped")
     assert 'class="is-off"' in _html(client, f"/jobs/{eng.id}")
