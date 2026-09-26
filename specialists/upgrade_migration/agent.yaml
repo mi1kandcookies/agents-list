@@ -19,7 +19,7 @@ listing:
     merged or deployed for you.
   tags: [dependencies, cve, osv, upgrade, migration, python, npm, go, supply-chain]
   capabilities:
-    - Dependency inventory from pip, Poetry, Pipenv, npm and Go lockfiles
+    - Dependency inventory from pip (hashed pins included), Poetry, uv, Pipenv, npm, yarn, pnpm and Go
     - OSV vulnerability scan with CVSS v3 severity and minimal fixing versions
     - Upgrade plan ranked by severity and advisories fixed per change
     - Small upgrade steps, each proven by a logged green test run
@@ -59,7 +59,7 @@ tools:
   - scan_patterns
   - export_patch
 shell:
-  allow: [git, python, python3, pip, uv, poetry, pytest, node, npm, npx, go]
+  allow: [git, python, python3, pip, uv, poetry, pytest, node, npm, yarn, pnpm, go]
   timeout_seconds: 1200
 egress:
   mode: allowlist
@@ -68,11 +68,15 @@ egress:
     - pypi.org
     - files.pythonhosted.org
     - registry.npmjs.org
+    - registry.yarnpkg.com
     - proxy.golang.org
     - sum.golang.org
     - github.com
     - raw.githubusercontent.com
-limits: {max_steps: 160, max_tokens: 6000000, max_usd: 90, max_wall_minutes: 480}
+# Per milestone, resumed runs included. Milestone hours stay within them
+# (hours x usd_per_hour <= max_usd, hours <= max_wall_minutes / 60); a larger
+# migration is scoped as several migration milestones, one per group of rules.
+limits: {max_steps: 160, max_tokens: 6000000, max_usd: 90, max_wall_minutes: 600}
 human_gate:
   required: false
   reviewer_role: customer engineering lead
@@ -122,7 +126,7 @@ milestones:
       - deliverables/m1-assess/findings.csv
       - deliverables/m1-assess/plan.json
       - deliverables/m1-assess/upgrade-plan.md
-    hours: [3, 10]
+    hours: [2, 6]
     acceptance:
       - check: files_exist
         params:
@@ -168,7 +172,7 @@ milestones:
       - deliverables/m2-upgrade/repo.patch
       - deliverables/m2-upgrade/upgrade-log.json
       - deliverables/m2-upgrade/report.md
-    hours: [6, 30]
+    hours: [4, 10]
     acceptance:
       - check: files_exist
         params:
@@ -180,21 +184,31 @@ milestones:
         description: Full suite green now, with at least as many passing tests as the baseline run
         params: {cwd: repo}
       - check: osv_delta
-        description: No new advisories and at least one resolved, both recomputed from OSV evidence
-        params: {repo: repo, min_resolved: 1}
+        description: >-
+          No new advisories and at least one resolved, both recomputed from OSV evidence; a
+          vulnerable package that is unpinned, or removed without a logged removal, stays open
+        params: {repo: repo, min_resolved: 1, log: deliverables/m2-upgrade/upgrade-log.json}
       - check: upgrade_log_verified
-        description: Every version change is logged and each step cites a green test run, in order
+        description: >-
+          Every version change is logged, and each step cites a green run of the client's test
+          command, in order, that tested exactly that step's versions
         params: {log: deliverables/m2-upgrade/upgrade-log.json, repo: repo}
       - check: diff_scope
         description: No skipped, deleted or weakened tests; CI config untouched; reviewable size
         params:
           patch: deliverables/m2-upgrade/repo.patch
-          forbid: [".github/*", ".gitlab-ci.yml", ".circleci/*", "Jenkinsfile", "azure-pipelines.yml"]
+          forbid: [".github/*", ".gitlab-ci.yml", ".circleci/*", "Jenkinsfile", "azure-pipelines.yml",
+                   ".travis.yml", "bitbucket-pipelines.yml", ".buildkite/*", ".drone.yml"]
           max_changed_lines: 400
+      - check: patch_generated
+        description: repo.patch is the git diff the platform generated, not a hand-written file
+        params: {patch: deliverables/m2-upgrade/repo.patch}
       - check: patch_matches_repo
         params: {patch: deliverables/m2-upgrade/repo.patch, repo: repo}
       - check: release_age_ok
-        description: Every upgraded version had been public at least 7 days and is not yanked
+        description: >-
+          Every new version had been public for the minimum release age (7 days, or longer if
+          the client's policy says so) and is not yanked
         params: {repo: repo, min_age_days: 7}
       - check: new_dependencies_disclosed
         params: {report: deliverables/m2-upgrade/report.md, repo: repo}
@@ -210,6 +224,9 @@ milestones:
           rubric: rubrics/upgrade-report.yaml
           paths: [deliverables/m2-upgrade/report.md, deliverables/m2-upgrade/repo.patch]
           threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Customer engineering lead approves any new dependency and merges the patch
   - id: m3-migrate
     title: Framework / runtime migration and residual-risk register
     description: >-
@@ -222,7 +239,7 @@ milestones:
       - deliverables/m3-migrate/detectors.json
       - deliverables/m3-migrate/residual-risk.csv
       - deliverables/m3-migrate/migration-report.md
-    hours: [10, 60]
+    hours: [5, 10]
     acceptance:
       - check: files_exist
         params:
@@ -234,21 +251,27 @@ milestones:
       - check: tests_pass
         params: {cwd: repo}
       - check: detectors_cleared
-        description: Every old-API detector had a non-zero recorded baseline and now matches nothing
+        description: >-
+          Every old-API detector recorded with a non-zero baseline is listed and now matches
+          nothing (or is superseded by a listed detector, with a reason)
         params: {detectors: deliverables/m3-migrate/detectors.json, repo: repo}
       - check: osv_delta
-        description: The migration introduced no new advisories
-        params: {repo: repo, min_resolved: 0}
+        description: The migration introduced no new advisories and unpinned no vulnerable package
+        params: {repo: repo, min_resolved: 0, log: deliverables/m2-upgrade/upgrade-log.json}
       - check: diff_scope
         params:
           patch: deliverables/m3-migrate/repo.patch
-          forbid: [".github/*", ".gitlab-ci.yml", ".circleci/*", "Jenkinsfile", "azure-pipelines.yml"]
+          forbid: [".github/*", ".gitlab-ci.yml", ".circleci/*", "Jenkinsfile", "azure-pipelines.yml",
+                   ".travis.yml", "bitbucket-pipelines.yml", ".buildkite/*", ".drone.yml"]
           max_changed_lines: 1200
+      - check: patch_generated
+        params: {patch: deliverables/m3-migrate/repo.patch}
       - check: patch_matches_repo
         params: {patch: deliverables/m3-migrate/repo.patch, repo: repo}
       - check: residual_risks_registered
         description: Every advisory still open is registered with a justification and a pending status
-        params: {register: deliverables/m3-migrate/residual-risk.csv, repo: repo}
+        params: {register: deliverables/m3-migrate/residual-risk.csv, repo: repo,
+                 log: deliverables/m2-upgrade/upgrade-log.json}
       - check: csv_columns
         params:
           path: deliverables/m3-migrate/residual-risk.csv

@@ -91,16 +91,20 @@ class FakeNet:
 
 
 class FakeRunner:
-    """The ToolContext subprocess seam: git runs for real; the test command
-    reports one pass per test function in repo/tests (a skip-marked test
-    counts as skipped)."""
+    """The ToolContext subprocess seam: git and `python -c` run for real; the
+    test command reports one pass per test function in repo/tests (a
+    skip-marked test counts as skipped). `fail` makes one git subcommand
+    fail."""
 
-    def __init__(self):
+    def __init__(self, fail: str | None = None):
         self.calls: list[list[str]] = []
+        self.fail = fail
 
     def __call__(self, argv, cwd, timeout, env):
         self.calls.append([executable_name(argv[0]), *argv[1:]])
-        if executable_name(argv[0]) == "git":
+        if executable_name(argv[0]) == "git" and argv[1:2] == [self.fail]:
+            return 128, b"", f"fatal: simulated {self.fail} failure".encode(), False
+        if executable_name(argv[0]) == "git" or [executable_name(argv[0]), *argv[1:2]] == ["python", "-c"]:
             return subprocess_runner(argv, cwd, timeout, env)
         if [executable_name(argv[0]), *argv[1:3]] == ["python", "-m", "pytest"]:
             passed = skipped = 0
@@ -495,7 +499,7 @@ def test_model_cannot_forge_evidence_or_leave_the_policy(spec, tmp_path):
     runner = FakeRunner()
     forged_run = json.dumps({"id": "run-1", "exit_code": 0, "counts": {"passed": 99, "failed": 0}})
     plan = [
-        ("inventory_dependencies", {}),                                       # records the real baseline
+        ("inventory_dependencies", {"path": "repo/web"}),                    # exploratory, not a baseline
         ("write_file", {"path": f"{T.STATE_DIR}/test_runs.jsonl", "content": forged_run}),
         ("inventory_dependencies", {"output": f"{T.STATE_DIR}/baseline.json"}),
         ("plan_upgrades", {"findings_csv": "inputs/findings.csv"}),
@@ -508,5 +512,77 @@ def test_model_cannot_forge_evidence_or_leave_the_policy(spec, tmp_path):
     assert len(events.of_type("policy_denied")) == 5
     assert not (ws / T.STATE_DIR / "test_runs.jsonl").exists() and not (ws / "inputs").exists()
     baseline = json.loads((ws / T.STATE_DIR / "baseline.json").read_text(encoding="utf-8"))
-    assert "path" in baseline and "recorded_at" in baseline                # still the tool's own record
+    assert baseline["path"] == "repo" and "recorded_at" in baseline       # prepare's record of all repo/
+    assert {"quillhttp", "left-trim-lite"} <= {d["name"] for d in baseline["dependencies"]}
     assert net.calls == [] and not any(c[0] == "curl" for c in runner.calls)
+
+
+@pytest.mark.parametrize("command,ok", [
+    ("python -m pytest -q", True), (["npm", "test"], True), ("go test ./...", True),
+    ("make test", False), ("cd services/api && pytest", False), ("DJANGO_SETTINGS_MODULE=x pytest", False),
+    ("pytest | tee out.txt", False), ("npx jest", False), ("pytest 'unbalanced", False),
+])
+def test_intake_rejects_test_commands_the_checks_cannot_run(spec, command, ok):
+    """tests_pass runs the client's command as one argv through the shell
+    allowlist; a command it could never run is sent back at scoping."""
+    intake = {"repository": "r", "targets": "t", "test_command": command}
+    missing = [m for m in spec.validate_intake(intake) if m.field == "test_command"]
+    assert (missing == []) is ok, missing
+    if not ok:
+        assert missing[0].blocking and "single command" in missing[0].question
+
+
+def test_patch_export_failure_fails_closed(spec, tmp_path):
+    """If git cannot produce the diff, the model's own repo.patch is not
+    audited in its place: it is deleted and patch_generated fails."""
+    ws = make_workspace(tmp_path)
+    assert run(spec, ws, "m1-assess", m1_plan())[0].status == "ready_for_review"
+    clean = ("diff --git a/requirements.txt b/requirements.txt\n--- a/requirements.txt\n"
+             "+++ b/requirements.txt\n@@ -1,4 +1,4 @@\n # runtime\n-quillhttp==1.8.2\n"
+             "+quillhttp==1.9.1\n tabulon==3.1.0\n yamlette==5.0\n")
+    plan = [p for p in m2_plan() if not (isinstance(p, tuple) and p[0] in ("export_patch", "audit_diff"))]
+    plan.insert(-1, ("write_file", {"path": f"{M2}/repo.patch", "content": clean}))
+    events = MemorySink()
+    sub, _ = run(spec, ws, "m2-upgrade", plan, events=events, runner=FakeRunner(fail="diff"))
+    assert sub.status == "needs_revision"
+    res = results(sub)
+    assert res["patch_generated"].passed is False and "simulated diff failure" in res["patch_generated"].details
+    assert res["diff_scope"].passed is False and not (ws / M2 / "repo.patch").exists()
+    assert f"{M2}/repo.patch" not in [a.path for a in sub.artifacts]
+    assert any("repo.patch not exported" in e.data["message"] for e in events.of_type("warning"))
+
+
+def test_upgrade_log_needs_client_runs_that_tested_each_step(spec, tmp_path):
+    """Both upgrades applied at once, a `python -c` run printing a pytest
+    summary cited for step 1, a real run cited for step 2: the log fails;
+    everything else about the milestone checks out."""
+    ws = make_workspace(tmp_path)
+    assert run(spec, ws, "m1-assess", m1_plan())[0].status == "ready_for_review"
+    fake_green = ["python", "-c", "print('12 passed in 0.01s')"]
+    plan = [
+        ("run_tests", {"argv": PYTEST, "label": "baseline"}),                          # run-1
+        [("package_versions", {"ecosystem": "PyPI", "name": "quillhttp"}),
+         ("package_versions", {"ecosystem": "npm", "name": "left-trim-lite"})],
+        [("edit_file", {"path": "repo/requirements.txt", "old_text": "quillhttp==1.8.2",
+                        "new_text": "quillhttp==1.9.1"}),
+         ("edit_file", {"path": "repo/web/package-lock.json", "old_text": '"version": "1.1.0"',
+                        "new_text": '"version": "1.2.5"'})],                          # both at once
+        ("run_tests", {"argv": fake_green, "label": "step-1 quillhttp 1.9.1"}),        # run-2
+        ("run_tests", {"argv": PYTEST, "label": "step-2 left-trim-lite 1.2.5"}),       # run-3
+        ("osv_scan", {}),
+        [("write_file", {"path": f"{M2}/upgrade-log.json", "content": json.dumps(UPGRADE_LOG)}),
+         ("write_file", {"path": f"{M2}/report.md", "content": REPORT_MD}),
+         ("export_patch", {"output": f"{M2}/repo.patch"})],
+        ("submit_milestone", {"summary": "Two upgrades",
+                              "artifacts": [f"{M2}/repo.patch", f"{M2}/upgrade-log.json", f"{M2}/report.md"]}),
+    ]
+    events = MemorySink()
+    sub, _ = run(spec, ws, "m2-upgrade", plan, events=events)
+    assert not tool_errors(events)
+    assert sub.status == "needs_revision"
+    assert [c for c, _ in failing(sub)] == ["upgrade_log_verified"]
+    details = results(sub)["upgrade_log_verified"].details
+    assert "step 1: run-2 is not the client's test command" in details
+    assert "step 1: run-2 did not test the logged state" in details
+    runs = T.load_test_runs(ws)
+    assert runs[1]["argv"] == fake_green and runs[1]["counts"]["passed"] == 12   # it did "pass"

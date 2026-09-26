@@ -5,6 +5,7 @@ registries and subprocesses are faked through the injected fetch/run.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -440,8 +441,10 @@ from specialists.upgrade_migration import checks as C  # noqa: E402
 
 
 def upgraded_workspace(ws: Path) -> Path:
-    """Baseline scan, a green baseline test run, two upgrades, rescan."""
+    """Client test command `pytest`; baseline scan, a green baseline test
+    run, two upgrades each followed by a run, rescan."""
     make_repo(ws)
+    T.record_test_command(ws, ["pytest"])
     T.inventory_dependencies(ws)
     T.osv_scan(ws, fetch=FakeOSV())
     T.run_tests(ws, run=fake_run("5 passed in 0.1s"), argv=["pytest"], label="baseline")
@@ -510,19 +513,41 @@ def test_plan_covers_findings(tmp_path):
 def test_tests_pass(tmp_path):
     ws = upgraded_workspace(tmp_path)
     assert C.tests_pass(ws, {})["passed"] is None                              # no runner
-    assert C.tests_pass(ws, {"argv": ["pytest"]}, run=fake_run("6 passed"))["passed"] is True
-    res = C.tests_pass(ws, {"argv": ["pytest"]}, run=fake_run("3 passed"))    # tests deleted
-    assert res["passed"] is False and "baseline" in res["details"]
-    assert C.tests_pass(ws, {"argv": ["pytest"]}, run=fake_run("1 failed, 5 passed", 1))["passed"] is False
-    write(ws, "inputs/intake.json", json.dumps({"test_command": "python -m pytest -x"}))
-    run = fake_run("7 passed")
-    assert C.tests_pass(ws, {}, run=run)["passed"] is True
-    assert run.calls[0][0] == ["python", "-m", "pytest", "-x"]
-    # the command recorded from the brief wins over inputs/intake.json
-    assert T.record_test_command(ws, ["python", "-m", "pytest", "-q", "tests"])
-    run = fake_run("7 passed")
-    assert C.tests_pass(ws, {}, run=run)["passed"] is True
-    assert run.calls[0] == (["python", "-m", "pytest", "-q", "tests"], "repo")
+    run = fake_run("6 passed")
+    assert C.tests_pass(ws, {}, run=run)["passed"] is True                     # the client's command
+    assert run.calls[0] == (["pytest"], "repo")
+    res = C.tests_pass(ws, {}, run=fake_run("3 passed"))                       # tests deleted
+    assert res["passed"] is False and "passed in run-1 (baseline)" in res["details"]
+    assert C.tests_pass(ws, {}, run=fake_run("1 failed, 5 passed", 1))["passed"] is False
+    res = C.tests_pass(ws, {}, run=fake_run("6 passed, 2 skipped"))            # tests switched off
+    assert res["passed"] is False and "2 tests skipped/xfailed/deselected now, 0 in run-1" in res["details"]
+
+
+def test_tests_pass_baseline_is_the_client_command_at_baseline_versions(tmp_path):
+    """The baseline is not whatever run the model labels "baseline": it is a
+    run of the client's command, in repo/, at the baseline dependency
+    versions, and the best such run (a run on a half-set-up VM cannot lower
+    the bar)."""
+    ws = upgraded_workspace(tmp_path)
+    client = ["python", "-m", "pytest", "-q"]
+    T.record_test_command(ws, client)            # the brief's command wins over everything else
+    T.run_tests(ws, run=fake_run("1 passed"), argv=client, label="baseline")    # after the upgrades
+    run = fake_run("1 passed")
+    res = C.tests_pass(ws, {}, run=run)
+    assert run.calls[0] == (client, "repo")
+    assert res["passed"] is False and "no baseline run" in res["details"]
+    make_repo(ws)                                                               # baseline versions again
+    T.run_tests(ws, run=fake_run("no tests ran", exit_code=5), argv=client)
+    T.run_tests(ws, run=fake_run("4 passed"), argv=client)
+    T.run_tests(ws, run=fake_run("9 passed"), argv=client, cwd="repo/web")      # wrong directory
+    make_repo(ws, fastjsonx="2.4.1", trim="1.2.5")
+    assert "4 passed in run-" in C.tests_pass(ws, {}, run=fake_run("3 passed"))["details"]
+    assert C.tests_pass(ws, {}, run=fake_run("4 passed"))["passed"] is True
+    # without a recorded command, the intake file names it
+    (ws / T.STATE_DIR / "test_command.json").unlink()
+    write(ws, "inputs/intake.json", json.dumps({"test_command": "python -m pytest -q"}))
+    run = fake_run("4 passed")
+    assert C.tests_pass(ws, {}, run=run)["passed"] is True and run.calls[0][0] == client
     assert T.record_test_command(ws, "") is None and T.record_test_command(ws, {"x": 1}) is None
 
 
@@ -957,3 +982,199 @@ def test_audit_flags_more_ways_to_switch_tests_off(line):
              f"+++ b/tests/conftest.py\n@@ -1 +1,2 @@\n x = 1\n+{line}\n")
     rep = T.audit_patch_text(patch)
     assert rep["skips_added"] and not rep["clean"]
+
+
+# === review regressions: checks that could be satisfied without the work ============
+
+def test_m1_names_dependency_files_it_could_not_read(tmp_path):
+    make_repo(tmp_path)
+    write(tmp_path, "repo/rust/Cargo.lock", "version = 3\n")
+    write(tmp_path, "repo/setup.py", "from setuptools import setup\nsetup()\n")
+    T.osv_scan(tmp_path, fetch=FakeOSV())
+    T.inventory_dependencies(tmp_path, output="deliverables/m1-assess/inventory.json")
+    assert "not read" in C.inventory_matches_repo(tmp_path, {})["details"]
+    advisories = "GHSA-aaaa-0001 GHSA-aaaa-0002 GHSA-bbbb-0003 GHSA-cccc-0004"
+    write(tmp_path, "deliverables/m1-assess/upgrade-plan.md", f"{advisories}\n")
+    res = C.plan_covers_findings(tmp_path, {})
+    assert res["passed"] is False and "rust/Cargo.lock, setup.py" in res["details"]
+    write(tmp_path, "deliverables/m1-assess/upgrade-plan.md",
+          f"{advisories}\nNot scanned: rust/Cargo.lock (Rust) and setup.py (build shim).\n")
+    assert C.plan_covers_findings(tmp_path, {})["passed"] is True
+
+
+def test_unpinning_or_removing_a_vulnerable_package_resolves_nothing(tmp_path):
+    ws = upgraded_workspace(tmp_path)             # yamlette 5.0 (no fix) is still open
+    req = (ws / "repo" / "requirements.txt").read_text(encoding="utf-8")
+    write(ws, "repo/requirements.txt", req.replace("Yamlette[fast]==5.0", "Yamlette[fast]>=5.0"))
+    res = C.osv_delta(ws, {"min_resolved": 1})
+    assert res["passed"] is False and "no longer pinned" in res["details"] and "yamlette" in res["details"]
+    assert res["details"].startswith("baseline 4 open, now 1; resolved 3")
+    rel = "deliverables/m3-migrate/residual-risk.csv"
+    write(ws, rel, "vuln_id,package,status,justification,review_by\n")
+    assert "GHSA-cccc-0004" in C.residual_risks_registered(ws, {})["details"]
+    write(ws, "deliverables/m2-upgrade/upgrade-log.json", json.dumps(good_log()))
+    assert "not in the log (unpinning and removal included): yamlette" in \
+        C.upgrade_log_verified(ws, {})["details"]
+
+    write(ws, "repo/requirements.txt", "# app deps\nfastjsonx==2.4.1\nrequests>=2.0\n")   # yamlette gone
+    res = C.osv_delta(ws, {"min_resolved": 1})
+    assert res["passed"] is False and "removed without a logged removal step" in res["details"]
+    # a logged removal, proven by a green run of the client's command without it, resolves it
+    T.run_tests(ws, run=fake_run("6 passed"), argv=["pytest"], label="step-3 drop yamlette")   # run-4
+    log = good_log()
+    log["steps"].append({"ecosystem": "PyPI", "name": "yamlette", "from": "5.0", "to": "removed",
+                         "test_run": "run-4"})
+    write(ws, "deliverables/m2-upgrade/upgrade-log.json", json.dumps(log))
+    assert C.upgrade_log_verified(ws, {})["passed"] is True
+    res = C.osv_delta(ws, {"min_resolved": 1, "log": "deliverables/m2-upgrade/upgrade-log.json"})
+    assert res["passed"] is True and res["details"].startswith("baseline 4 open, now 0; resolved 4")
+
+
+def test_upgrade_log_rejects_runs_that_prove_nothing(tmp_path):
+    """Batch-then-backfill, a run of some other command and a pre-change run
+    do not count; steps that really moved together may share one run."""
+    make_repo(tmp_path)
+    T.record_test_command(tmp_path, ["pytest"])
+    T.inventory_dependencies(tmp_path)
+    T.run_tests(tmp_path, run=fake_run("5 passed"), argv=["pytest"], label="baseline")      # run-1
+    make_repo(tmp_path, fastjsonx="2.4.1", trim="1.2.5")                                     # both at once
+    T.run_tests(tmp_path, run=fake_run("5 passed"), argv=["pytest"], label="step-1")        # run-2
+    T.run_tests(tmp_path, run=fake_run("5 passed"), argv=["pytest"], label="step-2")        # run-3
+    T.run_tests(tmp_path, run=fake_run("12 passed"),
+                argv=["python", "-c", "print('12 passed in 0.01s')"], label="step-2")       # run-4
+    rel = "deliverables/m2-upgrade/upgrade-log.json"
+    steps = good_log()["steps"]                                   # cites run-2, then run-3
+    write(tmp_path, rel, json.dumps({"steps": steps}))
+    res = C.upgrade_log_verified(tmp_path, {})
+    assert res["passed"] is False and "run-2 did not test the logged state" in res["details"]
+    assert "left-trim-lite (1.2.5, log says 1.1.0)" in res["details"]
+    write(tmp_path, rel, json.dumps({"steps": [dict(steps[0], test_run="run-1"), dict(steps[1], test_run="run-2")]}))
+    assert "run-1 is not after the baseline run" in C.upgrade_log_verified(tmp_path, {})["details"]
+    write(tmp_path, rel, json.dumps({"steps": [dict(s, test_run="run-4") for s in steps]}))
+    assert "run-4 is not the client's test command" in C.upgrade_log_verified(tmp_path, {})["details"]
+    write(tmp_path, rel, json.dumps({"steps": [dict(s, test_run="run-3") for s in steps]}))
+    res = C.upgrade_log_verified(tmp_path, {})                    # an honest group of two
+    assert res["passed"] is True and "2 steps in 1 test runs" in res["details"]
+
+
+def test_every_copy_of_a_package_counts(tmp_path):
+    """An npm lockfile can hold one package at several versions: upgrading
+    one copy is a version change for the upgrade log and the release-age rule."""
+    def lock(top: str) -> str:
+        return json.dumps({"lockfileVersion": 3, "packages": {
+            "": {"dependencies": {"lodash": "^4.17.0", "foo": "1.0.0"}},
+            "node_modules/lodash": {"version": top}, "node_modules/foo": {"version": "1.0.0"},
+            "node_modules/foo/node_modules/lodash": {"version": "4.17.4"}}})
+    write(tmp_path, "repo/package-lock.json", lock("4.17.15"))
+    T.record_test_command(tmp_path, ["npm", "test"])
+    T.inventory_dependencies(tmp_path)
+    assert T.dep_state(T.collect_dependencies(tmp_path / "repo"))["npm|lodash"] == ["4.17.4", "4.17.15"]
+    T.run_tests(tmp_path, run=fake_run("3 passed"), argv=["npm", "test"], label="baseline")   # run-1
+    write(tmp_path, "repo/package-lock.json", lock("4.17.21"))
+    T.run_tests(tmp_path, run=fake_run("3 passed"), argv=["npm", "test"], label="step-1")     # run-2
+    res = C.release_age_ok(tmp_path, {})
+    assert res["passed"] is False and "lodash 4.17.21: no registry history recorded" in res["details"]
+    npm = {"dist-tags": {"latest": "4.17.21"}, "time": {"4.17.21": "2021-02-20T00:00:00Z"},
+           "versions": {"4.17.21": {}}}
+    T.package_versions(tmp_path, fetch=lambda url, **k: SimpleNamespace(status=200, text=json.dumps(npm)),
+                       ecosystem="npm", name="lodash")
+    assert C.release_age_ok(tmp_path, {})["passed"] is True
+    rel = "deliverables/m2-upgrade/upgrade-log.json"
+    step = {"ecosystem": "npm", "name": "lodash", "from": "4.17.15", "to": "4.17.21", "test_run": "run-2"}
+    write(tmp_path, rel, json.dumps({"steps": [step]}))
+    assert C.upgrade_log_verified(tmp_path, {})["passed"] is True
+    write(tmp_path, rel, json.dumps({"steps": [dict(step, **{"from": "4.17.4"})]}))    # the other copy
+    res = C.upgrade_log_verified(tmp_path, {})
+    assert res["passed"] is False and "lodash (4.17.4, 4.17.21, log says 4.17.15, 4.17.21)" in res["details"]
+
+
+def test_release_age_follows_the_client_policy(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    ws = upgraded_workspace(tmp_path)
+    recent = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    T.package_versions(ws, fetch=registry_fetch({"2.4.1": recent}), ecosystem="PyPI", name="fastjsonx")
+    T.package_versions(ws, fetch=registry_fetch({}), ecosystem="npm", name="left-trim-lite")
+    assert C.release_age_ok(ws, {"min_age_days": 7})["passed"] is True                   # 10 days old
+    policy = T.record_policy(ws, {"upgrade_policy": "Majors need approval; minimum release age 30 days"})
+    assert policy["min_release_age_days"] == 30
+    res = C.release_age_ok(ws, {"min_age_days": 7})
+    assert res["passed"] is False and "fastjsonx 2.4.1: 10 days old (< 30)" in res["details"]
+    out = T.package_versions(ws, fetch=registry_fetch({"2.4.1": recent}), ecosystem="PyPI", name="fastjsonx")
+    assert out["versions"][-1]["too_new"] is True                                         # tool default follows
+    assert T.record_policy(ws, {"upgrade_policy": "3 days is fine"})["min_release_age_days"] == 7
+    assert T.record_policy(ws, {})["source"] == "default"
+
+
+def test_new_dependencies_disclosed_uses_the_manifest_beside_a_lock(tmp_path):
+    """Poetry, uv and Pipenv lockfiles take direct names from the manifest
+    beside them, so a new direct dependency must be disclosed."""
+    pyproject = '[tool.poetry.dependencies]\npython = "^3.11"\nfastjsonx = "^2.2"\n'
+    lock = '[[package]]\nname = "fastjsonx"\nversion = "2.2.0"\n\n[[package]]\nname = "tinyutil"\nversion = "1.0.0"\n'
+    write(tmp_path, "repo/pyproject.toml", pyproject)
+    write(tmp_path, "repo/poetry.lock", lock)
+    T.inventory_dependencies(tmp_path)
+    rows = {d["name"]: d for d in T.collect_dependencies(tmp_path / "repo")}
+    assert rows["fastjsonx"]["direct"] and not rows["tinyutil"]["direct"]
+    write(tmp_path, "repo/pyproject.toml", pyproject + 'shinyparse = "1.0.0"\n')
+    write(tmp_path, "repo/poetry.lock", lock + '\n[[package]]\nname = "shinyparse"\nversion = "1.0.0"\n'
+                                              '\n[[package]]\nname = "shinydep"\nversion = "0.1.0"\n')
+    write(tmp_path, "deliverables/r.md", "No new dependencies.\n")
+    res = C.new_dependencies_disclosed(tmp_path, {"report": "deliverables/r.md"})
+    assert res["passed"] is False and "shinyparse" in res["details"] and "shinydep" not in res["details"]
+    write(tmp_path, "deliverables/r.md", "New dependency for approval: shinyparse 1.0.0\n")
+    assert C.new_dependencies_disclosed(tmp_path, {"report": "deliverables/r.md"})["passed"] is True
+
+
+def test_detectors_cleared_needs_every_recorded_detector(tmp_path):
+    make_repo(tmp_path)
+    write(tmp_path, "repo/app/a.py", "stamp = datetime.utcnow()\nfastjsonx.loads_legacy(s)\n")
+    dets = [{"id": "legacy-loads", "regex": r"\.loads_legacy\(", "glob": "*.py"},
+            {"id": "utcnow", "regex": r"datetime\.utcnow\(", "glob": "*.py"}]
+    T.scan_patterns(tmp_path, detectors=dets)
+    write(tmp_path, "repo/app/a.py", "stamp = datetime.utcnow()\nfastjsonx.loads(s)\n")   # one cleared
+    rel = write(tmp_path, "deliverables/m3-migrate/detectors.json", json.dumps(dets[:1]))
+    res = C.detectors_cleared(tmp_path, {})
+    assert res["passed"] is False and "recorded detectors missing from" in res["details"]
+    assert "utcnow" in res["details"]
+    lazy = dets[:1] + [{"id": "utcnow", "superseded_by": "legacy-loads", "reason": "?"}]
+    write(tmp_path, rel, json.dumps(lazy))
+    assert "superseded without a reason" in C.detectors_cleared(tmp_path, {})["details"]
+    # a corrected detector replaces a wrong one: both disclosed, the new one at zero
+    fixed = {"id": "utcnow-call", "regex": r"\butcnow\(", "glob": "*.py"}
+    T.scan_patterns(tmp_path, detectors=[fixed])
+    write(tmp_path, "repo/app/a.py", "stamp = datetime.now(timezone.utc)\nfastjsonx.loads(s)\n")
+    write(tmp_path, rel, json.dumps(dets[:1] + [fixed, {"id": "utcnow", "superseded_by": "utcnow-call",
+                                                        "reason": "first regex missed aliased imports"}]))
+    res = C.detectors_cleared(tmp_path, {})
+    assert res["passed"] is True and "utcnow superseded (0 matches" in res["details"]
+
+
+def test_patch_generated(tmp_path):
+    rel = write(tmp_path, "deliverables/m2-upgrade/repo.patch", CLEAN_PATCH)
+    params = {"patch": rel}
+    assert "not generated from git" in C.patch_generated(tmp_path, params)["details"]
+    digest = hashlib.sha256((tmp_path / rel).read_bytes()).hexdigest()
+    T.record_patch(tmp_path, rel, milestone="m2-upgrade", base="0123456789abcdef", sha256=digest)
+    assert C.patch_generated(tmp_path, params) == {"passed": True, "details": "git diff against 0123456789ab",
+                                                   "score": None}
+    write(tmp_path, rel, CLEAN_PATCH.replace("2.4.1", "2.4.2"))
+    assert "changed after" in C.patch_generated(tmp_path, params)["details"]
+    T.record_patch(tmp_path, rel, milestone="m2-upgrade", error="repo/ is not a git repository")
+    assert "could not be generated from git" in C.patch_generated(tmp_path, params)["details"]
+
+
+def test_manifest_is_consistent_with_its_limits_and_checks():
+    m = load_manifest()
+    lim, rate = m["limits"], m["estimate"]["usd_per_hour"]
+    for ms in m["milestones"]:
+        assert ms["hours"][1] * 60 <= lim["max_wall_minutes"], ms["id"]
+        assert ms["hours"][1] * rate <= lim["max_usd"], ms["id"]
+    used = {c["check"] for ms in m["milestones"] for c in ms["acceptance"]}
+    assert set(C.CHECK_DEFS) <= used
+    for ms in m["milestones"]:
+        checks = {c["check"] for c in ms["acceptance"]}
+        assert "human_signoff" in checks, ms["id"]
+        if any(d.endswith("/repo.patch") for d in ms["deliverables"]):
+            assert {"patch_generated", "diff_scope", "tests_pass"} <= checks, ms["id"]
+    assert "npx" not in m["shell"]["allow"]

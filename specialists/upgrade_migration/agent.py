@@ -5,33 +5,44 @@ agent.yaml, prompts, TOOL_DEFS (tools.py) and CHECK_DEFS (checks.py) are
 wired by the kit; this subclass adds what a code engagement needs around
 the loop:
 
-    extra_checks  every domain check is registered as automated, so a
-                  brief cannot turn a recomputation into a pending check
-    prepare       records the client's test_command (tests_pass re-runs
-                  exactly that), makes sure repo/ is a git repository of its
-                  own (a plain copy, such as an eval fixture, gets a baseline
-                  commit) and records the commit the milestone starts from
-    finalize      writes every repo.patch deliverable from `git diff`
-                  against that commit, so the patch the customer merges and
-                  the one diff_scope audits is the repo's real change, not
-                  a file the model wrote
+    validate_intake  a test_command the checks could never run (shell syntax,
+                     env assignments, a program off the shell allowlist) is
+                     sent back to the client at scoping, not found at m2
+    extra_checks     every domain check is registered as automated, so a
+                     brief cannot turn a recomputation into a pending check
+    prepare          records, as tool-owned evidence the model cannot aim
+                     elsewhere: the client's test_command (tests_pass re-runs
+                     exactly that), the minimum release age from the upgrade
+                     policy, and - once, before the first milestone's loop -
+                     the baseline inventory of the whole repo/. It also makes
+                     sure repo/ is a git repository of its own (a plain copy,
+                     such as an eval fixture, gets a baseline commit) and
+                     records the commit the milestone starts from
+    finalize         writes every repo.patch deliverable from `git diff`
+                     against that commit, so the patch the customer merges and
+                     the one diff_scope audits is the repo's real change. If
+                     that is impossible (no git, no recorded base, git fails)
+                     any model-written patch is deleted and the failure is
+                     recorded, so patch_generated fails instead of a
+                     hand-written patch being audited
 
 All git calls go through ToolContext.run (shell allowlist, scrubbed env,
 timeout). Nothing is pushed, merged or committed to an existing history.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 
 from agentkit.errors import PolicyViolation, ToolError
 from agentkit.journal import safe_name
 from agentkit.loop import RunOutcome
 from agentkit.specialist import Specialist
 from agentkit.tools import ToolContext
-from agentkit.types import MilestoneSpec
+from agentkit.types import MilestoneSpec, MissingInput
 from specialists.upgrade_migration import tools as T
 from specialists.upgrade_migration.checks import CHECK_DEFS
 
@@ -47,6 +58,19 @@ BASELINE_COMMIT = ["-c", "user.name=agentkit", "-c", "user.email=agentkit@localh
 
 class UpgradeMigration(Specialist):
 
+    def validate_intake(self, intake: Mapping[str, Any]) -> list[MissingInput]:
+        missing = super().validate_intake(intake)
+        command = intake.get("test_command")
+        if command and not any(m.field == "test_command" for m in missing):
+            problem = T.test_command_problem(command, self.manifest.shell.allow)
+            if problem:
+                missing.append(MissingInput(
+                    field="test_command", blocking=True,
+                    question=f"{problem[0].upper()}{problem[1:]}. Which single command, run from the "
+                             "repository root, runs the full test suite (for example "
+                             "\"python -m pytest -q\" or \"npm test\")?"))
+        return missing
+
     def extra_checks(self) -> list[dict[str, Any]]:
         return [{"name": name, "function": fn, "kind": "automated"} for name, fn in CHECK_DEFS.items()]
 
@@ -56,8 +80,13 @@ class UpgradeMigration(Specialist):
         super().prepare(ctx, milestone)
         if ctx.brief is not None:
             T.record_test_command(ctx.workspace, ctx.brief.intake.get("test_command"))
-        if not (ctx.workspace / REPO).is_dir() or self.base_path(ctx.workspace, milestone.id).is_file():
-            return   # no repository, or a resumed milestone keeps its starting commit
+            T.record_policy(ctx.workspace, ctx.brief.intake)
+        if not (ctx.workspace / REPO).is_dir():
+            return
+        if T.record_baseline(ctx.workspace, REPO):
+            ctx.events.emit("baseline_recorded", milestone=milestone.id)
+        if self.base_path(ctx.workspace, milestone.id).is_file():
+            return   # a resumed milestone keeps its starting commit
         try:
             base = self._start_commit(ctx)
         except (ToolError, PolicyViolation) as exc:
@@ -97,26 +126,37 @@ class UpgradeMigration(Specialist):
 
     def finalize(self, ctx: ToolContext, milestone: MilestoneSpec, outcome: RunOutcome) -> RunOutcome:
         patches = [d for d in milestone.deliverables if PurePosixPath(d).name == PATCH_NAME]
-        if not patches or not T.is_git_repo(ctx.workspace / REPO):
+        if not patches:
             return outcome
-        base = self.base_commit(ctx.workspace, milestone.id) or "HEAD"
         staged = ctx.workspace / T.STATE_DIR / "patches" / f"{safe_name(milestone.id)}.patch"
         staged.unlink(missing_ok=True)     # never ship an earlier attempt's diff
-        try:
-            res = T.git_diff(ctx.run, REPO, staged, base)
-        except (ToolError, PolicyViolation) as exc:
-            res = None
-            error = str(exc)
+        base = self.base_commit(ctx.workspace, milestone.id)
+        error = ""
+        if not T.is_git_repo(ctx.workspace / REPO):
+            error = "repo/ is not a git repository"
+        elif base is None:
+            error = "no base commit was recorded for this milestone"
         else:
-            error = (res.stderr or "").strip()[:300]
-        if res is None or res.exit_code != 0 or not staged.is_file():
+            try:
+                res = T.git_diff(ctx.run, REPO, staged, base)
+            except (ToolError, PolicyViolation) as exc:
+                error = str(exc)[:300] or type(exc).__name__
+            else:
+                if res.exit_code != 0 or not staged.is_file():
+                    error = f"git diff failed: {(res.stderr or '').strip()[:300]}"
+        if error:
+            for rel in patches:     # never let checks audit a patch the model wrote
+                ctx.path(rel, write=True).unlink(missing_ok=True)
+                T.record_patch(ctx.workspace, rel, milestone=milestone.id, error=error)
             ctx.events.emit("warning", milestone=milestone.id, message=f"repo.patch not exported: {error}")
             return outcome
+        digest = hashlib.sha256(staged.read_bytes()).hexdigest()
         for rel in patches:
             target = ctx.path(rel, write=True)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(staged, target)
             ctx.ledger.note_authored(ctx.rel(target))
+            T.record_patch(ctx.workspace, rel, milestone=milestone.id, base=base, sha256=digest)
         ctx.events.emit("patch_exported", milestone=milestone.id, base=base, paths=patches,
                         bytes=staged.stat().st_size)
         return outcome
