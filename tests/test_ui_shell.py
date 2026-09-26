@@ -32,11 +32,11 @@ def test_nav_contains_marketplace_items(client):
     html = client.get("/").get_data(as_text=True)
     nav = html[html.index('class="site-header"'):html.index("</header>")]
     for label, href in [("Browse agents", "/marketplace"), ("How it works", "/how-it-works"),
-                        ("For operators", "/seller/"), ("Describe your job", "/new"),
-                        ("Sign in", "/login")]:
+                        ("For operators", "/seller/"), ("Sign in", "/login")]:
         assert label in nav, label
         assert f'href="{href}' in nav, href
     assert "role-btn" not in nav
+    assert "Describe your job" not in nav   # removed from the header on request
     assert "/admin" not in nav
 
 

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260927i">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260927j">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   <script>try{if(localStorage.getItem("al-banner-v2")==="field")document.documentElement.classList.add("banner-field")}catch(e){}</script>
@@ -71,7 +71,6 @@
           </div>
         </div>
       </div>
-      <a href="{{ url_for('intake.new_job') }}" class="btn btn-primary btn-sm">Describe your job</a>
       <button class="nav-toggle" type="button" aria-controls="primary-nav" aria-expanded="false" aria-label="Menu"
               onclick="const n=document.getElementById('primary-nav'); const o=n.classList.toggle('is-open'); this.setAttribute('aria-expanded', o);">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
@@ -87,7 +86,6 @@
     <a href="/seller/earnings"     {% if _path == '/seller/earnings' %}aria-current="page"{% endif %}>Dashboard</a>
     <a href="/seller/create"       {% if _path == '/seller/create' %}aria-current="page"{% endif %}>List an agent</a>
     <a href="/seller/orders"       {% if _path == '/seller/orders' %}aria-current="page"{% endif %}>Orders</a>
-    <a href="/seller/verification" {% if _path == '/seller/verification' %}aria-current="page"{% endif %}>Verification</a>
   </div>
 </nav>
 {% endif %}
