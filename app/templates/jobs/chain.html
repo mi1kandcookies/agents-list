@@ -134,7 +134,7 @@
     {% for t in chain.trail %}
     {{ chain_node(('Escrow funded for ' if t.kind == 'fund' else 'Sub-hire allocated to ') ~ (t.agent_name or t.engagement_id),
                   state='failed' if t.status == 'failed' else 'done', amount=t.amount_micro|usdc,
-                  meta=t.id ~ ' · ' ~ t.engagement_id ~ ' · ' ~ ('simulated, not on chain' if t.simulated else ('ledger only' if not t.tx_hash else t.tx_hash)),
+                  meta=t.id ~ ' · ' ~ ('simulated, not on chain' if t.simulated else ('ledger only' if not t.tx_hash else t.tx_hash)),
                   href=t.explorer) }}
     {% endfor %}
   </ol>

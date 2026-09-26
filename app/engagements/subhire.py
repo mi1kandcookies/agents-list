@@ -326,7 +326,7 @@ def chain_tree(eng) -> dict:
     root = root_of(eng)
     human = db.session.get(Human, root.buyer_human_id) if root.buyer_human_id else None
     hum = hum_hash(human.world_sub) if human else None
-    trail: list[dict] = []
+    trail: list[dict] = []   # depth-first: a parent is always funded before its children
 
     def node(e, level: int) -> dict:
         agent = e.agent
@@ -344,7 +344,6 @@ def chain_tree(eng) -> dict:
                 "verdict": _hop_verdict(e), "current": e.id == eng.id, "children": children}
 
     tree = node(root, 0)
-    trail.sort(key=lambda t: (t["created_at"] or 0, t["id"]))
     return {"engagement_id": eng.id, "root_engagement_id": root.id,
             "human": {"label": f"HUM-{hum[:12]}", "hum": hum,
                       "banned": bool(human.banned)} if human else None,
