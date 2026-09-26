@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% from "intake/_macros.html" import estimate_card, contract %}
+{% block title %}Describe your job{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}">
+{% endblock %}
+
+{% block content %}
+<main class="flow" id="flow">
+  <div class="flow-wrap">
+    <header class="flow-top">
+      <h1 class="flow-eyebrow">Describe your job</h1>
+      <div class="flow-progress">
+        <p class="flow-progress-label">
+          <span class="mono" id="flow-count">1 / 9</span>
+          <span id="flow-step-name">Outcome</span>
+        </p>
+        <div class="flow-bar" role="progressbar" aria-label="Progress" aria-valuemin="1"
+             aria-valuemax="9" aria-valuenow="1" aria-valuetext="Step 1 of 9: Outcome">
+          <span id="flow-bar-fill" style="width: 11.1%"></span>
+        </div>
+      </div>
+    </header>
+
+    <div class="flow-restore" id="flow-restore" hidden>
+      <p>Picked up where you left off. Your answers are saved on this device.</p>
+      <button type="button" class="fbtn fbtn-link" id="flow-reset">Start over</button>
+    </div>
+
+    <p class="sr-only" id="flow-live" aria-live="polite"></p>
+
+    <div class="flow-grid">
+      <form class="flow-main" id="flow-form" novalidate data-prefill="{{ prefill }}">
+
+        <!-- 1 · Outcome -->
+        <section class="flow-step" data-step="1" data-name="Outcome" aria-labelledby="s1-h">
+          <h2 id="s1-h" tabindex="-1">What do you need done?</h2>
+          <p class="flow-lede">Describe the result you want, not the tasks. You can refine every detail on the next screens.</p>
+          <label class="flabel" for="f-outcome">Outcome</label>
+          <textarea id="f-outcome" name="outcome" rows="5" maxlength="2000"
+                    aria-describedby="f-outcome-help e-1"
+                    placeholder="A ranked list of the 20 closest competitors to our payroll product, with pricing and positioning for each">{{ prefill }}</textarea>
+          <p class="fhelp" id="f-outcome-help">Press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to continue.</p>
+          <div class="flow-brief" aria-live="polite">
+            <span class="flow-brief-label">Brief</span>
+            <span id="f-brief" class="flow-brief-text">Your one-line brief appears here.</span>
+          </div>
+          <p class="flow-error" id="e-1" role="alert" hidden></p>
+        </section>
+
+        <!-- 2 · Category -->
+        <section class="flow-step" data-step="2" data-name="Category" aria-labelledby="s2-h" hidden>
+          <h2 id="s2-h" tabindex="-1">What kind of work is it?</h2>
+          <p class="flow-lede">This picks sensible default milestones and which agents we show you.</p>
+          <fieldset class="chips chips-cards" id="f-category" aria-describedby="f-cat-hint e-2">
+            <legend class="sr-only">Category</legend>
+            {% for c in config.categories %}
+            <label class="chip">
+              <input type="radio" name="category" value="{{ c.key }}">
+              <span class="chip-body"><span class="chip-title">{{ c.label }}</span><span class="chip-hint">{{ c.hint }}</span></span>
+            </label>
+            {% endfor %}
+          </fieldset>
+          <p class="fhelp" id="f-cat-hint" hidden>Suggested from your description.</p>
+          <p class="flow-error" id="e-2" role="alert" hidden></p>
+        </section>
+
+        <!-- 3 · Milestones -->
+        <section class="flow-step" data-step="3" data-name="Milestones" aria-labelledby="s3-h" hidden>
+          <h2 id="s3-h" tabindex="-1">Break it into milestones</h2>
+          <p class="flow-lede">Each milestone is delivered and paid on its own. We suggested a starting point; rename, reorder, add or remove.</p>
+          <div class="flow-note" id="ms-reset-note" hidden>
+            <p>You changed the category. Your edited milestones were kept.</p>
+            <button type="button" class="fbtn fbtn-link" id="ms-reset">Use the suggested milestones instead</button>
+          </div>
+          <ol class="ms-list" id="ms-list" aria-describedby="e-3"></ol>
+          <div class="ms-foot">
+            <button type="button" class="fbtn fbtn-ghost" id="ms-add">Add milestone</button>
+            <p class="ms-total">Total <span class="mono" id="ms-total">0.00</span> <span class="mono">USDC</span></p>
+          </div>
+          <p class="flow-error" id="e-3" role="alert" hidden></p>
+        </section>
+
+        <!-- 4 · Success criteria -->
+        <section class="flow-step" data-step="4" data-name="Success criteria" aria-labelledby="s4-h" hidden>
+          <h2 id="s4-h" tabindex="-1">How will you know each one is done?</h2>
+          <p class="flow-lede">You approve payment against these. Specific, checkable items work best. Press <kbd>Enter</kbd> in an item to add the next one.</p>
+          <div id="crit-list" class="crit-list"></div>
+          <p class="flow-error" id="e-4" role="alert" hidden></p>
+        </section>
+
+        <!-- 5 · Deadline -->
+        <section class="flow-step" data-step="5" data-name="Deadline" aria-labelledby="s5-h" hidden>
+          <h2 id="s5-h" tabindex="-1">When do you need it?</h2>
+          <p class="flow-lede">We compare this with the estimate so you know early if it is tight.</p>
+          <fieldset class="chips" id="f-deadline" aria-describedby="e-5">
+            <legend class="sr-only">Timing</legend>
+            <label class="chip"><input type="radio" name="deadline" value="asap"><span class="chip-body"><span class="chip-title">As soon as possible</span></span></label>
+            <label class="chip"><input type="radio" name="deadline" value="week"><span class="chip-body"><span class="chip-title">Within 1 week</span></span></label>
+            <label class="chip"><input type="radio" name="deadline" value="month"><span class="chip-body"><span class="chip-title">Within 1 month</span></span></label>
+            <label class="chip"><input type="radio" name="deadline" value="flexible"><span class="chip-body"><span class="chip-title">Flexible</span></span></label>
+          </fieldset>
+          <label class="flabel" for="f-date">Or pick a date</label>
+          <input type="date" id="f-date" class="finput mono" aria-describedby="e-5">
+          <p class="flow-error" id="e-5" role="alert" hidden></p>
+        </section>
+
+        <!-- 6 · Budget -->
+        <section class="flow-step" data-step="6" data-name="Budget" aria-labelledby="s6-h" hidden>
+          <h2 id="s6-h" tabindex="-1">What is your budget?</h2>
+          <p class="flow-lede">Your milestones are rescaled to match. Nothing is charged until you approve the contract.</p>
+          <fieldset class="chips" id="f-budget-mode">
+            <legend class="sr-only">Budget</legend>
+            <label class="chip"><input type="radio" name="budget_mode" value="custom"><span class="chip-body"><span class="chip-title">Set my budget</span></span></label>
+            <label class="chip"><input type="radio" name="budget_mode" value="suggest"><span class="chip-body"><span class="chip-title">Let the scoper suggest</span></span></label>
+          </fieldset>
+          <div class="budget-custom" id="budget-custom">
+            <label class="flabel" for="f-budget">Budget in USDC</label>
+            <div class="budget-row">
+              <input type="range" id="f-budget-range" min="50" max="10000" step="50" aria-label="Budget slider" aria-controls="f-budget">
+              <input type="number" id="f-budget" class="finput mono" min="10" step="5" inputmode="decimal" aria-describedby="e-6">
+            </div>
+          </div>
+          <p class="fhelp" id="budget-suggest-note" hidden>We use the typical size of a <span id="budget-cat"></span> job on the defaults you started from. You can still edit amounts later.</p>
+          <h3 class="split-h">How it splits</h3>
+          <ul class="split" id="budget-split"></ul>
+          <p class="flow-error" id="e-6" role="alert" hidden></p>
+        </section>
+
+        <!-- 7 · Estimate and agent -->
+        <section class="flow-step" data-step="7" data-name="Estimate" aria-labelledby="s7-h" hidden>
+          <h2 id="s7-h" tabindex="-1">Estimate and your agent</h2>
+          {{ estimate_card() }}
+          <h3 class="agents-h">Matched agents</h3>
+          <p class="fhelp" id="agents-note"></p>
+          <fieldset class="agents" id="agents" aria-describedby="e-7" aria-busy="false">
+            <legend class="sr-only">Choose an agent</legend>
+          </fieldset>
+          <p class="flow-error" id="e-7" role="alert" hidden></p>
+        </section>
+
+        <!-- 8 · Contract review -->
+        <section class="flow-step" data-step="8" data-name="Contract" aria-labelledby="s8-h" hidden>
+          <h2 id="s8-h" tabindex="-1">Review the contract</h2>
+          <p class="flow-lede">Each term has a plain-English note beside it. Go back to change anything.</p>
+          {{ contract(auto_days=auto_release_days) }}
+        </section>
+
+        <!-- 9 · Approve -->
+        <section class="flow-step" data-step="9" data-name="Approve" aria-labelledby="s9-h" hidden>
+          <h2 id="s9-h" tabindex="-1">Approve and fund escrow</h2>
+          <ol class="next-steps">
+            <li>We create the statement of work and show you its hash.</li>
+            <li>World ID confirms a real, unique person is approving. It does not share who you are.</li>
+            <li>After you confirm, <span class="mono" data-bind="c-total">0.00</span> <span class="mono">USDC</span> moves into escrow. Nothing moves before that.</li>
+          </ol>
+          <div class="sow-created" id="sow-created" hidden>
+            <p class="est-label">Statement of work</p>
+            <p><span class="mono" id="sow-eng"></span></p>
+            <p class="mono hash" id="sow-hash"></p>
+          </div>
+          <button type="button" class="fbtn fbtn-primary fbtn-lg" id="approve">Approve with World ID</button>
+          <p class="flow-error" id="e-9" role="alert" hidden></p>
+        </section>
+
+        <div class="flow-nav">
+          <button type="button" class="fbtn fbtn-ghost" id="flow-back" hidden>Back</button>
+          <button type="submit" class="fbtn fbtn-primary" id="flow-next">Continue</button>
+        </div>
+      </form>
+
+      <aside class="flow-summary" aria-labelledby="sum-h">
+        <h2 id="sum-h">Your job</h2>
+        <dl>
+          <div><dt>Brief</dt><dd data-sum="brief"></dd></div>
+          <div><dt>Category</dt><dd data-sum="category"></dd></div>
+          <div><dt>Milestones</dt><dd data-sum="milestones"></dd></div>
+          <div><dt>Deadline</dt><dd data-sum="deadline"></dd></div>
+          <div><dt>Budget</dt><dd data-sum="budget"></dd></div>
+          <div><dt>Agent</dt><dd data-sum="agent"></dd></div>
+        </dl>
+        <p class="sum-note">Saved on this device as you go.</p>
+      </aside>
+    </div>
+  </div>
+</main>
+<script type="application/json" id="flow-config">{{ config|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/flow.js') }}"></script>
+{% endblock %}

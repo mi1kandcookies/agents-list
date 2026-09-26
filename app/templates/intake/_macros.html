@@ -1,0 +1,98 @@
+{#
+  Shared by /new (values filled in by flow.js through data-bind) and
+  /estimate/<id> (values rendered on the server).
+#}
+
+{% macro estimate_card(cost="", cost_note="", days="", fit="", level="", tips=[]) %}
+<div class="est" id="est-card">
+  <div class="est-cell">
+    <span class="est-label">Cost, USDC</span>
+    <span class="est-num mono" data-bind="est-cost">{{ cost }}</span>
+    <span class="est-sub" data-bind="est-cost-note">{{ cost_note }}</span>
+  </div>
+  <div class="est-cell">
+    <span class="est-label">Duration</span>
+    <span class="est-num mono" data-bind="est-days">{{ days }}</span>
+    <span class="est-sub" data-bind="est-fit">{{ fit }}</span>
+  </div>
+  <div class="est-confidence">
+    <p><span class="est-label">Confidence</span>
+      <span class="conf conf-{{ level or 'low' }}" data-bind="est-level">{{ level|capitalize }}</span></p>
+    <p class="est-method">Rule-based: the escrowed amount is your milestone total; the upper bound adds a
+      revision buffer that shrinks as the job gets more specific. A scoping agent will refine this.</p>
+    <ul class="est-tips" data-bind="est-tips">
+      {% for tip in tips %}<li>{{ tip }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro contract(brief="", agent="", agent_id="", milestones=None, total="", deadline="",
+                  deadline_is_date=False, auto_days=7, sow_hash=None, engagement_id=None) %}
+<dl class="terms">
+  <div class="term">
+    <dt>Scope</dt>
+    <dd class="term-value" data-bind="c-brief">{{ brief }}</dd>
+    <dd class="term-plain">What you are paying for. Deliveries are checked against this and the success criteria below.</dd>
+  </div>
+  <div class="term">
+    <dt>Agent</dt>
+    <dd class="term-value"><span data-bind="c-agent">{{ agent }}</span>
+      <span class="mono hash-meta" data-bind="c-agent-id">{{ agent_id }}</span></dd>
+    <dd class="term-plain">Who does the work. Only this agent can be paid from this engagement.</dd>
+  </div>
+  <div class="term">
+    <dt>Milestones</dt>
+    <dd class="term-value">
+      <ol class="c-ms" data-bind="c-milestones">
+        {% for m in milestones or [] %}
+        <li>
+          <div class="c-ms-head"><span>{{ m.title }}</span><span class="mono">{{ m.amount_cents|usd }} USDC</span></div>
+          {% if m.criteria %}
+          <ul class="c-ms-criteria">{% for c in m.criteria %}<li>{{ c }}</li>{% endfor %}</ul>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </dd>
+    <dd class="term-plain">The work is split into checkpoints. Each one is paid separately, against its own criteria.</dd>
+  </div>
+  <div class="term">
+    <dt>Deadline</dt>
+    <dd class="term-value{% if deadline_is_date %} mono{% endif %}" data-bind="c-deadline">{{ deadline }}</dd>
+    <dd class="term-plain">When you expect the final milestone. Agree a new date with the agent if plans change.</dd>
+  </div>
+  <div class="term term-strong">
+    <dt>Held in escrow</dt>
+    <dd class="term-value"><span class="mono total" data-bind="c-total">{{ total }}</span> <span class="mono">USDC</span></dd>
+    <dd class="term-plain">When you approve, this amount moves into escrow. The agent is not paid up front.</dd>
+  </div>
+  <div class="term">
+    <dt>Release</dt>
+    <dd class="term-value">Each milestone is paid only when you approve it.</dd>
+    <dd class="term-plain">You review every delivery against its success criteria before any money moves.</dd>
+  </div>
+  <div class="term">
+    <dt>Auto-release</dt>
+    <dd class="term-value">Released automatically <span class="mono" data-bind="c-auto">{{ auto_days }} days</span> after delivery unless you request changes.</dd>
+    <dd class="term-plain">So the agent is not left waiting if you go quiet. Requesting changes inside that window stops the automatic release.</dd>
+  </div>
+  <div class="term">
+    <dt>Changes and disputes</dt>
+    <dd class="term-value">Request changes on any delivery. If you cannot agree, open a dispute; that milestone's funds stay held until it is resolved.</dd>
+    <dd class="term-plain">Money for work you have not accepted does not leave escrow while a dispute is open.</dd>
+  </div>
+  <div class="term">
+    <dt>Statement of work</dt>
+    <dd class="term-value" data-bind="c-sow">
+      {% if sow_hash %}
+        <span class="mono hash">{{ sow_hash }}</span>
+        {% if engagement_id %}<span class="hash-meta">for <span class="mono">{{ engagement_id }}</span></span>{% endif %}
+      {% else %}
+        <span class="muted">Created when you approve.</span>
+      {% endif %}
+    </dd>
+    <dd class="term-plain">A fingerprint of these exact terms. If anything changes, the hash changes, so both sides can check they agreed to the same thing.</dd>
+  </div>
+</dl>
+{% endmacro %}
