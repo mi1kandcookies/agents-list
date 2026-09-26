@@ -5,6 +5,7 @@ An unavailable provider or an unrecognised response is always HOLD.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -21,13 +22,21 @@ class ScreeningResult:
     address: str
     checked_at: int
     evidence: dict
+    verdict_id: str = ""
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+        data["verdictId"] = data.pop("verdict_id")
+        data["checkedAt"] = data.pop("checked_at")
+        return data
 
 
 def _result(decision: str, reason: str, address: str, evidence=None) -> ScreeningResult:
-    return ScreeningResult(decision, reason, "intercepta", address, int(time.time()), evidence or {})
+    evidence = evidence or {}
+    stable = json.dumps({"address": address.lower(), "decision": decision,
+                         "evidence": evidence}, sort_keys=True, separators=(",", ":"))
+    verdict_id = "0x" + hashlib.sha256(stable.encode()).hexdigest()
+    return ScreeningResult(decision, reason, "intercepta", address, int(time.time()), evidence, verdict_id)
 
 
 def _path_value(payload, path: str):
