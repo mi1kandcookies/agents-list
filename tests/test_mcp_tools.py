@@ -237,7 +237,8 @@ def test_non_json_error_and_unreachable_api():
 def test_status_polls_until_terminal_and_reports_ledger():
     pending = approval(state="pending")
     done = approval(state="consumed", result={"ledger_ids": ["LED-1"], "tx": None})
-    ledger = [{"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "simulated", "tx_hash": None}]
+    ledger = [{"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "simulated", "tx_hash": None,
+               "approval_id": APR}]
     client, session = make_client({
         ("GET", f"/api/engagements/{ENG}"): [
             (200, engagement(approvals=[pending])),
@@ -252,6 +253,7 @@ def test_status_polls_until_terminal_and_reports_ledger():
     assert out["terminal"] is True and out["timed_out"] is False
     assert out["status"] == "funded" and out["approval"]["state"] == "consumed"
     assert out["money_moved"] is True and "simulated" in out["message"]
+    assert "executing" in out["approval"]["instruction"]
     assert len(clock.sleeps) == 2
     assert sum(1 for c in session.calls if c["path"] == f"/api/approvals/{APR}") == 3
 
@@ -270,7 +272,8 @@ def test_status_times_out_without_claiming_payment_and_caps_wait():
 
 def test_status_approved_but_tx_pending_is_not_money_moved():
     done = approval(state="consumed")
-    ledger = [{"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "pending", "tx_hash": "0x1"}]
+    ledger = [{"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "pending", "tx_hash": "0x1",
+               "approval_id": APR}]
     client, _ = make_client({("GET", f"/api/engagements/{ENG}"): [
         (200, engagement(status="awaiting_approval", approvals=[done], ledger=ledger))]})
     out = tools.get_engagement_status(client, ENG)
@@ -291,9 +294,11 @@ def test_status_without_approvals_returns_immediately():
 def test_release_flow_start_then_status_confirms_release():
     rel_pending = approval(kind="milestone.release", state="pending")
     rel_done = approval(kind="milestone.release", state="consumed")
-    ledger = [{"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "confirmed"},
+    ledger = [{"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "confirmed",
+               "approval_id": "APR-FUND"},
               {"id": "LED-2", "kind": "release", "amount_micro": 25_000_000, "status": "confirmed",
                "tx_hash": "0xabc"}]
+    rel_done["result"] = {"ledger_ids": ["LED-2"], "tx": "0xabc"}
     client, session = make_client({
         ("POST", f"/api/engagements/{ENG}/milestones/0/release"): [(202, rel_pending)],
         ("GET", f"/api/engagements/{ENG}"): [
@@ -311,6 +316,21 @@ def test_release_flow_start_then_status_confirms_release():
     out = tools.get_engagement_status(client, ENG, wait_seconds=10, sleep=clock.sleep, clock=clock)
     assert out["terminal"] and out["engagement_terminal"] and out["status"] == "completed"
     assert out["money_moved"] and "release 25000000 micro-USDC (confirmed on-chain)" in out["message"]
+    assert [e["id"] for e in out["money_moved_entries"]] == ["LED-2"]
+
+
+def test_pending_release_is_not_reported_as_paid_by_earlier_funding():
+    fund = {"id": "LED-1", "kind": "fund", "amount_micro": 25_000_000, "status": "confirmed",
+            "approval_id": "APR-FUND"}
+    rel = approval(kind="milestone.release", state="pending")
+    client, _ = make_client({
+        ("GET", f"/api/engagements/{ENG}"): [(200, engagement(status="in_progress", approvals=[rel], ledger=[fund]))],
+        ("GET", f"/api/approvals/{APR}"): [(200, rel)],
+    })
+    out = tools.get_engagement_status(client, ENG)
+    assert out["money_moved"] is False and out["terminal"] is False
+    assert [e["id"] for e in out["settled_entries"]] == ["LED-1"]
+    assert "No money has moved for this approval" in out["message"]
 
 
 def test_release_rejects_bad_index_locally():

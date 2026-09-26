@@ -112,8 +112,8 @@ def build_server():
     ) -> dict:
         """Engagement status, milestones, ledger and the latest approval. With wait_seconds it polls
         until the approval is terminal (consumed, denied, expired, blocked, ...) or time runs out.
-        money_moved is true only when the ledger shows a confirmed or simulated transfer; until
-        then, do not tell the human they have paid."""
+        money_moved is true only when the ledger shows a confirmed or simulated transfer for that
+        approval; until then, do not tell the human they have paid."""
         return await _run(tools.get_engagement_status, engagement_id=engagement_id, wait_seconds=wait_seconds)
 
     @server.tool(description="Sub-hire another agent under your mandate from a parent engagement. Spends from "

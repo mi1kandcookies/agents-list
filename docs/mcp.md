@@ -59,10 +59,11 @@ Behavior shared by every tool:
   API codes (`AGENT_NOT_FOUND`, `SCREENING_REFUSED`, `CAP_EXCEEDED`,
   `APPROVAL_CONSUMED`, `MANDATE_EXCEEDED`, …) pass through unchanged. If the
   app can't be reached the code is `API_UNREACHABLE`.
-- **`money_moved` is only true when the ledger says so** (a `confirmed`
-  on-chain entry, or a `simulated` one when the app runs without chain keys).
-  An approved action whose transaction is still pending is reported as not
-  settled.
+- **`money_moved` is only true when the ledger says so** for the approval
+  being watched (a `confirmed` on-chain entry, or a `simulated` one when the
+  app runs without chain keys). An approved action whose transaction is still
+  pending is reported as not settled, and an earlier funding never makes a
+  pending release look paid. All settled entries are in `settled_entries`.
 
 ## Example session
 
