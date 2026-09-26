@@ -207,3 +207,294 @@ def test_tool_defs_are_well_formed():
         assert set(d) == {"name", "description", "input_schema", "risk", "function"}
         assert d["risk"] in {"read", "write", "exec", "network", "external"}
         assert d["input_schema"]["type"] == "object" and callable(d["function"])
+
+
+# --- checks: M2 spreads and comps -------------------------------------------------
+
+def test_xbrl_tieout_passes_on_tool_output(built):
+    res = C.xbrl_tieout(built, {})
+    assert res["passed"] is True and res["score"] == 1.0, res["details"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("value", "1121900001"),
+    ("accession", "0009900001-24-000019"),
+    ("period_end", "2024-09-30"),
+    ("tag", "GrossProfit"),
+])
+def test_xbrl_tieout_rejects_forged_rows(built, field, value):
+    path = built / C.SPREADS_PATH
+    rows = _rows(path)
+    target = next(r for r in rows if r["cik"] == "9900001" and r["metric"] == "revenue"
+                  and r["fiscal_year"] == "2024")
+    target[field] = value
+    if field == "tag":
+        target["unit"] = "shares"
+    _write_rows(path, rows)
+    res = C.xbrl_tieout(built, {})
+    assert res["passed"] is False and res["score"] < 1.0
+    assert "1 unexplained" in res["details"]
+
+
+def test_xbrl_tieout_accepts_explained_mismatch_within_ratio(built):
+    path = built / C.SPREADS_PATH
+    rows = _rows(path)
+    rows[0]["value"] = str(int(rows[0]["value"]) + 1000)
+    rows[0]["note"] = "Non-GAAP adjustment agreed with client"
+    _write_rows(path, rows)
+    assert C.xbrl_tieout(built, {"min_match_ratio": 0.98})["passed"] is True
+    assert C.xbrl_tieout(built, {})["passed"] is False
+
+
+def test_xbrl_tieout_rejects_real_fact_under_wrong_metric(built):
+    path = built / C.SPREADS_PATH
+    rows = _rows(path)
+    target = next(r for r in rows if r["metric"] == "revenue" and r["cik"] == "9900001")
+    target["metric"] = "net_income"   # a real fact, relabelled as another line item
+    _write_rows(path, rows)
+    res = C.xbrl_tieout(built, {})
+    assert res["passed"] is False and "not a standard tag" in res["details"]
+
+
+def test_comps_tie_to_xbrl_passes_and_catches_forgery(built):
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is True, res["details"]
+    comps = built / C.COMPS_PATH
+    rows = _rows(comps)
+    rows[0]["revenue"] = str(int(rows[0]["revenue"]) + 5_000_000)
+    _write_rows(comps, rows)
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False and "revenue" in res["details"]
+
+
+def test_comps_tie_to_xbrl_does_not_trust_facts_csv(built):
+    """Editing comps.csv and facts.csv together still fails against SEC data."""
+    comps, spreads = built / C.COMPS_PATH, built / C.SPREADS_PATH
+    crow, srow = _rows(comps), _rows(spreads)
+    crow[1]["net_income"] = "99999999"
+    for r in srow:
+        if r["cik"] == crow[1]["cik"] and r["metric"] == "net_income" and r["fiscal_year"] == "2024":
+            r["value"] = "99999999"
+    _write_rows(comps, crow)
+    _write_rows(spreads, srow)
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False and "!= reported" in res["details"]
+
+
+def test_comps_tie_to_xbrl_checks_market_data_and_required(built):
+    comps = built / C.COMPS_PATH
+    rows = _rows(comps)
+    rows[2]["price"] = "19.85"
+    rows[0]["operating_income"] = ""
+    _write_rows(comps, rows)
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False
+    assert "price" in res["details"] and "blank but required" in res["details"]
+
+
+def test_comps_recompute(built):
+    assert C.comps_recompute(built, {})["passed"] is True
+    comps = built / C.COMPS_PATH
+    rows = _rows(comps)
+    rows[0]["ev_ebitda"] = "9.5"          # hardcoded output
+    rows[1]["pe"] = ""                    # dropped output
+    _write_rows(comps, rows)
+    res = C.comps_recompute(built, {})
+    assert res["passed"] is False and "ev_ebitda" in res["details"] and "pe" in res["details"]
+
+
+def test_comps_checks_fail_when_missing(ws):
+    for fn in (C.xbrl_tieout, C.comps_tie_to_xbrl, C.comps_recompute):
+        assert fn(ws, {})["passed"] is False
+
+
+# --- checks: M3 memo ----------------------------------------------------------------
+
+MEMO = """# Coldharbor Systems diligence memo
+
+Not investment advice. This memo is analysis for professional users and does not
+constitute a recommendation to buy or sell any security.
+
+## Summary
+
+Coldharbor reported FY2024 revenue of $702.3 million [F:9900003:2024:revenue], up
+4.5% [F:9900003:2024:revenue_growth] year over year. Its EBITDA margin of 14.1% [F:9900003:2024:ebitda_margin] trails Halvorsen at 21.3% [F:9900001:2024:ebitda_margin].
+
+| Company | EV/Revenue | EV/EBITDA |
+|---|---|---|
+| Coldharbor | 2.05x [F:9900003:2024:ev_revenue] | 14.6x [F:9900003:2024:ev_ebitda] |
+
+The company changed auditors in June 2024 and has an undrawn $150 million revolver [C1]. Enterprise value is $1.44bn [F:9900003:2024:enterprise_value].
+"""
+
+
+def _memo(ws: Path, text: str = MEMO) -> None:
+    path = ws / C.MEMO_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_memo_figures_match_passes(built):
+    _memo(built)
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is True, res["details"]
+
+
+@pytest.mark.parametrize("old,new,reason", [
+    ("$702.3 million", "$712.3 million", "shows"),
+    ("14.1%", "15.1%", "shows"),
+    ("2.05x", "2.15x", "shows"),
+    ("up\n4.5% [F:9900003:2024:revenue_growth]", "up\n4.5%", "uncited"),
+    (" [C1]", "", "uncited"),
+    ("[F:9900003:2024:enterprise_value]", "[F:9900003:2021:enterprise_value]", "no comps row"),
+    ("4.5% [F:9900003:2024:revenue_growth]", "4.5x [F:9900003:2024:revenue_growth]",
+     "percentage"),
+])
+def test_memo_figures_match_rejects_mismatch(built, old, new, reason):
+    assert old in MEMO
+    _memo(built, MEMO.replace(old, new))
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is False and reason in res["details"]
+
+
+def test_no_recommendation_language(built):
+    _memo(built)
+    assert C.no_recommendation_language(built, {})["passed"] is True
+    for bad in ("We rate the shares a Buy.", "Our 12-month price target is $25.",
+                "We recommend buying on weakness.", "We initiate coverage with Outperform.",
+                "At 2.1x revenue the stock looks a compelling buy."):
+        _memo(built, MEMO + "\n" + bad + "\n")
+        res = C.no_recommendation_language(built, {})
+        assert res["passed"] is False, bad
+    assert C.no_recommendation_language(built, {"paths": ["nope.md"]})["passed"] is False
+
+
+def _checklist(ws: Path, overrides: dict | None = None, drop: str | None = None) -> None:
+    hits = {k: v["filings"] for k, v in T.filing_red_flags(ws, cik=9900003)["flags"].items()}
+    out = []
+    for cik, name in ((9900001, "Halvorsen Instruments Inc."),
+                      (9900002, "Brightwater Analytics Corp."),
+                      (9900003, "Coldharbor Systems, Inc.")):
+        out += [f"## {name} (CIK {cik})", "", "| ID | Item | Status | Evidence |",
+                "|---|---|---|---|"]
+        for item, title in C.RED_FLAG_ITEMS.items():
+            if drop == f"{cik}:{item}":
+                continue
+            status, evidence = "not_found", "Filing index and 10-K text reviewed"
+            if cik == 9900003 and hits.get(item):
+                status = "found"
+                evidence = ", ".join(f["accession"] for f in hits[item])
+            if cik == 9900001 and item == "RF07":
+                status, evidence = "found", "inputs/dataroom/legal/related_party_memo.txt [C2]"
+            status, evidence = (overrides or {}).get(f"{cik}:{item}", (status, evidence))
+            out.append(f"| {item} | {title} | {status} | {evidence} |")
+        out.append("")
+    path = ws / C.RED_FLAGS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out), encoding="utf-8")
+
+
+def test_red_flag_checklist_passes(built):
+    _checklist(built)
+    res = C.red_flag_checklist(built, {})
+    assert res["passed"] is True, res["details"]
+
+
+@pytest.mark.parametrize("overrides,drop,reason", [
+    ({"9900003:RF01": ("not_found", "reviewed")}, None, "filing index shows"),
+    ({"9900003:RF05": ("found", "see memo")}, None, "found without evidence"),
+    ({"9900003:RF02": ("found", "0009900003-24-000011")}, None, "cites none"),
+    ({"9900002:RF05": ("found", "0009900002-24-999999")}, None, "not in filing index"),
+    ({"9900002:RF06": ("open", "pending")}, None, "status 'open'"),
+    (None, "9900001:RF10", "RF10: missing"),
+])
+def test_red_flag_checklist_rejects_gaps(built, overrides, drop, reason):
+    _checklist(built, overrides, drop)
+    res = C.red_flag_checklist(built, {})
+    assert res["passed"] is False and reason in res["details"]
+
+
+def test_red_flag_checklist_allow_open_and_missing_section(built):
+    _checklist(built, {"9900002:RF06": ("open", "awaiting 10-K text")})
+    assert C.red_flag_checklist(built, {"allow_open": True})["passed"] is True
+    res = C.red_flag_checklist(built, {"ciks": [9900001, 9900004]})
+    assert res["passed"] is False and "no section for CIK 9900004" in res["details"]
+
+
+# --- checks: M1 sources and data room --------------------------------------------------
+
+def _inventory(ws: Path, mutate=None) -> None:
+    filing = T.edgar_submissions(ws, cik=9900002, forms=["10-K"])["filings"][0]
+    credit = "inputs/dataroom/legal/credit_agreement_summary.md"
+    rows = [
+        {"source_id": "S1", "kind": "edgar_filing", "company": "Brightwater Analytics Corp.",
+         "cik": "9900002", "form": "10-K", "accession": filing["accession"],
+         "filed": filing["filed"], "uri": filing["url"], "sha256": ""},
+        {"source_id": "S2", "kind": "edgar_api", "company": "Brightwater Analytics Corp.",
+         "cik": "9900002", "form": "", "accession": "", "filed": "",
+         "uri": T.COMPANYFACTS_URL.format(cik="0009900002"), "sha256": ""},
+        {"source_id": "S3", "kind": "dataroom", "company": "Halvorsen Instruments Inc.",
+         "cik": "9900001", "form": "", "accession": "", "filed": "", "uri": credit,
+         "sha256": T.sha256_path(ws / credit)},
+        {"source_id": "S4", "kind": "web", "company": "", "cik": "", "form": "",
+         "accession": "", "filed": "", "uri": "https://example.com/industry-note", "sha256": ""},
+    ]
+    if mutate:
+        mutate(rows)
+    path = ws / C.SOURCES_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_rows(path, rows)
+
+
+def test_source_inventory_resolves(ws):
+    _inventory(ws)
+    res = C.source_inventory_resolves(ws, {})
+    assert res["passed"] is True, res["details"]
+
+
+@pytest.mark.parametrize("mutate,reason", [
+    (lambda r: r[0].update(accession="0009900002-25-999999"), "not filed by"),
+    (lambda r: r[0].update(filed="2020-01-01"), "form/date"),
+    (lambda r: r[0].update(uri="https://www.sec.gov/Archives/edgar/data/1/x.htm"), "not under"),
+    (lambda r: r[1].update(cik="9900009"), "not a data.sec.gov URL"),
+    (lambda r: r[2].update(sha256="0" * 64), "sha256 does not match"),
+    (lambda r: r[2].update(uri="../../etc/passwd"), "not a file under inputs/"),
+    (lambda r: r[3].update(source_id="S1"), "duplicate"),
+    (lambda r: r[3].update(kind="rumor"), "unknown kind"),
+])
+def test_source_inventory_rejects_unresolvable(ws, mutate, reason):
+    _inventory(ws, mutate)
+    res = C.source_inventory_resolves(ws, {})
+    assert res["passed"] is False and reason in res["details"]
+
+
+def test_dataroom_index_complete(ws):
+    T.index_dataroom(ws)
+    assert C.dataroom_index_complete(ws, {})["passed"] is True
+    (ws / "inputs/dataroom/finance/late_upload.txt").write_text("new file", encoding="utf-8")
+    res = C.dataroom_index_complete(ws, {})
+    assert res["passed"] is False and "not indexed" in res["details"] and res["score"] == 0.8
+
+
+def test_dataroom_index_rejects_tampering(ws):
+    T.index_dataroom(ws)
+    path = ws / T.DATAROOM_INDEX_PATH
+    rows = _rows(path)
+    rows[0]["sha256"] = "f" * 64
+    pdf = next(r for r in rows if r["path"].endswith(".pdf"))
+    pdf["note"] = ""
+    rows.append(dict(rows[1], path="inputs/dataroom/ghost.txt"))
+    _write_rows(path, rows)
+    details = C.dataroom_index_complete(ws, {})["details"]
+    assert "sha256 mismatch" in details and "without a note" in details
+    assert "indexed but absent" in details
+
+
+def test_check_defs_signature(built):
+    assert set(C.CHECK_DEFS) == {"xbrl_tieout", "comps_tie_to_xbrl", "comps_recompute",
+                                 "memo_figures_match", "no_recommendation_language",
+                                 "red_flag_checklist", "source_inventory_resolves",
+                                 "dataroom_index_complete"}
+    for fn in C.CHECK_DEFS.values():
+        res = fn(built, {}, run=None)
+        assert set(res) == {"passed", "details", "score"}
