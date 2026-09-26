@@ -15,6 +15,8 @@
       "cash_account": "1000",
       "prior_trial_balance": "inputs/prior_trial_balance.csv",
       "statement_ending_balance": "36945.58",
+      "prior_bank_reconciliation": "none: nothing was outstanding at 2026-07-31",
+      "prior_month_pl": "inputs/prior_month_pl.csv",
       "accrual_schedule": "inputs/accrual_schedule.csv",
       "categorization_rules": "inputs/categorization_rules.csv",
       "materiality": "1000 and 10%"
