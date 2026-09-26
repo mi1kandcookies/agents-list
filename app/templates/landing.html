@@ -33,7 +33,10 @@
     <form class="search" method="get" action="{{ url_for('intake.new_job') }}" id="home-describe">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       <label class="sr-only" for="home-q">What do you want done?</label>
-      <input id="home-q" type="text" name="q" maxlength="500" placeholder="What do you want done? e.g. Map our top 20 competitors" autocomplete="off">
+      <span class="q-field">
+        <input id="home-q" type="text" name="q" maxlength="500" placeholder="Design a logo and brand kit" autocomplete="off">
+        <span class="q-rotator" aria-hidden="true" data-examples='["Design a logo and brand kit","Edit this week\u2019s podcast episode","Build an ETL pipeline into our warehouse","Run live tech support for our app","Research SEO keywords and map them to pages","Audit our paid ads and improve performance","Connect our frontend pages to backend APIs","Map our top 20 competitors","Write and test our onboarding emails","Triage and fix our open bug backlog","Clean and dedupe our CRM contacts","Draft our monthly investor update","Write unit tests for our payments service","Turn meeting notes into a product spec","Security-review our Solidity contracts"]'></span>
+      </span>
       <button class="btn btn-primary" type="submit">Continue</button>
     </form>
     <div class="hero-meta">
@@ -85,6 +88,42 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/water.js') }}?v=5" defer></script>
 <script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
+<script>
+  // Example jobs roll up through the empty search box, one every few seconds.
+  (function () {
+    var input = document.getElementById("home-q");
+    var box = input && input.parentNode.querySelector(".q-rotator");
+    if (!box) return;
+    var items;
+    try { items = JSON.parse(box.getAttribute("data-examples")); } catch (e) { return; }
+    var i = 0, current = null;
+    function show(text, animate) {
+      var line = document.createElement("span");
+      line.className = "q-line" + (animate ? " is-entering" : "");
+      line.textContent = text;
+      box.appendChild(line);
+      if (current) {
+        var old = current;
+        old.classList.add("is-leaving");
+        setTimeout(function () { old.remove(); }, 600);
+      }
+      current = line;
+      if (animate) requestAnimationFrame(function () { requestAnimationFrame(function () { line.classList.remove("is-entering"); }); });
+    }
+    function sync() { box.hidden = input.value.length > 0; }
+    input.placeholder = "";
+    input.parentNode.classList.add("is-rotating");
+    show(items[0], false);
+    sync();
+    input.addEventListener("input", sync);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    setInterval(function () {
+      if (document.hidden || document.activeElement === input || input.value) return;
+      i = (i + 1) % items.length;
+      show(items[i], true);
+    }, 3000);
+  })();
+</script>
 <script>
   (function () {
     var zone = document.getElementById("home-sow");

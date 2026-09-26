@@ -696,6 +696,20 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
   font-size: var(--fs-base); color: var(--ink);
 }
 .search input::placeholder { color: var(--ink-3); }
+.q-field { position: relative; flex: 1; min-width: 0; display: flex; }
+.q-rotator {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  color: var(--ink-3); font-size: var(--fs-base);
+}
+.q-rotator[hidden] { display: none; }
+.q-line {
+  position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%); opacity: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: transform .55s var(--ease-out), opacity .55s var(--ease-out);
+}
+.q-line.is-entering { transform: translateY(60%); opacity: 0; }
+.q-line.is-leaving { transform: translateY(-160%); opacity: 0; }
 .search-sm { margin-top: 0; max-width: none; padding: 4px 4px 4px 14px; }
 .search-sm input { height: 36px; font-size: var(--fs-sm); }
 
