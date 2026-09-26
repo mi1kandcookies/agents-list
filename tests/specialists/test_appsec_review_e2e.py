@@ -27,7 +27,7 @@ import pytest
 
 from agentkit.errors import AgentKitError
 from agentkit.evals import case_brief, load_cases, prepare_workspace
-from agentkit.evidence import evidence_hash
+from agentkit.evidence import evidence_hash, platform_evidence
 from agentkit.events import MemorySink
 from agentkit.llm import ScriptedAdapter
 from agentkit.registry import load_specialist
@@ -164,8 +164,11 @@ def _assert_ready(sub: Submission, spec, ws: Path, milestone: str, deliverables:
     for a in sub.artifacts:
         data = (ws / a.path).read_bytes()
         assert a.sha256 == hashlib.sha256(data).hexdigest() and a.bytes == len(data)
-    # the evidence hash covers the saved submission
+    # the evidence hash covers the saved submission, bound to the milestone's
+    # SOW index (the briefs carry no milestones, so its place in the manifest)
     assert re.fullmatch(r"0x[0-9a-f]{64}", sub.evidence_hash)
+    assert sub.milestone_idx == [m.id for m in spec.manifest.milestones].index(milestone)
+    assert json.loads(platform_evidence(sub))["milestone_idx"] == sub.milestone_idx
     saved = json.loads(spec.submission_path(ws, milestone).read_text(encoding="utf-8"))
     assert saved["evidence_hash"] == sub.evidence_hash == evidence_hash(Submission.from_dict(saved))
 

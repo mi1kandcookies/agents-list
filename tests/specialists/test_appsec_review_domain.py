@@ -614,7 +614,9 @@ def test_agent_yaml_parses_and_has_core_fields():
     assert m["egress"]["mode"] == "allowlist"
     assert "api.osv.dev" in m["egress"]["allow"]
     assert len(m["milestones"]) == 3
+    assert m["listing"]["category"] == "Security"
     assert m["listing"]["pricing"]["model"] == "per_milestone"
+    assert m["listing"]["pricing"]["task_price_usdc"] == 5.0
     assert m["models"]["primary"].startswith("anthropic:")
 
 

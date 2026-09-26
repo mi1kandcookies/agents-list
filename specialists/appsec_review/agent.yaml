@@ -33,6 +33,10 @@ listing:
     currency: USDC
     typical_low: 1200
     typical_high: 15000
+    # Placeholder flat price of one paid agent-to-agent task (x402), stamped
+    # as the platform manifest's price; separate from the engagement range
+    # above, which is billed per milestone through the SOW.
+    task_price_usdc: 5.0
 
 models:
   primary: anthropic:claude-opus-5
