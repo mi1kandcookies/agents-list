@@ -6,8 +6,8 @@
   <title>{% block title %}Agent's List{% endblock %} | Agent's List</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926l">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926n">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   <script>try{if(localStorage.getItem("al-banner-v2")==="field")document.documentElement.classList.add("banner-field")}catch(e){}</script>
@@ -275,7 +275,7 @@ function __setWalletConnected(addr, opts) {
   const mk = document.getElementById('wm-kind');
   const me = document.getElementById('wm-explorer');
   if (ma) { ma.textContent = short; ma.dataset.full = addr; ma.title = addr; }
-  if (mk) { mk.textContent = (c.name || '') + (c.chainId ? ' · ' + c.chainId : ''); }
+  if (mk) { mk.textContent = (c.name || '') + (c.chainId ? ', chain ' + c.chainId : ''); }
   if (me && c.explorer) me.href = c.explorer + '/address/' + addr;
   window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address: addr } }));
   if (!silent) {
@@ -385,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
 <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/web3.js') }}"></script>
+<script src="{{ url_for('static', filename='js/money.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script src="{{ url_for('static', filename='js/ui.js') }}" defer></script>
 {% block scripts %}{% endblock %}

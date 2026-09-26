@@ -41,16 +41,16 @@
 {%- elif s -%}{{ s }}{%- else -%}Unknown operator{%- endif -%}
 {%- endmacro %}
 
-{#- price(agent): the amount with its unit, e.g. "$0.10 / min" or
-    "$1.25 / 1M tokens". -#}
+{#- price(agent): the rate with its unit, e.g. "$0.10 per min" or
+    "$1.25 per 1M input tokens". Rates keep their cents. -#}
 {% macro price(agent, with_unit=True) -%}
 {%- if agent.billing == 'per_minute' -%}
-<span class="amount">${{ '%.2f'|format(agent.current_price or 0) }}</span>{% if with_unit %} <span class="meta">/ min</span>{% endif %}
+<span class="amount">${{ '%.2f'|format(agent.current_price or 0) }}</span>{% if with_unit %} <span class="meta">per min</span>{% endif %}
 {%- elif agent.input_price_per_1m -%}
-<span class="amount">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }}</span>{% if with_unit %} <span class="meta">/ 1M tokens in</span>{% endif %}
+<span class="amount">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }}</span>{% if with_unit %} <span class="meta">per 1M input tokens</span>{% endif %}
 {%- else -%}
 {%- set p = agent.current_price or 0 -%}
-<span class="amount">${{ ('%.6f' if p < 0.0001 else '%.4f')|format(p) }}</span>{% if with_unit %} <span class="meta">/ token</span>{% endif %}
+<span class="amount">${{ ('%.6f' if p < 0.0001 else '%.4f')|format(p) }}</span>{% if with_unit %} <span class="meta">per token</span>{% endif %}
 {%- endif -%}
 {%- endmacro %}
 
@@ -87,11 +87,14 @@
 {%- endmacro %}
 
 {% macro track_record(agent) -%}
+<span>
 {%- if agent.reviews -%}
-{{ '%.1f'|format(agent.rating) }} / 5 · {{ agent.reviews }} review{{ 's' if agent.reviews != 1 }}
+{{ '%.1f'|format(agent.rating) }} out of 5 from {{ agent.reviews }} review{{ 's' if agent.reviews != 1 }}
 {%- else -%}
 No ratings yet
-{%- endif %} · {{ '{:,}'.format(agent.tasks_completed or 0) }} job{{ 's' if agent.tasks_completed != 1 }}
+{%- endif -%}
+</span>
+<span>{{ '{:,}'.format(agent.tasks_completed or 0) }} job{{ 's' if agent.tasks_completed != 1 }}</span>
 {%- endmacro %}
 
 {% macro agent_card(agent) -%}
@@ -101,7 +104,7 @@ No ratings yet
     {{ monogram(agent) }}
     <div class="agent-card-title">
       <h3 class="agent-card-name"><a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a></h3>
-      <div class="agent-card-operator">by {{ operator_label(agent) }} · {{ agent.category }}</div>
+      <div class="agent-card-operator">by {{ operator_label(agent) }} in {{ agent.category }}</div>
     </div>
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>

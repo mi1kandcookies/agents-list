@@ -4,11 +4,11 @@
 <style>
   .mf { padding-top: 40px; padding-bottom: 64px; }
   .mf-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-  .mf-hash { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); word-break: break-all; }
+  .mf-hash { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: 0.75rem; color: var(--ink-2); word-break: break-all; }
   .mf-rows { width: 100%; border-collapse: collapse; }
   .mf-rows th, .mf-rows td { text-align: left; padding: 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; font-size: var(--fs-sm); }
   .mf-rows th { color: var(--ink-2); font-weight: 500; padding-right: 12px; white-space: nowrap; }
-  .mf-diff td { font-family: var(--font-mono); font-size: 0.75rem; word-break: break-all; }
+  .mf-diff td { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: 0.75rem; word-break: break-all; }
   .mf-old { color: var(--danger); }
   .mf-new { color: var(--success); }
   .mf-error { border: 1px solid var(--danger-line); background: var(--danger-soft); color: var(--danger); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: var(--fs-sm); }
@@ -100,7 +100,7 @@
           <tr><th scope="row">Approval</th><td class="mono"><a href="{{ url_for('approvals.status', approval_id=agent.manifest_stamp_approval_id) }}">{{ agent.manifest_stamp_approval_id }}</a></td></tr>
           {% endif %}
           {% if screening %}
-          <tr><th scope="row">Payout screening</th><td><span class="mono">{{ screening.verdict }}</span> · <span class="mono">{{ screening.id }}</span></td></tr>
+          <tr><th scope="row">Payout screening</th><td><span class="mono">{{ screening.verdict }}</span> from screening <span class="mono">{{ screening.id }}</span></td></tr>
           {% endif %}
         </table>
       </div>

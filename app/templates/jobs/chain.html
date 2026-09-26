@@ -27,13 +27,13 @@
   .ctree-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
   .ctree-row + .ctree-row { margin-top: 6px; }
   .ctree-name { font-weight: 600; }
-  .ctree-mono { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); }
-  .ctree-money { font-family: var(--font-mono); font-size: .8125rem; color: var(--ink); }
+  .ctree-mono { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-xs); color: var(--ink-3); }
+  .ctree-money { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: .8125rem; color: var(--ink); }
   .ctree-meter { height: 4px; background: var(--surface-3); border-radius: 999px; overflow: hidden; margin-top: 6px; }
   .ctree-meter span { display: block; height: 100%; background: var(--accent); }
   .ctree-chip { font-size: var(--fs-xs); padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--ink-2); }
   .ctree-outcome { color: var(--ink-2); font-size: .875rem; margin-top: 6px; }
-  .ctree-v { font-family: var(--font-mono); }
+  .ctree-v { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; }
   .ctree-v.is-pay       { color: var(--success); background: var(--success-soft); border-color: var(--success-line); }
   .ctree-v.is-cap       { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
   .ctree-v.is-ask_human { color: var(--info); background: var(--info-soft); border-color: var(--info-line); }
@@ -44,7 +44,7 @@
 
 {% macro verdict_pill(v) -%}
 {%- if v -%}
-<span class="status-pill ctree-v is-{{ v.verdict|lower }}" title="{{ v.hop }} · {{ v.id }}" data-verdict="{{ v.verdict }}">
+<span class="status-pill ctree-v is-{{ v.verdict|lower }}" title="{{ v.id }} at {{ v.hop }}" data-verdict="{{ v.verdict }}">
   {{- v.verdict|replace('_', ' ') }}{% if v.verdict == 'CAP' and v.cap_micro %} ≤ {{ v.cap_micro|usdc }}{% endif -%}
 </span>
 {%- else -%}
@@ -64,7 +64,7 @@
         {{ status_pill(m.status) }}
       </div>
       <div class="ctree-row">
-        <span class="ctree-money">{{ m.spent_micro|usdc }} spent / {{ m.budget_micro|usdc }}</span>
+        <span class="ctree-money">{{ m.spent_micro|usdc(unit=False) }} of {{ m.budget_micro|usdc }} spent</span>
         <span class="ctree-mono">{{ m.remaining_micro|usdc }} left</span>
       </div>
       <div class="ctree-meter" aria-hidden="true"><span style="width: {{ ((m.budget_micro - m.remaining_micro) * 100 // m.budget_micro) if m.budget_micro else 0 }}%"></span></div>
@@ -117,7 +117,7 @@
         <span class="ctree-kicker">Human</span>
         {% if chain.human %}
         <span class="ctree-mono" title="sha256 of the pairwise World ID subject">{{ chain.human.label }}</span>
-        <span class="ctree-empty">verified with World ID{% if chain.human.banned %} · banned{% endif %}</span>
+        <span class="ctree-empty">verified with World ID{% if chain.human.banned %}, now banned{% endif %}</span>
         {% else %}
         <span class="ctree-empty">no human has approved this job yet</span>
         {% endif %}
@@ -134,7 +134,7 @@
     {% for t in chain.trail %}
     {{ chain_node(('Escrow funded for ' if t.kind == 'fund' else 'Sub-hire allocated to ') ~ (t.agent_name or t.engagement_id),
                   state='failed' if t.status == 'failed' else 'done', amount=t.amount_micro|usdc,
-                  meta=t.id ~ ' · ' ~ ('simulated, not on chain' if t.simulated else ('ledger only' if not t.tx_hash else t.tx_hash)),
+                  meta=t.id ~ (' (simulated, not on chain)' if t.simulated else (' (ledger only)' if not t.tx_hash else ' in tx ' ~ t.tx_hash)),
                   href=t.explorer) }}
     {% endfor %}
   </ol>

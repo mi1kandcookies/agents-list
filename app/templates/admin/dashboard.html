@@ -7,15 +7,15 @@
   <aside class="admin-sidebar">
     <div class="sidebar-section">
       <div class="sidebar-label">Protocol</div>
-      <a href="/admin/dashboard" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
-      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
-      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
-      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
-      <a href="/admin/humans" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
+      <a href="/admin/dashboard" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+      <a href="/admin/humans" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-label">Marketplace</div>
-      <a href="/marketplace" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MKT</span> Browse Agents</a>
+      <a href="/marketplace" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">MKT</span> Browse Agents</a>
     </div>
   </aside>
 
@@ -24,7 +24,7 @@
     <div class="flex-between mb-16">
       <div>
         <h1 style="font-size:1.75rem; margin-bottom:4px;">Protocol Dashboard</h1>
-        <p class="text-sm text-muted">Agent's List · Admin</p>
+        <p class="text-sm text-muted">Agent's List admin</p>
       </div>
       <div class="flex-center gap-10">
         <div class="footer-chain"><span class="live-dot"></span> Live</div>
@@ -71,8 +71,8 @@
       </div>
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Volume (USDC)</div>
-        <div class="stat-value">${{ "{:,.2f}".format(stats.total_volume) }}</div>
-        <div class="stat-change up mt-8">${{ "{:,.4f}".format(stats.platform_fees) }} in fees</div>
+        <div class="stat-value">${{ stats.total_volume|usdc('dollars', unit=False) }}</div>
+        <div class="stat-change up mt-8">${{ stats.platform_fees|usdc('dollars', unit=False) }} in fees</div>
       </div>
     </div>
 
@@ -108,14 +108,14 @@
       <div class="flex-between mb-20">
         <h3>Total Volume</h3>
         <div class="flex-center gap-12">
-          <span class="text-2xl font-bold" style="font-size:1.5rem; font-weight:700;">${{ "{:,.2f}".format(stats.total_volume) }} USDC</span>
+          <span class="text-2xl font-bold" style="font-size:1.5rem; font-weight:700;">{{ stats.total_volume|usdc('dollars') }}</span>
           <span class="stat-change {% if delta_pct >= 0 %}up{% else %}down{% endif %}">{% if delta_pct >= 0 %}↑{% else %}↓{% endif %} {{ "{:.1f}".format(delta_pct|abs) }}% MoM</span>
         </div>
       </div>
       <div class="grid-4">
         <div>
           <div class="text-xs text-muted mb-4">Settled (lifetime)</div>
-          <div class="font-bold" style="font-size:1.125rem;">${{ "{:,.2f}".format(stats.usdc_settled) }}</div>
+          <div class="font-bold" style="font-size:1.125rem;">${{ stats.usdc_settled|usdc('dollars', unit=False) }}</div>
         </div>
         <div>
           <div class="text-xs text-muted mb-4">Deposits Total</div>
@@ -123,11 +123,11 @@
         </div>
         <div>
           <div class="text-xs text-muted mb-4">Protocol Fees (10 bps)</div>
-          <div class="font-bold" style="font-size:1.125rem; color:var(--success);">${{ "{:,.2f}".format(stats.platform_fees) }}</div>
+          <div class="font-bold" style="font-size:1.125rem; color:var(--success);">${{ stats.platform_fees|usdc('dollars', unit=False) }}</div>
         </div>
         <div>
           <div class="text-xs text-muted mb-4">Avg Order Value</div>
-          <div class="font-bold" style="font-size:1.125rem;">${{ "{:,.2f}".format(avg_order) }}</div>
+          <div class="font-bold" style="font-size:1.125rem;">${{ avg_order|usdc('dollars', unit=False) }}</div>
         </div>
       </div>
     </div>
@@ -228,10 +228,10 @@ makeDoughnutChart('breakdown-chart',
         const color = KIND_COLOR[tx.kind] || '#9aa4b2';
         const h = tx.txHash && tx.txHash.startsWith('0x') ? tx.txHash : '0x' + (tx.txHash || '');
         const explorerUrl = tx.explorer || '';
-        const amt = tx.amountUSDCDisplay ? '$' + Number(tx.amountUSDCDisplay).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+        const amt = tx.amountUSDCDisplay ? '$' + fmtUSDC(tx.amountUSDCDisplay, { unit: false }) : '—';
         const agent = tx.agentId ? '#' + tx.agentId : '—';
         return `<tr>
-          <td><span style="color:${color}; font-weight:700; font-family:var(--font-mono); font-size:.75rem;">${tx.kind}</span></td>
+          <td><span style="color:${color}; font-weight:700; font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.75rem;">${tx.kind}</span></td>
           <td><span class="font-mono text-xs">${short(h)}</span></td>
           <td>${agent}</td>
           <td>${amt}</td>

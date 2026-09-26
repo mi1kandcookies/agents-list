@@ -26,7 +26,7 @@
 }
 .verdict-card__hop, .verdict-card__src, .verdict-card__foot {
   color: var(--text-2, #aaa);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums;
   font-size: .75rem;
 }
 .verdict-card__cap { margin-left: auto; color: var(--v-color); }

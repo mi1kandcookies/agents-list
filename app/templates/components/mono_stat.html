@@ -5,7 +5,7 @@
     Usage:
       {% from "components/mono_stat.html" import mono_stat %}
       {{ mono_stat(stats.agents_listed, 'Agents listed') }}
-      {{ mono_stat('%.2f'|format(total), 'In escrow', unit='USDC') }}
+      {{ mono_stat(total_micro|usdc(unit=False), 'In escrow', unit='USDC') }}
       {{ mono_stat(None, 'On-time rate') }}   (renders an em dash)
 
     Args:

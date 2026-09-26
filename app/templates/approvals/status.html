@@ -3,7 +3,7 @@
 {% block title %}{{ kind_label }} approval{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/screening.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/approvals.css') }}?v=20260926b">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/approvals.css') }}?v=20260926n">
 {% endblock %}
 {% block content %}
 <div class="apr" id="approval"
@@ -17,7 +17,7 @@
   <div class="apr-card">
     <header class="apr-head">
       <div>
-        <div class="apr-eyebrow">Approval request · <span class="mono">{{ approval.id }}</span></div>
+        <div class="apr-eyebrow">Approval request <span class="mono">{{ approval.id }}</span></div>
         <h1>{{ kind_label }}</h1>
       </div>
       <span class="badge apr-pill {{ pill[1] }}" id="approval-pill">{{ pill[0] }}</span>

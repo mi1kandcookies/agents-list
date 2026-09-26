@@ -3,7 +3,6 @@
  * Colours, type and radii come from the tokens in main.css.
  */
 .apr { max-width: 600px; margin: 0 auto; padding: 48px 16px 88px; }
-.apr .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .apr-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
   box-shadow: var(--shadow); overflow: hidden;
@@ -28,7 +27,7 @@
 .apr-summary > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); }
 .apr-summary > div:first-child { border-top: none; padding-top: 0; }
 .apr-summary dt { font-size: var(--fs-sm); color: var(--ink-3); }
-.apr-summary dd { font-size: var(--fs-xs); color: var(--ink); word-break: break-all; line-height: 1.6; }
+.apr-summary dd { font-size: var(--fs-sm); color: var(--ink); overflow-wrap: anywhere; line-height: 1.5; }
 .apr-hash { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--fs-xs); color: var(--ink-3); }
 .apr-hash .mono { color: var(--ink-2); word-break: break-all; }
 

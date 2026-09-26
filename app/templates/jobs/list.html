@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/status_pill.html" import status_pill %}
 {% block title %}Jobs{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926b">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926n">{% endblock %}
 
 {% block content %}
 <div class="jobs-page" data-scope="{{ scope }}">
@@ -37,14 +37,14 @@
   {% if jobs %}
   <div class="jobs-table" role="list">
     <div class="jobs-row is-head" aria-hidden="true">
-      <span>Job</span><span>Status</span><span style="text-align:right;">Released / total</span><span style="text-align:right;">Opened</span>
+      <span>Job</span><span>Status</span><span style="text-align:right;">Amount</span><span style="text-align:right;">Opened</span>
     </div>
     {% for job in jobs %}
     {% set pct = (100 * job.released_micro / job.total_micro)|round(1) if job.total_micro else 0 %}
     <a class="jobs-row" role="listitem" href="/jobs/{{ job.engagement_id }}" data-job="{{ job.engagement_id }}">
       <div style="min-width:0;">
         <div class="title">{{ job.outcome|truncate(90) }}</div>
-        <div class="sub"><span class="mono">{{ job.engagement_id }}</span> · {{ job.agent_name or 'Unknown agent' }} · <span class="mono">{{ job.milestones_done }}/{{ job.milestones|length }}</span> milestone{{ '' if job.milestones|length == 1 else 's' }} released{% if job.parent_engagement_id %} · sub-hire{% endif %}</div>
+        <div class="sub"><span class="mono">{{ job.engagement_id }}</span> with {{ job.agent_name or 'an unknown agent' }}, <span class="mono">{{ job.milestones_done }}</span> of <span class="mono">{{ job.milestones|length }}</span> milestone{{ '' if job.milestones|length == 1 else 's' }} released{% if job.parent_engagement_id %} (sub-hire){% endif %}</div>
       </div>
       <div class="col-status">{{ status_pill(job.status) }}</div>
       <div class="num col-amount">

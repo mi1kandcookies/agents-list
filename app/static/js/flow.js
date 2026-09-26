@@ -27,10 +27,9 @@
     (children || []).forEach(function (c) { if (c) node.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
     return node;
   }
-  function money(dollars) {
-    var n = Number(dollars) || 0;
-    return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
+  // Amounts go through the site-wide formatter in money.js ("900 USDC", "12.50 USDC").
+  var fmtUSDC = window.fmtUSDC;
+  function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
   function toCents(d) { return Math.round((Number(d) || 0) * 100); }
   function round5(n) { return Math.round(n / 5) * 5; }
   function isoLocal(d) {
@@ -287,10 +286,10 @@
     set("brief", briefFromOutcome(state.outcome));
     set("category", c ? c.label : "");
     set("milestones", state.milestones.length && state.step > 2
-      ? state.milestones.length + " · " + money(msTotal()) + " USDC" : "", true);
+      ? plural(state.milestones.length, "milestone") + ", " + fmtUSDC(msTotal()) : "", true);
     set("deadline", deadlineText(), !!state.deadline.date && state.deadline.mode !== "asap" && state.deadline.mode !== "flexible");
     set("budget", state.budget.mode === "suggest" ? "Scoper suggests" :
-      state.budget.mode === "custom" ? money(state.budget.amount) + " USDC" : "", state.budget.mode === "custom");
+      state.budget.mode === "custom" ? fmtUSDC(state.budget.amount) : "", state.budget.mode === "custom");
     set("agent", state.agent ? state.agent.name : "");
   }
 
@@ -298,7 +297,7 @@
     var s = state.step;
     var section = $('.flow-step[data-step="' + s + '"]');
     var name = section.dataset.name;
-    $("#flow-count").textContent = s + " / " + TOTAL_STEPS;
+    $("#flow-count").textContent = s + " of " + TOTAL_STEPS;
     $("#flow-step-name").textContent = name;
     var bar = $(".flow-bar");
     bar.setAttribute("aria-valuenow", s);
@@ -345,7 +344,7 @@
           m.amount = Math.max(0, Number(e.target.value) || 0);
           state.milestonesEdited = true;
           if (state.budget.mode) state.budget = { mode: "custom", amount: msTotal() };
-          $("#ms-total").textContent = money(msTotal()); save(); renderSummary();
+          $("#ms-total").textContent = fmtUSDC(msTotal(), { unit: false }); save(); renderSummary();
         } });
       function action(kind, label, disabled, fn) {
         return el("button", { type: "button", "class": "icon-btn", "data-act": kind + "-" + m.id,
@@ -364,7 +363,7 @@
         ])
       ]));
     });
-    $("#ms-total").textContent = money(msTotal());
+    $("#ms-total").textContent = fmtUSDC(msTotal(), { unit: false });
     $("#ms-add").disabled = n >= MAX_MILESTONES;
     if (focusSel) { var f = $(focusSel); if (f && !f.disabled) f.focus(); else $("#ms-add").focus(); }
   }
@@ -433,7 +432,7 @@
         el("legend", {}, [
           el("span", { "class": "mono crit-idx", text: String(i + 1) }),
           el("span", { "class": "crit-title", text: m.title || "Untitled milestone" }),
-          el("span", { "class": "mono crit-amt", text: money(m.amount) + " USDC" })
+          el("span", { "class": "mono crit-amt", text: fmtUSDC(m.amount) })
         ]),
         ul,
         el("button", { type: "button", "class": "fbtn fbtn-link", id: "crit-add-" + m.id, text: "Add criterion",
@@ -477,9 +476,9 @@
     var split = $("#budget-split");
     split.innerHTML = "";
     state.milestones.forEach(function (m) {
-      split.appendChild(el("li", {}, [el("span", { text: m.title || "Untitled milestone" }), el("span", { "class": "mono", text: money(m.amount) })]));
+      split.appendChild(el("li", {}, [el("span", { text: m.title || "Untitled milestone" }), el("span", { "class": "mono", text: fmtUSDC(m.amount) })]));
     });
-    split.appendChild(el("li", { "class": "split-total" }, [el("span", { text: "Total" }), el("span", { "class": "mono", text: money(msTotal()) + " USDC" })]));
+    split.appendChild(el("li", { "class": "split-total" }, [el("span", { text: "Total" }), el("span", { "class": "mono", text: fmtUSDC(msTotal()) })]));
   }
   function setBudget(v) {
     var amount = Math.max(0, Number(v) || 0);
@@ -503,9 +502,9 @@
   };
   function renderEstimate() {
     var e = estimate();
-    bind("est-cost", money(e.costLowCents / 100) + " – " + money(e.costHighCents / 100));
-    bind("est-cost-note", money(e.totalCents / 100) + " USDC is held in escrow; the upper figure allows for revision work.");
-    bind("est-days", e.daysLow + "–" + e.daysHigh + " days");
+    bind("est-cost", fmtUSDC(e.costLowCents / 100, { unit: false }) + " to " + fmtUSDC(e.costHighCents / 100, { unit: false }));
+    bind("est-cost-note", fmtUSDC(e.totalCents / 100) + " is held in escrow; the upper figure allows for revision work.");
+    bind("est-days", e.daysLow === e.daysHigh ? plural(e.daysLow, "day") : e.daysLow + " to " + e.daysHigh + " days");
     bind("est-fit", e.fit ? FIT[e.fit] :
       state.deadline.mode === "asap" ? "You asked for the earliest possible start." : "No fixed deadline.");
     var lvl = $('[data-bind="est-level"]');
@@ -525,15 +524,16 @@
   function agentKey(a) { return String(a.agent_id || a.public_id || a.id); }
   function agentChoice(a) { return { id: agentKey(a), name: a.name, card: a }; }
   function priceText(a) {
-    if (a.price_hint_usdc != null) return money(a.price_hint_usdc) + " USDC";
+    if (a.price_hint_usdc != null) return fmtUSDC(a.price_hint_usdc);
     if (a.billing === "per_token") {
       // Token prices are tiny; quote them per million tokens.
       var perM = Number(a.input_price_per_1m) ? Number(a.input_price_per_1m) / 1e6 : (Number(a.current_price) || 0) * 1e6;
-      return perM ? money(perM) + " USDC / 1M tokens" : "On request";
+      return perM ? fmtUSDC(perM) + " per 1M tokens" : "On request";
     }
     var p = Number(a.current_price) || 0;
-    var unit = a.billing === "per_minute" ? " / min" : "";
-    return p ? money(p) + " USDC" + unit : "On request";
+    // Per-minute rates are genuinely fractional, so they always keep their cents.
+    if (p && a.billing === "per_minute") return fmtUSDC(p, { unit: false, cents: true }) + " USDC per min";
+    return p ? fmtUSDC(p) : "On request";
   }
   function loadAgents() {
     var c = cat(state.category);
@@ -601,13 +601,13 @@
     bind("c-agent-id", state.agent && /^AGT-/i.test(state.agent.id) ? state.agent.id : "");
     bind("c-deadline", deadlineText() || "Flexible");
     $('[data-bind="c-deadline"]').classList.toggle("mono", !!state.deadline.date && state.deadline.mode !== "asap" && state.deadline.mode !== "flexible");
-    bind("c-total", money(msTotal()));
+    bind("c-total", fmtUSDC(msTotal(), { unit: false }));
     var ol = $('[data-bind="c-milestones"]');
     ol.innerHTML = "";
     state.milestones.forEach(function (m) {
       var crit = m.criteria.filter(function (c) { return c.trim(); });
       ol.appendChild(el("li", {}, [
-        el("div", { "class": "c-ms-head" }, [el("span", { text: m.title }), el("span", { "class": "mono", text: money(m.amount) + " USDC" })]),
+        el("div", { "class": "c-ms-head" }, [el("span", { text: m.title }), el("span", { "class": "mono", text: fmtUSDC(m.amount) })]),
         crit.length ? el("ul", { "class": "c-ms-criteria" }, crit.map(function (c) { return el("li", { text: c }); })) : null
       ]));
     });

@@ -181,7 +181,7 @@ def test_hire_approve_fund(client, approve, screener, agent_public_id):
     assert apr["kind"] == "engagement.fund" and apr["state"] == "pending"
     assert apr["user_code"] and apr["action_hash"].startswith("0x")
     assert apr["screening"]["verdict"] == "PAY"
-    assert ["Amount", "25.00 USDC"] in apr["summary"]
+    assert ["Amount", "25 USDC"] in apr["summary"]
     assert screener.calls[-1]["hop"] == "engagement.fund"
 
     from app.models import Approval
@@ -245,7 +245,7 @@ def test_client_supplied_screening_is_ignored_on_release(client, approve, screen
     screener.set(PAYEE, "CAP")
     apr = _release(client, eid, 0, screening={"id": "SCR-000000000000", "verdict": "PAY"},
                    amount_micro=10_000_000).get_json()
-    assert ["Amount", "1.00 USDC"] in apr["summary"] and apr["screening"]["verdict"] == "CAP"
+    assert ["Amount", "1 USDC"] in apr["summary"] and apr["screening"]["verdict"] == "CAP"
 
 
 def test_ask_human_sets_screening_ack(client, world_idp, screener, agent_public_id):
@@ -262,7 +262,7 @@ def test_cap_below_the_job_total_blocks_hire(client, screener, agent_public_id):
     eid = _engagement(client, agent_public_id)["engagement_id"]
     screener.set(PAYEE, "CAP")                              # cap 10 USDC < 25 USDC total
     resp = _hire(client, eid)
-    assert resp.status_code == 403 and "10.00 USDC" in resp.get_json()["error"]
+    assert resp.status_code == 403 and "10 USDC" in resp.get_json()["error"]
     assert Approval.query.count() == 0
     assert client.get(f"/api/engagements/{eid}").get_json()["status"] == "scoped"
 
@@ -457,10 +457,10 @@ def test_cap_releases_partially_and_holds_the_rest(client, approve, screener, ag
     screener.cap_micro = 4_000_000
     screener.set(PAYEE, "CAP")
     a = _release(client, eid, 1).get_json()
-    assert ["Amount", "4.00 USDC"] in a["summary"]
+    assert ["Amount", "4 USDC"] in a["summary"]
     row = approve(a["approval_id"])
     result = approvals.result_of(row)
-    assert row.state == "consumed" and "11.00 USDC held" in result["summary"]
+    assert row.state == "consumed" and "11 USDC held" in result["summary"]
     assert len(result["ledger_ids"]) == 2
     body = client.get(f"/api/engagements/{eid}").get_json()
     m = body["milestones"][1]
@@ -470,7 +470,7 @@ def test_cap_releases_partially_and_holds_the_rest(client, approve, screener, ag
 
     screener.set(PAYEE, "PAY")      # the rest needs another approval
     b = _release(client, eid, 1).get_json()
-    assert ["Amount", "11.00 USDC"] in b["summary"]
+    assert ["Amount", "11 USDC"] in b["summary"]
     assert approve(b["approval_id"]).state == "consumed"
     m = client.get(f"/api/engagements/{eid}").get_json()["milestones"][1]
     assert (m["status"], m["released_micro"]) == ("released", 15_000_000)
@@ -606,19 +606,19 @@ def test_jobs_pages(client, approve, screener, agent, agent_public_id):
     assert resp.status_code == 302
     eid = resp.headers["Location"].rsplit("/", 1)[-1]
     detail = client.get(f"/jobs/{eid}").get_data(as_text=True)
-    assert "Approve &amp; fund 12.00 USDC" in detail and "Approve &amp; release" not in detail
+    assert "Approve &amp; fund 12 USDC" in detail and "Approve &amp; release" not in detail
 
     hire = client.post(f"/jobs/{eid}/hire")
     assert hire.status_code == 302 and hire.headers["Location"].startswith("/approvals/APR-")
     assert approve(hire.headers["Location"].rsplit("/", 1)[-1]).state == "consumed"
     detail = client.get(f"/jobs/{eid}").get_data(as_text=True)
     assert detail.count("Approve &amp; release") == 2
-    assert "simulated, not on chain" in detail and "5.00 USDC" in detail
+    assert "simulated, not on chain" in detail and "5 USDC" in detail
 
     rel = client.post(f"/jobs/{eid}/milestones/0/release")
     assert rel.status_code == 302 and rel.headers["Location"].startswith("/approvals/APR-")
     listing = client.get("/jobs").get_data(as_text=True)
-    assert eid in listing and "12.00 USDC" in listing
+    assert eid in listing and "12 USDC" in listing
 
     bad = client.post(f"/jobs/new?agent={agent}", data={"outcome": "x", "budget_usdc": "12",
                                                         "milestones": "only | two"})
