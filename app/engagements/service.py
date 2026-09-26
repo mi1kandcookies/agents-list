@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from app.approvals.actions import action_hash
+from app.approvals.service import create_approval, get_approval
 from app.extensions import db
 from chain.escrow import EscrowError, SimulatedEscrowService
 from chain.payment_policy import canonical_json
+from chain.intercepta import quick_scan_address
+from app.screening.policy import ScreeningBlocked, enforce_verdict, normalize_verdict
 
 
 class EngagementError(ValueError):
@@ -44,6 +49,85 @@ def _serialize_milestone(row) -> dict:
         "approvedAt": row.approved_at.isoformat() if row.approved_at else None,
         "releasedAt": row.released_at.isoformat() if row.released_at else None,
     }
+
+
+def _action_terms(row, milestone, *, action_type: str, payee: str,
+                  verdict_id: str) -> dict:
+    human_wallet = (row.human.wallet or "").lower()
+    return {
+        "actionType": action_type,
+        "engagementId": row.id,
+        "milestoneId": milestone.id,
+        "payer": human_wallet,
+        "payee": str(payee).lower(),
+        "amountAtomic": str(int(milestone.amount_atomic)),
+        "asset": row.currency.lower(),
+        "chainId": int(row.chain_id),
+        "screeningVerdictId": verdict_id,
+    }
+
+
+def screen_action(row, milestone, *, action_type: str, payee: str):
+    """Run the provider-owned check and persist the evidence for one hop."""
+    from app.models import Screening
+
+    payee = str(payee or "").strip()
+    if not payee:
+        raise EngagementError("payee is required for screening")
+    provider_result = quick_scan_address(payee)
+    verdict = normalize_verdict(provider_result.to_dict(), address=payee,
+                                provider=provider_result.provider)
+    enforce_verdict(verdict, milestone.amount_atomic)
+    request_hash = "0x" + hashlib.sha256(canonical_json({
+        "actionType": action_type, "address": payee.lower(),
+        "amountAtomic": str(milestone.amount_atomic), "chainId": row.chain_id,
+        "asset": row.currency.lower(),
+    }).encode()).hexdigest()
+    screening = Screening(
+        id=_new_id("SCR"), engagement_id=row.id, action_type=action_type,
+        subject_address=payee, decision=verdict.decision,
+        verdict_id=verdict.verdict_id, provider=verdict.provider,
+        request_hash=request_hash, evidence_json=json.dumps(provider_result.evidence, sort_keys=True),
+        checked_at=datetime.fromtimestamp(verdict.checked_at, tz=timezone.utc),
+        expires_at=(datetime.fromtimestamp(verdict.expires_at, tz=timezone.utc)
+                    if verdict.expires_at else None),
+    )
+    db.session.add(screening)
+    db.session.flush()
+    return verdict, screening
+
+
+def create_action_approval(row, milestone, *, action_type: str, payee: str):
+    """Create approval only after the current counterparty has been screened."""
+    if action_type == "fund" and milestone.status != "pending":
+        raise EngagementError("milestone is not fundable")
+    if action_type == "release" and milestone.status != "submitted":
+        raise EngagementError("milestone is not ready for release")
+    verdict, screening = screen_action(row, milestone, action_type=action_type, payee=payee)
+    expires_at = _now().replace(microsecond=0)
+    expires_at = expires_at + timedelta(seconds=int(os.environ.get("APPROVAL_TTL_SECONDS", "900")))
+    terms = _action_terms(row, milestone, action_type=action_type, payee=payee,
+                          verdict_id=verdict.verdict_id)
+    approval = create_approval(human_id=row.human_id, action_type=action_type,
+                               terms=terms, expires_at=expires_at, payload=terms)
+    return approval, screening, verdict
+
+
+def validate_action_approval(approval_id: str, expected_hash: str, row, milestone, *,
+                             action_type: str, payee: str, verdict_id: str):
+    approval = get_approval(str(approval_id))
+    if not approval:
+        raise EngagementError("approval not found")
+    terms = _action_terms(row, milestone, action_type=action_type, payee=payee,
+                          verdict_id=verdict_id)
+    expected = action_hash(approval.id, int(_aware(approval.expires_at).timestamp()), terms)
+    if approval.action_hash != expected or expected_hash != approval.action_hash:
+        raise EngagementError("approval does not match the current action or screening verdict")
+    return approval
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 def serialize_engagement(row) -> dict:
