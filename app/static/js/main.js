@@ -329,19 +329,6 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ── Search (client-side filter hint) ──────────────────────────────────────────
-const searchInput = document.getElementById('marketplace-search');
-if (searchInput) {
-  let debounce;
-  searchInput.addEventListener('input', () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(() => {
-      const form = searchInput.closest('form');
-      if (form) form.submit();
-    }, 500);
-  });
-}
-
 // ── Order completion + rating ──────────────────────────────────────────────────
 // Real handlers live in templates/order.html (#mark-complete calls
 // /api/orders/<id>/complete with a confirm dialog) and templates/base.html
