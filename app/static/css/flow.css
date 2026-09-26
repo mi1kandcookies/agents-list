@@ -122,22 +122,23 @@
 .icon-btn:disabled { opacity: .3; cursor: default; }
 
 /* ── Chips ───────────────────────────────────────────────────────────────── */
-.chips { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { position: relative; cursor: pointer; }
-.chip input { position: absolute; opacity: 0; pointer-events: none; }
-.chip-body {
+.opts { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { position: relative; cursor: pointer; }
+.opt input { position: absolute; opacity: 0; pointer-events: none; }
+.opt-body {
   display: inline-flex; flex-direction: column; gap: 2px; padding: 9px 16px;
   border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
   font-size: 14px; font-weight: 500; color: var(--ink); transition: border-color .15s, background .15s;
 }
-.chip:hover .chip-body { border-color: var(--ink-3); }
-.chip input:checked + .chip-body { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-hover); }
-.chip input:focus-visible + .chip-body { outline: 2px solid var(--accent); outline-offset: 2px; }
-.chip-hint { font-size: 13px; font-weight: 400; color: var(--ink-3); }
-.chips-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-.chips-cards .chip-body { display: flex; border-radius: 10px; padding: 12px 14px; height: 100%; }
-.chips-cards .chip-title { font-weight: 600; }
-.chips + .flabel { margin-top: 22px; }
+.opt:hover .opt-body { border-color: var(--ink-3); }
+.opt input:checked + .opt-body { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-hover); }
+.opt input:focus-visible + .opt-body { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt-hint { font-size: 13px; font-weight: 400; color: var(--ink-3); }
+.opts-cards .opt { display: block; }
+.opts-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.opts-cards .opt-body { display: flex; border-radius: 10px; padding: 12px 14px; height: 100%; }
+.opts-cards .opt-title { font-weight: 600; }
+.opts + .flabel { margin-top: 22px; }
 
 /* ── Milestones ──────────────────────────────────────────────────────────── */
 .ms-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -286,7 +287,7 @@
   .ms-actions { grid-column: 3; grid-row: 2; }
   .budget-row { grid-template-columns: minmax(0, 1fr); }
   .est { grid-template-columns: minmax(0, 1fr); }
-  .chips-cards { grid-template-columns: minmax(0, 1fr); }
+  .opts-cards { grid-template-columns: minmax(0, 1fr); }
   .flow-nav { flex-wrap: wrap; }
   .flow-nav .fbtn { flex: 1; }
 }
