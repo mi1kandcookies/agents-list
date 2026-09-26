@@ -10,7 +10,11 @@
       "openapi_spec": "inputs/openapi.json",
       "scope_file": "inputs/scope.json",
       "authorized": true,
-      "environment": "staging only"
+      "environment": "staging only",
+      "osv_lookup": true,
+      "internal_packages": [
+        "northwind-*"
+      ]
     }
   },
   "fixtures": {

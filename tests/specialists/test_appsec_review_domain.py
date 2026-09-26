@@ -179,10 +179,13 @@ def test_audit_dependencies_parses_package_lock(tmp_path):
     (ws / "repo" / "package-lock.json").write_text(json.dumps(lock), encoding="utf-8")
     out = T.audit_dependencies(ws, manifest="repo/package-lock.json",
                                fetch=_osv_fetch_factory("lodash"))
-    names = {p["name"] for p in out["packages"]}
+    # the per-package list lives in the full report, not in the model's answer
+    assert "packages" not in out and out["full_report"] == "deliverables/m2-findings/dependencies.json"
+    full = json.loads((ws / out["full_report"]).read_text(encoding="utf-8"))
+    names = {p["name"] for p in full["packages"]}
     assert names == {"lodash", "express"}
-    assert all(p["ecosystem"] == "npm" for p in out["packages"])
-    assert out["vulnerable_count"] == 1
+    assert all(p["ecosystem"] == "npm" for p in full["packages"])
+    assert out["vulnerable_count"] == 1 and out["package_count"] == 2
 
 
 def test_audit_dependencies_missing_manifest(tmp_path):

@@ -34,8 +34,11 @@ acceptance check compares the exact text, so do not paraphrase it.
 ## Dependency findings
 
 - Report only versions OSV actually flags for the pinned version. State the fixed
-  version when OSV gives one. Do not claim a CVE applies without an OSV match or
-  a cited advisory registered as a source.
+  version OSV gives for the installed branch (`fixed`); never recommend a
+  version lower than the installed one. Do not claim a CVE applies without an
+  OSV match or a cited advisory registered as a source.
+- List what the audit could not cover (`unaudited`: ranges, includes, private
+  or excluded packages) under the report's coverage limits.
 
 ## Reporting defaults
 

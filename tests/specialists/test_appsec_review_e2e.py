@@ -40,8 +40,11 @@ M1_DIR, M2_DIR, M3_DIR = (f"deliverables/{m}" for m in (M1, M2, M3))
 SARIF = f"{M2_DIR}/findings.sarif"
 FINDINGS_MD = f"{M2_DIR}/findings.md"
 SECRETS_JSON = f"{M2_DIR}/secrets.json"
+DEPENDENCIES_JSON = f"{M2_DIR}/dependencies.json"
+M2_DELIVERABLES = [SARIF, FINDINGS_MD, SECRETS_JSON, DEPENDENCIES_JSON]
 OSV_URL = "https://api.osv.dev/v1/query"
-ADVISORY_ID = "PYSEC-TEST-0001"          # synthetic advisory id
+ADVISORY_ID = "PYSEC-2099-0001"          # synthetic advisory id (well-formed, fictional)
+ADVISORY_VECTOR = "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
 SQLI_VECTOR = "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
 SECRET_VECTOR = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
 
@@ -84,10 +87,11 @@ def _workspace(spec, case, tmp_path: Path) -> Path:
 
 
 class FakeOSV:
-    """OSV query API: one advisory for flask, nothing for other packages."""
+    """OSV query API: one advisory for flask (by default), nothing for other packages."""
 
-    def __init__(self):
+    def __init__(self, vulnerable=("flask",)):
         self.calls: list[tuple[str, str, str]] = []
+        self.vulnerable = set(vulnerable)
 
     def __call__(self, method, url, headers, body, timeout):
         query = json.loads(body) if body else {}
@@ -96,10 +100,10 @@ class FakeOSV:
         if url != OSV_URL:
             return 404, {}, b"not found"
         vulns = []
-        if name == "flask":
+        if name in self.vulnerable:
             vulns = [{"id": ADVISORY_ID, "summary": "Session cookie handling flaw in flask 2.0.1",
-                      "aliases": ["CVE-TEST-0001"],
-                      "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"}],
+                      "aliases": ["CVE-2099-0001"],
+                      "severity": [{"type": "CVSS_V3", "score": ADVISORY_VECTOR}],
                       "affected": [{"package": {"name": "flask", "ecosystem": "PyPI"},
                                     "ranges": [{"type": "ECOSYSTEM",
                                                 "events": [{"introduced": "0"}, {"fixed": "2.2.5"}]}]}]}]
@@ -197,16 +201,17 @@ white-box review of repo/ only.
 """
 
 
-def _m1_steps(threat_model: str = THREAT_MODEL) -> list:
+def _m1_steps(threat_model: str = THREAT_MODEL, surface: str | None = None) -> list:
     return [
         _turn(("read_file", {"path": "inputs/scope.json"}),
               ("parse_openapi", {"spec_path": "inputs/openapi.json"})),
         _turn(("check_scope", {"targets": ["https://staging.northwind-ledger.example/api"]})),
         _turn(("write_file", {"path": f"{M1_DIR}/threat-model.md", "content": threat_model})),
-        # the attack-surface map is the parser's own inventory
+        # the attack-surface map is the parser's own inventory (unless a test overrides it)
         lambda messages: _turn(("write_file", {
             "path": f"{M1_DIR}/attack-surface.json",
-            "content": json.dumps(_output(messages, "parse_openapi"), indent=2)})),
+            "content": surface if surface is not None else json.dumps(_output(messages, "parse_openapi"),
+                                                                      indent=2)})),
         _turn(("submit_milestone", {"summary": "Scope confirmed; 5 endpoints mapped, 2 unauthenticated",
                                     "artifacts": [f"{M1_DIR}/threat-model.md",
                                                   f"{M1_DIR}/attack-surface.json"]})),
@@ -260,6 +265,26 @@ def test_m1_with_a_grader_scores_the_rubric(spec, cases, tmp_path):
     assert sub.status == "ready_for_review"
 
 
+def test_m1_scope_and_surface_are_recomputed(spec, cases, tmp_path):
+    """An out-of-scope host planned as a target, a sibling customer host and
+    an empty attack-surface map all fail; naming the out-of-scope host under
+    the Scope heading (as THREAT_MODEL does) and a third-party reference do not."""
+    threat_model = THREAT_MODEL + (
+        "- A01: replay the IDOR probe against https://prod.northwind-ledger.example/api/accounts\n"
+        "- Compare with billing.northwind-ledger.example and the guidance at https://owasp.org/Top10/\n")
+    ws = _workspace(spec, cases[M1], tmp_path)
+    sub, _ = _run(spec, ws, case_brief(spec, cases[M1]), M1, _m1_steps(threat_model, surface="{}"))
+    results = {r.check: r for r in sub.check_results}
+    scope = results["scope_respected"]
+    assert scope.passed is False
+    assert "prod.northwind-ledger.example (listed out of scope)" in scope.details
+    assert "billing.northwind-ledger.example (a customer host outside the signed scope)" in scope.details
+    assert "owasp.org" in scope.details and "owasp.org (" not in scope.details   # listed, not a violation
+    surface = results["attack_surface_covers_spec"]
+    assert surface.passed is False and "GET /health" in surface.details
+    assert sub.status == "needs_revision"
+
+
 def test_m1_missing_section_needs_revision(spec, cases, tmp_path):
     ws = _workspace(spec, cases[M1], tmp_path)
     no_plan = THREAT_MODEL.split("## Test Plan")[0]
@@ -297,10 +322,11 @@ def _findings(messages: list[Message], ws: Path) -> list[dict]:
          "exploit": "Anyone with read access to the repository can call AWS as this key.",
          "remediation": "Revoke the key, load it from the environment and purge it from history."},
         {"rule_id": "APPSEC.VULNERABLE_DEPENDENCY", "name": f"Vulnerable {vuln['package']}",
-         "severity": "medium", "message": f"{vuln['package']} {vuln['version']} is affected by {vuln['id']}.",
+         "severity": vuln["severity"].lower(),
+         "message": f"{vuln['package']} {vuln['version']} is affected by {vuln['id']}.",
          "file": "requirements.txt", "start_line": _line_of(ws, "repo/requirements.txt", "flask=="),
          "snippet": f"{vuln['package']}=={vuln['version']}",
-         "cwe": "CWE-1395", "owasp": "A06",
+         "cwe": "CWE-1395", "owasp": "A06", "cvss": vuln["cvss"][0]["score"],
          "exploit": f"{vuln['summary']} (OSV {vuln['id']}).",
          "remediation": f"Upgrade {vuln['package']} to {vuln['fixed']} or later."},
     ]
@@ -319,9 +345,13 @@ are redacted; only the location and the rule that fired are reported.
 """
 
 
-def _m2_steps(ws: Path, findings_fn=_findings, *, extra=(), fake_secrets=()) -> list:
+def _m2_steps(ws: Path, findings_fn=_findings, *, extra=(), fake_secrets=(), secrets_fn=None,
+              report: str = FINDINGS_REPORT) -> list:
     def write_evidence(messages):
-        secrets = _output(messages, "scan_secrets")["findings"] + list(fake_secrets)
+        if secrets_fn is not None:
+            secrets = secrets_fn(_output(messages, "scan_secrets")["findings"])
+        else:
+            secrets = _output(messages, "scan_secrets")["findings"] + list(fake_secrets)
         return _turn(("write_file", {"path": SECRETS_JSON, "content": json.dumps(secrets, indent=2)}),
                      ("build_sarif", {"findings": findings_fn(messages, ws)}))
 
@@ -338,7 +368,7 @@ def _m2_steps(ws: Path, findings_fn=_findings, *, extra=(), fake_secrets=()) -> 
               ("cvss_base_score", {"vector": SECRET_VECTOR})),
         *extra,
         write_evidence,
-        _turn(("write_file", {"path": FINDINGS_MD, "content": FINDINGS_REPORT})),
+        _turn(("write_file", {"path": FINDINGS_MD, "content": report})),
         _turn(("submit_milestone", {"summary": "3 findings with SARIF evidence",
                                     "artifacts": [SARIF, FINDINGS_MD, SECRETS_JSON]})),
     ]
@@ -355,10 +385,17 @@ def _m2(spec, cases, tmp_path, **kw):
 def test_m2_findings_ready_for_review(spec, cases, tmp_path):
     sub, ws, transport, events = _m2(spec, cases, tmp_path)
 
-    _assert_ready(sub, spec, ws, M2, [SARIF, FINDINGS_MD, SECRETS_JSON])
+    _assert_ready(sub, spec, ws, M2, M2_DELIVERABLES)
     results = {r.check: r for r in sub.check_results}
-    assert "all 3 location(s)" in results["sarif_locations_exist"].details
+    assert ("all 3 location(s) verified: 2 by a matching source snippet, 1 by a fresh secret scan"
+            in results["sarif_locations_exist"].details)
     assert results["secret_findings_reconcile"].passed is True
+    assert results["cvss_consistent"].passed is True and results["no_secret_values"].passed is True
+    assert "1 advisory id(s)" in results["advisories_reconcile"].details
+    # the scanner caught both planted credentials, including the db_password assignment
+    secrets = json.loads((ws / SECRETS_JSON).read_text(encoding="utf-8"))
+    assert {(f["rule_id"], f["line"]) for f in secrets if f["file"] == "repo/config.py"} == {
+        ("SECRET.AWS_ACCESS_KEY_ID", 3), ("SECRET.GENERIC_ASSIGNMENT", 4)}
     tool_errors = [e.data for e in events.of_type("tool_result") if e.data["is_error"]]
     assert not tool_errors, tool_errors
 
@@ -366,6 +403,10 @@ def test_m2_findings_ready_for_review(spec, cases, tmp_path):
     log = json.loads((ws / SARIF).read_text(encoding="utf-8"))
     by_rule = {r["ruleId"]: r for r in log["runs"][0]["results"]}
     assert by_rule["APPSEC.SQLI"]["properties"]["security-severity"] == "8.8"
+    assert by_rule["APPSEC.VULNERABLE_DEPENDENCY"]["level"] == "warning"       # 5.9 from the OSV vector
+    rules = {r["id"]: r for r in log["runs"][0]["tool"]["driver"]["rules"]}
+    assert rules["APPSEC.SQLI"]["properties"]["security-severity"] == "8.8"
+    assert "security" in rules["APPSEC.SQLI"]["properties"]["tags"]
     secret_uri = by_rule["SECRET.AWS_ACCESS_KEY_ID"]["locations"][0]["physicalLocation"]["artifactLocation"]
     assert secret_uri["uri"] == "config.py"
     assert ADVISORY_ID in by_rule["APPSEC.VULNERABLE_DEPENDENCY"]["properties"]["exploit"]
@@ -377,7 +418,10 @@ def test_m2_findings_ready_for_review(spec, cases, tmp_path):
     ledger = json.loads((ws / ".agentkit" / "ledger.json").read_text(encoding="utf-8"))
     assert [s["kind"] for s in ledger["sources"]] == ["tool"]
     assert ledger["claims"][0]["source"] == ledger["sources"][0]["id"]
-    assert sorted(ledger["authored"]) == sorted([SECRETS_JSON, SARIF, FINDINGS_MD])
+    assert sorted(ledger["authored"]) == sorted(M2_DELIVERABLES)
+    audit = json.loads((ws / DEPENDENCIES_JSON).read_text(encoding="utf-8"))
+    assert audit["package_count"] == 5 and len(audit["packages"]) == 5
+    assert audit["vulnerabilities"][0]["fixed"] == "2.2.5"
 
     # the planted credentials never leave repo/: not in deliverables, journal or submission
     for secret in (_aws_key(), _password()):
@@ -397,7 +441,7 @@ def test_m2_forged_evidence_needs_revision(spec, cases, tmp_path):
                          "severity": "high", "message": "fmt is concatenated into SQL.",
                          "file": "legacy_export.py", "start_line": 2,
                          "snippet": "SELECT * FROM exports WHERE fmt = ",
-                         "cwe": "CWE-89", "owasp": "A03", "exploit": "fmt=' OR 1=1",
+                         "cwe": "CWE-89", "owasp": "A03", "cvss": SQLI_VECTOR, "exploit": "fmt=' OR 1=1",
                          "remediation": "Bind fmt as a parameter."})
         return findings
 
@@ -429,6 +473,91 @@ def test_m2_tampered_sarif_fails_on_recheck(spec, cases, tmp_path):
     assert "snippet does not match source" in results["sarif_locations_exist"].details
     assert results["findings_have_evidence"].passed is False
     assert results["sarif_valid"].passed is True
+
+
+def test_m2_tampered_score_fails_on_recheck(spec, cases, tmp_path):
+    sub, ws, _, _ = _m2(spec, cases, tmp_path)
+    assert sub.status == "ready_for_review"
+    log = json.loads((ws / SARIF).read_text(encoding="utf-8"))
+    dep = next(r for r in log["runs"][0]["results"] if r["ruleId"] == "APPSEC.VULNERABLE_DEPENDENCY")
+    dep["level"], dep["properties"]["security-severity"] = "error", "9.8"    # inflated by hand
+    (ws / SARIF).write_text(json.dumps(log), encoding="utf-8")
+    result = next(r for r in spec.check(ws, M2) if r.check == "cvss_consistent")
+    assert result.passed is False
+    assert "level 'error' should be 'warning'" in result.details and "should be 5.9" in result.details
+
+
+def test_m2_invented_advisory_needs_revision(spec, cases, tmp_path):
+    report = FINDINGS_REPORT + "\nrequests 2.25.1 is also affected by CVE-2099-99999 (remote code execution).\n"
+    sub, _, _, _ = _m2(spec, cases, tmp_path, report=report)
+    result = next(r for r in sub.check_results if r.check == "advisories_reconcile")
+    assert result.passed is False and "CVE-2099-99999" in result.details
+    assert ADVISORY_ID not in result.details                     # the real OSV answer reconciles
+    assert sub.status == "needs_revision"
+
+
+def test_m2_unreported_secret_needs_revision_until_dismissed(spec, cases, tmp_path):
+    def only_aws(hits):
+        return [h for h in hits if h["rule_id"] == "SECRET.AWS_ACCESS_KEY_ID"]
+
+    sub, _, _, _ = _m2(spec, cases, tmp_path / "a", secrets_fn=only_aws)
+    result = next(r for r in sub.check_results if r.check == "secret_findings_reconcile")
+    assert result.passed is False
+    assert "neither reported nor dismissed" in result.details and "repo/config.py:4" in result.details
+    assert sub.status == "needs_revision"
+
+    def dismiss_password(hits):
+        other = [dict(h, reason="value is the documented local-development password") for h in hits
+                 if h not in only_aws(hits)]
+        return {"findings": only_aws(hits), "dismissed": other}
+
+    sub, _, _, _ = _m2(spec, cases, tmp_path / "b", secrets_fn=dismiss_password)
+    result = next(r for r in sub.check_results if r.check == "secret_findings_reconcile")
+    assert result.passed is True, result.details
+    assert "for the human reviewer to confirm" in result.details
+    assert "documented local-development password" in result.details
+    assert sub.status == "ready_for_review"
+
+
+def test_m2_secret_value_in_register_needs_revision(spec, cases, tmp_path):
+    report = FINDINGS_REPORT + f"\nThe database password is {_password()}.\n"
+    sub, _, _, _ = _m2(spec, cases, tmp_path, report=report)
+    result = next(r for r in sub.check_results if r.check == "no_secret_values")
+    assert result.passed is False and FINDINGS_MD in result.details
+    assert _password() not in result.details                     # the check names, never quotes
+    assert sub.status == "needs_revision"
+
+
+EMPTY_REGISTER = """# Findings register
+
+## No findings
+No weakness met the evidence bar in the reviewed scope; the secret scan and the
+OSV audit came back clean. Coverage limits are stated in the final report.
+"""
+
+
+def test_m2_honest_empty_register_is_ready(spec, cases, tmp_path):
+    """A clean result passes without inventing a finding, as long as the
+    register says so."""
+    ws = _workspace(spec, cases[M2], tmp_path)
+    (ws / "repo" / "config.py").unlink()
+    steps = [
+        _turn(("scan_secrets", {"root": "repo"}),
+              ("audit_dependencies", {"manifest": "repo/requirements.txt"})),
+        _turn(("write_file", {"path": SECRETS_JSON, "content": '{"findings": [], "dismissed": []}'}),
+              ("build_sarif", {"findings": []}),
+              ("write_file", {"path": FINDINGS_MD, "content": EMPTY_REGISTER})),
+        _turn(("submit_milestone", {"summary": "No findings", "artifacts": [SARIF, FINDINGS_MD, SECRETS_JSON]})),
+    ]
+    sub, _ = _run(spec, ws, case_brief(spec, cases[M2]), M2, steps, transport=FakeOSV(vulnerable=()))
+    _assert_ready(sub, spec, ws, M2, M2_DELIVERABLES)
+    results = {r.check: r for r in sub.check_results}
+    assert "states so" in results["findings_have_evidence"].details
+
+    # the same empty log without the statement is not accepted
+    (ws / FINDINGS_MD).write_text("# Findings register\n\nSee the SARIF log.\n", encoding="utf-8")
+    result = next(r for r in spec.check(ws, M2) if r.check == "findings_have_evidence")
+    assert result.passed is False and "does not state" in result.details
 
 
 # --- M3: remediation guidance and final report -------------------------------------------
@@ -481,27 +610,46 @@ def _m3_steps(report: str) -> list:
     ]
 
 
+def _m3(spec, cases, tmp_path, report: str):
+    """M3 on the workspace M2 left behind: its OSV answers are in the ledger,
+    so the advisory the report names reconciles."""
+    sub, ws, _, _ = _m2(spec, cases, tmp_path)
+    assert sub.status == "ready_for_review"
+    sub, adapter = _run(spec, ws, case_brief(spec, cases[M3]), M3, _m3_steps(report))
+    return sub, adapter, ws
+
+
 def test_m3_report_ready_for_review(spec, cases, tmp_path):
-    ws = _workspace(spec, cases[M3], tmp_path)
     disclaimer = spec.manifest.human_gate.disclaimer
-    sub, adapter = _run(spec, ws, case_brief(spec, cases[M3]), M3, _m3_steps(_report(disclaimer)))
+    sub, adapter, ws = _m3(spec, cases, tmp_path, _report(disclaimer))
 
     _assert_ready(sub, spec, ws, M3, [f"{M3_DIR}/report.md", f"{M3_DIR}/remediation.md"])
     results = {r.check: r for r in sub.check_results}
     assert results["disclaimer_present"].passed is True
     assert results["rubric_grader"].passed is None
+    assert results["advisories_reconcile"].passed is True and results["scope_respected"].passed is True
     # the kit told the model which disclaimer goes where
     assert f"Include this disclaimer verbatim in {M3_DIR}/report.md" in adapter.calls[0]["system"]
     assert disclaimer in adapter.calls[0]["system"]
 
 
 def test_m3_paraphrased_disclaimer_needs_revision(spec, cases, tmp_path):
-    ws = _workspace(spec, cases[M3], tmp_path)
     paraphrase = "This automated review is not a pentest and is not proof of security."
-    sub, _ = _run(spec, ws, case_brief(spec, cases[M3]), M3, _m3_steps(_report(paraphrase)))
+    sub, _, _ = _m3(spec, cases, tmp_path, _report(paraphrase))
     results = {r.check: r.passed for r in sub.check_results}
     assert results["disclaimer_present"] is False
     assert sub.status == "needs_revision" and sub.human_review.required is True
+
+
+def test_m3_advisory_without_an_osv_answer_needs_revision(spec, cases, tmp_path):
+    """On a fresh workspace nothing was ever looked up, so the advisory the
+    report names has no recorded source."""
+    ws = _workspace(spec, cases[M3], tmp_path)
+    report = _report(spec.manifest.human_gate.disclaimer)
+    sub, _ = _run(spec, ws, case_brief(spec, cases[M3]), M3, _m3_steps(report))
+    result = next(r for r in sub.check_results if r.check == "advisories_reconcile")
+    assert result.passed is False and ADVISORY_ID in result.details
+    assert sub.status == "needs_revision"
 
 
 # --- policy and authorization ------------------------------------------------------------
@@ -531,6 +679,32 @@ def test_policy_keeps_the_review_in_bounds(spec, cases, tmp_path):
     assert (ws / "inputs" / "scope.json").read_bytes() == scope_before
     assert not (ws / "inputs" / "findings.sarif").exists()
     assert sub.status == "incomplete"
+
+
+def test_customer_intake_governs_what_reaches_osv(spec, cases, tmp_path):
+    audit = [_turn(("audit_dependencies", {"manifest": "repo/requirements.txt", "exclude": ["jinja2"]})),
+             _say("done")]
+
+    # internal packages from the intake are never sent, on top of the model's own exclusions
+    ws = _workspace(spec, cases[M2], tmp_path / "internal")
+    brief = case_brief(spec, cases[M2])
+    brief.intake["internal_packages"] = ["flask", "req*"]
+    transport, events = FakeOSV(), MemorySink()
+    _run(spec, ws, brief, M2, list(audit), transport=transport, events=events)
+    assert sorted(name for _, _, name in transport.calls) == ["cryptography", "pyyaml"]
+    result = next(e.data for e in events.of_type("tool_result") if e.data["name"] == "audit_dependencies")
+    assert not result["is_error"]
+    assert result["content"].count("listed as internal; not sent to OSV") == 3
+
+    # opting out denies the tool before any request
+    ws = _workspace(spec, cases[M2], tmp_path / "optout")
+    brief = case_brief(spec, cases[M2])
+    brief.intake["osv_lookup"] = False
+    transport, events = FakeOSV(), MemorySink()
+    _run(spec, ws, brief, M2, list(audit), transport=transport, events=events)
+    assert transport.calls == []
+    denied = [e.data for e in events.of_type("policy_denied")]
+    assert [d["tool"] for d in denied] == ["audit_dependencies"] and "osv_lookup" in denied[0]["reason"]
 
 
 def test_run_refuses_without_authorization(spec, cases, tmp_path):

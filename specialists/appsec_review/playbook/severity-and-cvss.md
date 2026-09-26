@@ -30,4 +30,7 @@ Guidance:
 - Do not stack unrelated impacts into one finding to raise its score. One
   weakness, one finding, one honest vector.
 
-Record the vector string on the finding so a reviewer can re-derive the score.
+Put the vector string on the finding (`cvss`). `build_sarif` computes the score,
+band and SARIF level from it, and the `cvss_consistent` check re-derives them,
+so a hand-edited score or level fails. The vector must start with `CVSS:3.1/`
+and name each base metric exactly once.

@@ -18,7 +18,9 @@ listing:
     threat surface, finds and explains real weaknesses (injection, broken
     access control, secrets in code, vulnerable dependencies), and hands you a
     SARIF report you can import straight into GitHub code scanning - each finding
-    with reproducible evidence and a specific fix.
+    with reproducible evidence and a specific fix. The dependency audit sends
+    only pinned package names and versions to the public OSV database
+    (api.osv.dev); you can exclude internal packages or opt out at intake.
   tags: [security, appsec, sast, sarif, owasp, cwe, cvss, dependency-audit, secrets]
   capabilities:
     - Threat model and attack-surface map tied back to source
@@ -92,6 +94,7 @@ human_gate:
   checklist:
     - Confirm the signed scope allow-list is correct and complete
     - Confirm no target outside the signed scope was reviewed
+    - Review every secret-scan hit the agent dismissed and every third-party host the checks list
     - Triage each finding's severity and validity
     - Confirm remediation guidance is appropriate before it reaches developers
     - Approve the final report before it is used as a compliance artifact
@@ -115,6 +118,17 @@ intake:
   - field: owasp_categories
     question: Which OWASP Top 10 categories should the review prioritise?
     required: false
+  - field: osv_lookup
+    question: >-
+      May the dependency audit send pinned package names and versions (nothing
+      else) to the public OSV database at api.osv.dev? Default yes; answer false
+      to keep the dependency list private (the audit is then skipped).
+    required: false
+  - field: internal_packages
+    question: >-
+      Internal package names or prefixes (e.g. acme-*, @acme/*) that must never
+      be sent to OSV.
+    required: false
 
 estimate:
   usd_per_hour: 6.0
@@ -129,11 +143,20 @@ milestones:
     deliverables:
       - deliverables/m1-scope-threat-model/threat-model.md
       - deliverables/m1-scope-threat-model/attack-surface.json
-    hours: [3, 10]
+    hours: [1, 4]
     acceptance:
       - {check: file_exists, params: {path: deliverables/m1-scope-threat-model/threat-model.md}}
       - {check: file_exists, params: {path: deliverables/m1-scope-threat-model/attack-surface.json}}
       - {check: json_valid, params: {path: deliverables/m1-scope-threat-model/attack-surface.json}}
+      - check: attack_surface_covers_spec
+        params: {path: deliverables/m1-scope-threat-model/attack-surface.json}
+      - check: scope_respected
+        params:
+          paths:
+            - deliverables/m1-scope-threat-model/threat-model.md
+            - deliverables/m1-scope-threat-model/attack-surface.json
+          scope_file: inputs/scope.json
+      - {check: no_secret_values, params: {path: deliverables}}
       - check: markdown_sections
         params:
           path: deliverables/m1-scope-threat-model/threat-model.md
@@ -156,18 +179,36 @@ milestones:
       - deliverables/m2-findings/findings.sarif
       - deliverables/m2-findings/findings.md
       - deliverables/m2-findings/secrets.json
-    hours: [8, 30]
+      - deliverables/m2-findings/dependencies.json
+    hours: [2, 5]
     acceptance:
       - {check: file_exists, params: {path: deliverables/m2-findings/findings.sarif}}
+      - {check: file_exists, params: {path: deliverables/m2-findings/findings.md}}
       - {check: sarif_valid, params: {path: deliverables/m2-findings/findings.sarif}}
       - check: sarif_locations_exist
         params: {path: deliverables/m2-findings/findings.sarif, code_root: repo}
-      - {check: findings_have_evidence, params: {path: deliverables/m2-findings/findings.sarif}}
+      - check: findings_have_evidence
+        params: {path: deliverables/m2-findings/findings.sarif, summary: deliverables/m2-findings/findings.md}
+      - {check: cvss_consistent, params: {path: deliverables/m2-findings/findings.sarif}}
       - check: scope_respected
-        params: {path: deliverables/m2-findings/findings.sarif, scope_file: inputs/scope.json}
+        params:
+          paths: [deliverables/m2-findings/findings.sarif, deliverables/m2-findings/findings.md]
+          scope_file: inputs/scope.json
       - check: secret_findings_reconcile
         params: {report: deliverables/m2-findings/secrets.json, code_root: repo}
-      - {check: no_placeholders, params: {path: deliverables/m2-findings/findings.md}}
+      - {check: no_secret_values, params: {path: deliverables}}
+      - check: advisories_reconcile
+        params: {paths: [deliverables/m2-findings/findings.sarif, deliverables/m2-findings/findings.md]}
+      - {check: ledger_verified, params: {min_claims: 0}}
+      - {check: citations_resolve, params: {path: deliverables/m2-findings/findings.md, min_citations: 0}}
+      # Not the kit's default placeholder patterns: {{...}}, TODO and XXX are
+      # legitimate inside quoted exploit payloads and code evidence, so only
+      # prose placeholders (a TODO/FIXME bullet, TBD, [insert ...]) count.
+      - check: no_placeholders
+        params:
+          path: deliverables/m2-findings/findings.md
+          patterns: ['lorem ipsum', '\[insert[^\]]*\]', '<placeholder>', '\bTBD\b',
+                     '^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:TODO|FIXME)\b']
       - {check: human_signoff, kind: human, description: Customer security lead triages findings and confirms severity}
 
   - id: m3-report
@@ -179,14 +220,29 @@ milestones:
     deliverables:
       - deliverables/m3-report/report.md
       - deliverables/m3-report/remediation.md
-    hours: [4, 12]
+    hours: [1, 3]
     acceptance:
       - {check: file_exists, params: {path: deliverables/m3-report/report.md}}
+      - {check: file_exists, params: {path: deliverables/m3-report/remediation.md}}
       - check: markdown_sections
         params:
           path: deliverables/m3-report/report.md
           sections: [Executive Summary, Scope, Methodology, Findings, Remediation, Coverage Limits]
-      - {check: no_placeholders, params: {path: deliverables/m3-report/report.md}}
+      - check: no_placeholders
+        params:
+          paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md]
+          patterns: ['lorem ipsum', '\[insert[^\]]*\]', '<placeholder>', '\bTBD\b',
+                     '^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:TODO|FIXME)\b']
+      - check: scope_respected
+        params:
+          paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md]
+          scope_file: inputs/scope.json
+      - {check: no_secret_values, params: {path: deliverables}}
+      - check: advisories_reconcile
+        params: {paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md]}
+      - {check: ledger_verified, params: {min_claims: 0}}
+      - check: citations_resolve
+        params: {paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md], min_citations: 0}
       # The text defaults to human_gate.disclaimer; the kit puts it in the
       # system prompt as the text to include verbatim.
       - {check: disclaimer_present, params: {path: deliverables/m3-report/report.md}}
