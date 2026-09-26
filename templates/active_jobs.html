@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Active Jobs{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:48px; padding-bottom:80px;">
+
+  <div style="margin-bottom:40px;">
+    <div class="hero-eyebrow" style="margin-bottom:12px;">Buyer</div>
+    <h1 style="font-size:clamp(1.75rem,3vw,2.25rem); letter-spacing:-.025em; margin-bottom:10px;">Active Jobs</h1>
+    <p style="color:var(--text-2); font-size:.9375rem;">Escrow sessions currently held for this wallet · live from Avalanche Fuji.</p>
+  </div>
+
+  {% if orders %}
+  <div style="display:flex; flex-direction:column; gap:12px;">
+    {% for order in orders %}
+    <div style="display:grid; grid-template-columns:1fr auto; align-items:center; gap:24px; padding:20px 24px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); transition:border-color var(--transition);" class="card-hover">
+      <div style="display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:20px;">
+        <!-- Status indicator -->
+        <div style="width:40px; height:40px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; flex-shrink:0;
+          {% if order.status == 'in_progress' %}background:rgba(59,130,246,.08); border:1px solid rgba(59,130,246,.2);
+          {% else %}background:rgba(245,158,11,.06); border:1px solid rgba(245,158,11,.2);{% endif %}">
+          <span style="font-family:var(--font-mono); font-size:.5625rem; font-weight:700;
+            {% if order.status == 'in_progress' %}color:#3b82f6;{% else %}color:#f59e0b;{% endif %}">
+            {{ 'RUN' if order.status == 'in_progress' else 'ESC' }}
+          </span>
+        </div>
+
+        <!-- Job details -->
+        <div>
+          <div style="font-weight:600; font-size:.9375rem; margin-bottom:3px;">{{ order.agent }}</div>
+          <div style="font-size:.8125rem; color:var(--text-3); font-family:var(--font-mono);">{{ order.id }}</div>
+          {% if order.task %}
+          <div style="font-size:.8125rem; color:var(--text-2); margin-top:4px;">{{ order.task }}</div>
+          {% endif %}
+        </div>
+
+        <!-- Meta -->
+        <div style="text-align:right; flex-shrink:0;">
+          <div style="font-family:var(--font-mono); font-size:1rem; font-weight:700; margin-bottom:3px;">${{ "%.2f"|format(order.amount) }}</div>
+          <div style="font-size:.75rem; color:var(--text-3);">{{ order.date }}</div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex; gap:8px; flex-shrink:0; align-items:center;">
+        {% if order.txHash %}
+        <a href="{{ order.snowtrace }}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:.72rem;">Explorer ↗</a>
+        {% endif %}
+        <a href="/order/{{ order.id }}" class="btn btn-ghost btn-sm">View →</a>
+        <button type="button" class="btn btn-primary btn-sm"
+                data-oid="{{ order.id }}"
+                onclick="(async () => { const b = event.currentTarget; b.disabled = true; b.textContent = 'Settling…'; try { const r = await fetch('/api/orders/' + b.dataset.oid + '/complete', {method:'POST'}); if (r.ok) { if (window.showToast) showToast('Released from escrow · moved to Past Jobs', 'success'); setTimeout(() => location.reload(), 500); } else { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'failed'); } } catch (e) { b.disabled = false; b.textContent = 'Mark Complete'; if (window.showToast) showToast('Complete failed: ' + e.message, 'error'); } })()">
+          Mark Complete
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Summary bar -->
+  <div style="display:flex; gap:24px; align-items:center; margin-top:28px; padding:16px 24px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius);">
+    <div>
+      <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">Active</div>
+      <div style="font-family:var(--font-mono); font-size:1.125rem; font-weight:700;">{{ orders|length }}</div>
+    </div>
+    <div style="width:1px; height:32px; background:var(--border);"></div>
+    <div>
+      <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">In Escrow</div>
+      <div style="font-family:var(--font-mono); font-size:1.125rem; font-weight:700;">${{ "%.2f"|format(orders|selectattr('status','equalto','in_escrow')|map(attribute='amount')|sum) }}</div>
+    </div>
+    <div style="width:1px; height:32px; background:var(--border);"></div>
+    <div>
+      <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">Running</div>
+      <div style="font-family:var(--font-mono); font-size:1.125rem; font-weight:700;">{{ orders|selectattr('status','equalto','in_progress')|list|length }}</div>
+    </div>
+    <a href="/marketplace" class="btn btn-ghost btn-sm" style="margin-left:auto;">+ Hire another agent</a>
+  </div>
+
+  {% else %}
+  <div style="text-align:center; padding:80px 0;">
+    <div style="font-family:var(--font-mono); font-size:2rem; color:var(--border); margin-bottom:20px;">[ ]</div>
+    <h3 style="margin-bottom:10px;">{% if wallet %}No active jobs for this wallet{% else %}Connect a wallet to see your jobs{% endif %}</h3>
+    <p style="color:var(--text-2); margin-bottom:28px;">
+      {% if wallet %}
+        This wallet has no open escrow sessions. Hire an agent and your active jobs will stream in here.
+      {% else %}
+        Click <b>Connect Wallet</b> above (MetaMask, Rabby, Coinbase — any EIP-1193 wallet on Avalanche Fuji).
+        Or paste an address into the filter field to inspect any wallet's chain history.
+      {% endif %}
+    </p>
+    <a href="/marketplace" class="btn btn-gradient">Browse Agents</a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

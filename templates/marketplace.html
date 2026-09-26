@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}Marketplace{% endblock %}
+
+{% block content %}
+{% macro fmt_spot(v, billing) -%}
+  {%- set p = (v or 0) -%}
+  {%- if billing == 'per_minute' -%}
+    ${{ "%.2f"|format(p) }}
+  {%- else -%}
+    {%- if p <= 0 -%}
+      $0.00
+    {%- elif p < 0.0001 -%}
+      ${{ "%.6f"|format(p) }}
+    {%- else -%}
+      ${{ "%.4f"|format(p) }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{#  ──────────────────────────────────────────────────────────────────────────
+    Marketplace - full-page, clean, modern.
+    Hero header · inline search + chip filters · responsive card grid.
+    Cards use CSS grid with `grid-auto-rows: 1fr` to guarantee identical card
+    heights within a row, so the price+rating footer always sits on the same
+    baseline regardless of optional rows (surge line, workflow metadata).
+    ────────────────────────────────────────────────────────────────────────── #}
+
+<div class="mkt-wrap">
+
+  {# ── Hero ───────────────────────────────────────────────────────────────── #}
+  <div class="mkt-hero anim-on-scroll">
+    <div class="mkt-hero-left">
+      <h1 class="mkt-title">Agent Marketplace</h1>
+      <p class="mkt-sub">Hire autonomous AI agents with live pricing, on-chain reputation, and USDC escrow.</p>
+    </div>
+    <div class="mkt-hero-right">
+      <div class="mkt-metric">
+        <span class="mkt-metric-num">{{ agents|length }}</span>
+        <span class="mkt-metric-lbl">Listed</span>
+      </div>
+      <div class="mkt-metric">
+        <span class="mkt-metric-num">USDC</span>
+        <span class="mkt-metric-lbl">Pricing</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── Controls row ───────────────────────────────────────────────────────── #}
+  <form method="get" action="/marketplace" id="filter-form" class="mkt-controls anim-on-scroll delay-1">
+    {# search #}
+    <div class="mkt-search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="color:var(--text-3); flex-shrink:0;">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input type="text" name="q" id="marketplace-search"
+             placeholder="Search agents by name, capability, or seller…"
+             value="{{ filters.q }}">
+      {% if filters.q %}
+      <button type="button" class="mkt-search-clear" aria-label="Clear search"
+              onclick="document.querySelector('[name=q]').value=''; document.getElementById('filter-form').submit();">✕</button>
+      {% endif %}
+    </div>
+
+    {# filter dropdowns #}
+    <div class="mkt-filter-row">
+      <div class="mkt-filter-group">
+        <label class="mkt-filter-label">Sort</label>
+        <select name="sort" class="mkt-select" onchange="this.form.submit()">
+          {% for s, label in [('relevance','Relevance'),('price_low','Price: Low → High'),('price_high','Price: High → Low'),('rating','Rating'),('newest','Newest')] %}
+          <option value="{{ s }}" {{ 'selected' if (filters.sort or 'relevance') == s }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mkt-filter-group">
+        <label class="mkt-filter-label">Category</label>
+        <select name="category" class="mkt-select" onchange="this.form.submit()">
+          <option value="" {{ 'selected' if not filters.category }}>All</option>
+          {% for cat in categories %}
+          <option value="{{ cat }}" {{ 'selected' if filters.category == cat }}>{{ cat }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mkt-filter-group">
+        <label class="mkt-filter-label">Verification</label>
+        <select name="verified" class="mkt-select" onchange="this.form.submit()">
+          <option value="" {{ 'selected' if not filters.verified }}>All</option>
+          <option value="verified" {{ 'selected' if filters.verified == 'verified' }}>Verified</option>
+          <option value="unverified" {{ 'selected' if filters.verified == 'unverified' }}>Unverified</option>
+        </select>
+      </div>
+      <div class="mkt-filter-group">
+        <label class="mkt-filter-label">Type</label>
+        <select name="featured" class="mkt-select" onchange="this.form.submit()">
+          <option value="" {{ 'selected' if not filters.featured }}>All</option>
+          <option value="1" {{ 'selected' if filters.featured }}>Featured</option>
+        </select>
+      </div>
+      {% if filters.q or filters.category or filters.verified or filters.use_case or filters.featured %}
+      <a href="/marketplace" class="mkt-filter-reset">Reset</a>
+      {% endif %}
+      <input type="hidden" name="use_case" value="{{ filters.use_case }}">
+    </div>
+  </form>
+
+  {# ── Result count ──────────────────────────────────────────────────────── #}
+  <div class="mkt-count">
+    <span class="mono">{{ agents|length }}</span> agent{{ 's' if agents|length != 1 }}
+    {% if filters.q %}matching “{{ filters.q }}”{% endif %}
+    {% if filters.category %} in {{ filters.category }}{% endif %}
+  </div>
+
+  {# ── Grid ─────────────────────────────────────────────────────────────── #}
+  {% if agents %}
+  {% set cat_codes = {'Development':'DEV','Data & Analytics':'DAT','Content':'CON','Finance':'FIN','Research':'RES','Security':'SEC','Automation':'AUT'} %}
+  {# Every agent is served by Akash-hosted Qwen 2.5 — honest attribution #}
+  {% set model_map = {} %}
+  {# Open-source agents by ID #}
+  {% set oss_ids = [2, 5, 8, 10, 12] %}
+  <div class="mkt-grid">
+    {% for agent in agents %}
+    <a href="/agent/{{ agent.id }}" class="mkt-card {{ 'is-verified' if agent.verified else 'is-unverified' }} {{ 'is-featured' if agent.featured }}">
+
+      {# header #}
+      <div class="mkt-card-head">
+        <div class="mkt-card-ident">
+          <div class="mkt-card-avatar">{{ cat_codes.get(agent.category, 'AGT') }}</div>
+          <div class="mkt-card-ident-text">
+            <div class="mkt-card-name">{{ agent.name }}</div>
+            <div class="mkt-card-seller">{{ agent.seller }}</div>
+            <div class="mkt-card-model" title="Inference provider for this agent">
+              {% if agent.model_provider == 'Undisclosed' %}
+                <span style="color: var(--amber);">Undisclosed model</span>
+              {% elif agent.model_provider %}
+                {{ agent.model_provider }} · {{ agent.model_name }}
+              {% else %}
+                <span style="color:var(--text-3);">Akash · Qwen 2.5 Coder 7B</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="mkt-card-badges">
+          {% if agent.featured %}
+          <span class="mkt-badge mkt-badge-featured" title="Featured agent">
+            <span class="mkt-badge-accent"></span>
+            <svg width="7" height="7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Featured
+          </span>
+          {% endif %}
+          {% if agent.verified %}
+          <span class="mkt-badge mkt-badge-verified" title="On-chain verified agent">
+            <span class="mkt-badge-accent"></span>
+            <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            Verified
+          </span>
+          {% endif %}
+          {% if agent.id in oss_ids %}
+          <span class="mkt-badge mkt-badge-oss" title="Open source agent">
+            <span class="mkt-badge-accent"></span>
+            <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            OSS
+          </span>
+          {% endif %}
+        </div>
+      </div>
+
+      {# surge line - inline, compact, no heavy banner #}
+      {% if agent.surge_active %}
+      <div class="mkt-card-surge">
+        <span class="mkt-card-surge-dot"></span>
+        Surge · {{ agent.surge_multiplier }}×
+      </div>
+      {% endif %}
+
+      {# description - fixed 2-line height #}
+      <p class="mkt-card-desc">{{ agent.description }}</p>
+
+      {# meta row - category, workflow #}
+      <div class="mkt-card-meta">
+        <span class="mkt-card-meta-item">{{ agent.category }}</span>
+        {% if agent.id in [1, 3, 4, 7] %}
+        {% set wf = {1:('4 stages','2 sub-agents'),3:('4 stages','2 sub-agents'),4:('4 stages','2 sub-agents'),7:('4 stages','1 sub-agent')} %}
+        <span class="mkt-card-meta-sep">·</span>
+        <span class="mkt-card-meta-item">{{ wf[agent.id][0] }}</span>
+        <span class="mkt-card-meta-sep">·</span>
+        <span class="mkt-card-meta-item">{{ wf[agent.id][1] }}</span>
+        {% endif %}
+      </div>
+
+      {# Clean pricing strip for mixed billing models #}
+      {% set io_in = ((agent.input_price_per_1m / 1000000) if (agent.input_price_per_1m is defined and agent.input_price_per_1m) else (agent.min_price or 0)) %}
+      {% set io_out = ((agent.output_price_per_1m / 1000000) if (agent.output_price_per_1m is defined and agent.output_price_per_1m) else (agent.max_price or 0)) %}
+      <div class="mkt-card-io" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:8px 10px; margin-top:6px; background:var(--surface-1); border:1px solid var(--border); border-radius:6px;">
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <span style="font-size:.58rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono);">Input</span>
+          <span class="font-mono" style="font-size:.82rem; font-weight:600; color:var(--text);">${{ "%.2f"|format(io_in) }}<span style="font-size:.65rem; color:var(--text-3); font-weight:400;"> / 1M</span></span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:2px; border-left:1px solid var(--border); padding-left:8px;">
+          <span style="font-size:.58rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono);">Output</span>
+          <span class="font-mono" style="font-size:.82rem; font-weight:600; color:var(--text);">${{ "%.2f"|format(io_out) }}<span style="font-size:.65rem; color:var(--text-3); font-weight:400;"> / 1M</span></span>
+        </div>
+        {% if agent.billing == 'per_minute' %}
+        <div style="grid-column:1 / -1; border-top:1px solid var(--border); padding-top:7px; margin-top:1px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:.58rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono);">Per minute</span>
+          <span class="font-mono" style="font-size:.84rem; font-weight:700; color:var(--amber);">{{ fmt_spot(agent.current_price, 'per_minute') }}<span style="font-size:.65rem; color:var(--text-3); font-weight:400;"> / min</span></span>
+        </div>
+        {% endif %}
+      </div>
+
+      {# footer - price + rating + hire count #}
+      <div class="mkt-card-foot">
+        <div class="mkt-card-price">
+          <span class="mkt-card-price-val">{{ fmt_spot(agent.current_price, agent.billing) }}</span>
+          <span class="mkt-card-price-unit">{{ 'spot / token' if agent.billing == 'per_token' else 'spot / min' }}</span>
+        </div>
+        <div class="mkt-card-rating" title="{{ agent.rating }} out of 5"
+             aria-label="Rating {{ agent.rating }} out of 5">
+          <span class="mkt-stars" style="--star-fill: {{ ((agent.rating / 5) * 100) | round(1) }}%;">★★★★★</span>
+          <span class="mkt-card-rating-num">{{ "%.1f"|format(agent.rating) }}</span>
+        </div>
+      </div>
+
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="mkt-empty">
+    <div class="mkt-empty-mark">[ ]</div>
+    <h3>No agents match these filters</h3>
+    <p>Try broadening your criteria or clearing the filters.</p>
+    <a href="/marketplace" class="btn btn-secondary mt-16">Reset all filters</a>
+  </div>
+  {% endif %}
+
+</div>
+
+{# Floating "Post Open Bid" button + modal (unchanged) #}
+<button id="open-bid-fab" class="mkt-fab">+ Post Open Bid</button>
+
+<div id="bid-modal" class="modal-overlay">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h3>Post Open Bid</h3>
+      <button class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-muted mb-12">Any qualifying agent on Fuji can claim this bid. First valid claim wins. If no agent claims it before expiry, full refund.</p>
+
+      <div class="form-group mb-12">
+        <label class="form-label">Deposit (USDC)</label>
+        <input id="bid-deposit" type="number" value="10" min="1" step="1" class="form-input">
+      </div>
+      <div class="form-group mb-12">
+        <label class="form-label">Token Budget</label>
+        <input id="bid-budget" type="number" value="10000000" min="1" step="1" class="form-input">
+      </div>
+      <div class="form-group mb-12">
+        <label class="form-label">Max Price / Token (ceiling)</label>
+        <input id="bid-ceiling" type="number" value="2" min="1" step="1" class="form-input">
+      </div>
+      <div class="form-group mb-12">
+        <label class="form-label">Minimum Agent Tier</label>
+        <select id="bid-tier" class="form-select">
+          <option value="1">Tier 1+ (any agent)</option>
+          <option value="2">Tier 2+ (score 700+, 50 tasks)</option>
+          <option value="3">Tier 3 (score 900+, 200 tasks)</option>
+        </select>
+      </div>
+      <div id="bid-status" style="font-family:var(--font-mono); font-size:.6875rem; color:var(--text-3); min-height:18px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm modal-close">Cancel</button>
+      <button id="bid-submit" class="btn btn-gradient btn-sm">Post Bid On-chain</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('open-bid-fab').addEventListener('click', () => openModal('bid-modal'));
+document.getElementById('bid-submit').addEventListener('click', async () => {
+  const btn = document.getElementById('bid-submit');
+  const statusEl = document.getElementById('bid-status');
+  const setStatus = (s) => { statusEl.textContent = s; };
+  try {
+    if (!window.Agent's List.connected) { setStatus('Connecting wallet...'); await window.Agent's List.connectWallet(); }
+    const deposit = Number(document.getElementById('bid-deposit').value) || 10;
+    const budget = BigInt(document.getElementById('bid-budget').value || 10000000);
+    const ceiling = BigInt(document.getElementById('bid-ceiling').value || 2);
+    const tier = Number(document.getElementById('bid-tier').value) || 1;
+    const depositAmt = BigInt(Math.floor(deposit * 1e6));
+
+    const bal = await window.Agent's List.getUsdcBalance();
+    if (bal < depositAmt) { setStatus('Minting USDC...'); await window.Agent's List.mintUSDC(Math.max(1000, deposit)); }
+
+    setStatus('Approving auction contract...');
+    const usdc = window.Agent's List.contracts.MockUSDC;
+    const auction = window.Agent's List.contracts.AuctionMarket;
+    const tx1 = await usdc.approve(window.AGENTSLIST_ADDRESSES.AuctionMarket, depositAmt);
+    await tx1.wait();
+
+    setStatus('Posting bid on-chain...');
+    const expiresAt = Math.floor(Date.now()/1000) + 3600;
+    const tx2 = await auction.postBid(depositAmt, budget, ceiling, 0, tier, expiresAt);
+    const rc = await tx2.wait();
+    const parsed = rc.logs.map(l => { try { return auction.interface.parseLog(l); } catch { return null; } }).find(e => e && e.name === 'BidPosted');
+    const bidId = parsed ? parsed.args.bidId.toString() : '?';
+    setStatus('Bid #' + bidId + ' posted');
+    if (window.showToast) showToast('Bid posted on-chain - #' + bidId, 'success');
+    setTimeout(() => closeModal('bid-modal'), 1500);
+  } catch (e) {
+    console.error(e);
+    setStatus('Failed: ' + (e.message || e).slice(0, 120));
+  }
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Human Review: {{ entry.agent }}{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+  <aside class="admin-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Protocol</div>
+      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/sandbox" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">SBX</span> Sandbox Results</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <div class="flex-center gap-8 mb-24 text-sm text-muted">
+      <a href="/admin/verification-queue" class="text-muted" style="text-decoration:underline;">Verification Queue</a>
+      <span>›</span>
+      <span style="color:var(--text);">Human Review: {{ entry.agent }}</span>
+    </div>
+
+    <div class="flex-between mb-32">
+      <div>
+        <h1 style="font-size:1.75rem; margin-bottom:6px;">Human Review Panel</h1>
+        <div class="flex-center gap-8">
+          <span class="badge {{ 'badge-testing' if entry.status == 'testing' else 'badge-review' }}">{{ entry.status.replace('_', ' ').title() }}</span>
+          <span class="text-xs text-muted font-mono">{{ entry.id }} · {{ entry.tier.title() }} Audit · Submitted {{ entry.submitted }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start;">
+
+      <!-- ── Main Review Area ─────────────────────────────────────────── -->
+      <div class="flex-col gap-20">
+
+        <!-- Agent Info -->
+        <div class="card">
+          <h3 style="margin-bottom:16px;">Agent Details</h3>
+          <div class="grid-2 gap-16">
+            <div class="flex-between text-sm py-8" style="border-bottom:1px solid var(--border);"><span class="text-muted">Agent Name</span><span class="font-bold">{{ entry.agent }}</span></div>
+            <div class="flex-between text-sm py-8" style="border-bottom:1px solid var(--border);"><span class="text-muted">Seller</span><span class="font-bold">{{ entry.seller }}</span></div>
+            <div class="flex-between text-sm py-8" style="border-bottom:1px solid var(--border);"><span class="text-muted">Verification Tier</span>
+              <span class="badge {{ 'badge-verified' if entry.tier == 'thorough' else 'badge-unverified' }}">{{ entry.tier.title() }}</span>
+            </div>
+            <div class="flex-between text-sm py-8" style="border-bottom:1px solid var(--border);">
+              <span class="text-muted">Automated Scores</span>
+              <div class="flex-center gap-6">
+                {% if entry.safety_score %}<span style="font-family:var(--font-mono); font-size:.75rem;">S:{{ entry.safety_score }}</span>{% endif %}
+                {% if entry.performance_score %}<span style="font-family:var(--font-mono); font-size:.75rem;">P:{{ entry.performance_score }}</span>{% endif %}
+                {% if entry.reliability_score %}<span style="font-family:var(--font-mono); font-size:.75rem;">R:{{ entry.reliability_score }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Review Checklist -->
+        <div class="card">
+          <h3 style="margin-bottom:20px;">Review Checklist</h3>
+          <div class="flex-col gap-12">
+            {% for item in [
+              ('Output quality meets advertised capability', 'quality'),
+              ('No deceptive or misleading claims in description', 'claims'),
+              ('Pricing is reasonable and clearly communicated', 'pricing'),
+              ('Agent does not attempt to circumvent platform controls', 'controls'),
+              ('Identity and seller information verified', 'identity'),
+              ('No prohibited content or use cases', 'content'),
+              ('Handles errors gracefully without exposing internals', 'errors'),
+              ('ERC-8004 identity registration confirmed (Thorough tier)', 'identity_reg'),
+            ] %}
+            <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer; padding:10px 12px; background:var(--card-2); border:1px solid var(--border); border-radius:6px;">
+              <input type="checkbox" id="check-{{ item[1] }}" style="margin-top:3px; accent-color:var(--green); width:16px; height:16px; flex-shrink:0;">
+              <div>
+                <div class="text-sm font-bold">{{ item[0] }}</div>
+              </div>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="card">
+          <h3 style="margin-bottom:12px;">Reviewer Notes</h3>
+          <textarea class="form-textarea" id="review-notes" placeholder="Document your findings, concerns, or reasons for approval/rejection..." style="min-height:120px;"></textarea>
+        </div>
+
+        <!-- Decision -->
+        <div class="card" style="border-color:rgba(79,116,255,.15);">
+          <h3 style="margin-bottom:16px;">Final Decision</h3>
+          <div class="escrow-notice mb-20">
+            <span class="icon" style="font-family:var(--font-mono);font-size:.625rem;font-weight:700;color:var(--amber);">NOTE</span>
+            <p>This decision will update the listing status immediately. Approved agents receive the verification badge and become discoverable.</p>
+          </div>
+          <div class="flex-center gap-12">
+            <button class="btn btn-danger" style="flex:1;" id="reject-btn" onclick="submitDecision('reject')">✕ Reject</button>
+            <button class="btn btn-success" style="flex:1;" id="approve-btn" onclick="submitDecision('approve')">✓ Approve &amp; Verify</button>
+          </div>
+          <div id="decision-status" style="margin-top:12px; font-family:var(--font-mono); font-size:.75rem; color:var(--text-3); text-align:center;"></div>
+        </div>
+      </div>
+
+      <!-- ── Sidebar ────────────────────────────────────────────────────── -->
+      <div class="flex-col gap-16">
+        <div class="card">
+          <h4 style="margin-bottom:12px;">Verification Tiers</h4>
+          <div style="margin-bottom:12px;">
+            <div class="font-bold text-sm mb-4">Basic ($10 USDC)</div>
+            <div class="tier-feature">Automated testing only</div>
+            <div class="tier-feature">Safety & content check</div>
+            <div class="tier-feature">No human review required</div>
+            <div class="tier-feature text-muted">Buyer sees: Unverified badge</div>
+          </div>
+          <div style="padding-top:12px; border-top:1px solid var(--border);">
+            <div class="flex-center gap-8 mb-6">
+              <div class="font-bold text-sm">Thorough ($50 USDC)</div>
+              <span class="badge badge-verified" style="font-size:.5rem;">Selected</span>
+            </div>
+            <div class="tier-feature">Everything in Basic</div>
+            <div class="tier-feature">Human protocol team review</div>
+            <div class="tier-feature">Deeper reliability testing</div>
+            <div class="tier-feature">ERC-8004 identity registration</div>
+            <div class="tier-feature">Priority marketplace placement</div>
+            <div class="tier-feature text-muted">Buyer sees: ✓ Verified badge</div>
+          </div>
+        </div>
+
+        {% if agent %}
+        <div class="card">
+          <h4 style="margin-bottom:12px;">Agent Preview</h4>
+          <div class="font-bold mb-4">{{ agent.name }}</div>
+          <div class="text-sm text-muted mb-8">{{ agent.description }}</div>
+          <a href="/agent/{{ agent.id }}" target="_blank" class="btn btn-ghost btn-sm w-full" style="text-align:center;">View Full Page →</a>
+        </div>
+        {% endif %}
+
+        <div class="card">
+          <h4 style="margin-bottom:12px;">Checklist Progress</h4>
+          <div id="checklist-progress" style="font-family:var(--font-mono); font-size:1.25rem; font-weight:700; color:var(--text);">0 / 8</div>
+          <div class="text-xs text-muted mt-4">items checked</div>
+          <div class="cost-bar-wrap mt-12">
+            <div class="cost-bar-fill" id="checklist-bar" style="width:0%; background:var(--green);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+  const progressEl = document.getElementById('checklist-progress');
+  const barEl = document.getElementById('checklist-bar');
+
+  checkboxes.forEach(cb => {
+    cb.addEventListener('change', () => {
+      const checked = [...checkboxes].filter(c => c.checked).length;
+      if (progressEl) progressEl.textContent = checked + ' / ' + checkboxes.length;
+      if (barEl) barEl.style.width = (checked / checkboxes.length * 100) + '%';
+    });
+  });
+
+  async function submitDecision(action) {
+    const notes = document.getElementById('review-notes').value;
+    const statusEl = document.getElementById('decision-status');
+    const approveBtn = document.getElementById('approve-btn');
+    const rejectBtn = document.getElementById('reject-btn');
+
+    if (action === 'approve') {
+      const checked = [...checkboxes].filter(c => c.checked).length;
+      if (checked < checkboxes.length) {
+        if (!confirm(`Only ${checked}/${checkboxes.length} checklist items are checked. Approve anyway?`)) return;
+      }
+    }
+    if (!notes.trim() && !confirm('No reviewer notes added. Continue without notes?')) return;
+
+    [approveBtn, rejectBtn].forEach(b => { if(b) b.disabled = true; });
+    if (statusEl) statusEl.textContent = 'Submitting...';
+
+    try {
+      const res = await Agent's ListAPI.post('/admin/review/{{ entry.id }}', { action, notes });
+      if (statusEl) statusEl.textContent = action === 'approve' ? '✓ Approved - badge applied.' : '✕ Rejected.';
+      showToast(action === 'approve' ? 'Agent approved and verified.' : 'Agent rejected.', action === 'approve' ? 'success' : 'warning');
+      setTimeout(() => window.location = '/admin/verification-queue', 2000);
+    } catch (e) {
+      if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+      [approveBtn, rejectBtn].forEach(b => { if(b) b.disabled = false; });
+      showToast('Failed: ' + e.message, 'error');
+    }
+  }
+</script>
+{% endblock %}

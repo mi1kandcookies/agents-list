@@ -1,0 +1,373 @@
+﻿{% extends "base.html" %}
+{% block title %}Live Simulation{% endblock %}
+
+{% block head %}
+<style>
+  .sim-wrap { max-width: 1500px; margin: 0 auto; padding: 24px; }
+  .sim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 16px; }
+  .sim-title { font-size: 1.75rem; font-weight: 700; display: flex; align-items: center; gap: 12px; }
+  .pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 var(--green); animation: pulse 1.6s infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(57, 211, 83, 0.6); }
+    70% { box-shadow: 0 0 0 10px rgba(57, 211, 83, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(57, 211, 83, 0); }
+  }
+  .pulse-dot.stopped { background: #888; animation: none; }
+  .sim-controls { display: flex; gap: 8px; }
+  .sim-btn { padding: 8px 16px; border: 1px solid var(--border-2); background: var(--surface-1); color: var(--text-1); border-radius: 6px; cursor: pointer; font-family: var(--font-mono); font-size: 0.8rem; }
+  .sim-btn:hover { background: var(--surface-2); }
+  .sim-btn.primary { background: var(--green); color: #000; border-color: var(--green); }
+  .sim-btn.danger { background: #8a2121; color: #fff; border-color: #8a2121; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface-1); border: 1px solid var(--border-2); border-radius: 8px; padding: 14px 16px; }
+  .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-family: var(--font-mono); }
+  .stat-val { font-size: 1.4rem; font-weight: 600; margin-top: 4px; font-family: var(--font-mono); }
+
+  .sim-grid { display: grid; grid-template-columns: 420px 1fr; gap: 20px; }
+  @media (max-width: 1200px) { .sim-grid { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border-2); border-radius: 8px; overflow: hidden; }
+  .panel-head { padding: 12px 16px; border-bottom: 1px solid var(--border-2); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-family: var(--font-mono); display: flex; justify-content: space-between; }
+
+  .event-body { max-height: 900px; overflow-y: auto; }
+  .event { padding: 8px 16px; border-bottom: 1px solid var(--border-1); font-family: var(--font-mono); font-size: 0.75rem; display: flex; gap: 10px; align-items: flex-start; animation: fadeIn 0.4s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .event .tag { display: inline-block; min-width: 68px; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; text-align: center; flex-shrink: 0; }
+  .event .ts { color: var(--text-3); flex-shrink: 0; min-width: 52px; font-size:0.7rem; }
+  .event .msg { flex: 1; color: var(--text-1); line-height:1.3; }
+  .event .amt { color: var(--text-3); flex-shrink: 0; font-size:0.7rem; }
+  .tag.settle { background: #0d3a1d; color: var(--green); }
+  .tag.bid_post { background: #1a2b4a; color: #7fb3ff; }
+  .tag.bid_claim { background: #2a1f4a; color: #c19aff; }
+  .tag.refund { background: #3a2d0d; color: var(--amber); }
+  .tag.slash { background: #4a1515; color: #ff8787; }
+  .tag.bid_cancel { background: #2a2a2a; color: var(--text-3); }
+  .tag.system { background: #1a1a1a; color: var(--text-3); }
+  /* A2A - agent-to-agent payments get a prominent teal treatment */
+  .tag.a2a_hire, .tag.a2a_settle { background: #0a3a3a; color: #5fe3e3; font-weight: 700; }
+  .event.evt-a2a { background: linear-gradient(90deg, rgba(95,227,227,0.08), transparent 70%); border-left: 3px solid #5fe3e3; padding-left: 14px; }
+
+  /* Agent profile cards */
+  .roster-body { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; max-height: 900px; overflow-y: auto; }
+  .agent-card { background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; transition: all 0.2s; }
+  .agent-card.pulse { border-color: var(--green); box-shadow: 0 0 0 2px rgba(57,211,83,0.25); }
+  .agent-card.slash { border-color: #ff8787; box-shadow: 0 0 0 2px rgba(255,135,135,0.2); }
+  .agent-card.banned { opacity: 0.5; border-color: #ff8787; }
+
+  .ac-head { display: flex; gap: 10px; align-items: center; }
+  .avatar { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; color: #000; flex-shrink: 0; }
+  .ac-ident { flex: 1; min-width: 0; }
+  .ac-name { font-weight: 600; font-size: 0.92rem; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-cat { font-size: 0.68rem; color: var(--text-3); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+  .ac-tier { font-family: var(--font-mono); font-size: 0.68rem; padding: 3px 8px; border-radius: 999px; font-weight: 700; flex-shrink: 0; }
+  .tier-1 { background: #2a2a2a; color: var(--text-2); }
+  .tier-2 { background: #1a2b4a; color: #7fb3ff; }
+  .tier-3 { background: linear-gradient(135deg, #2a1f4a, #4a1f8a); color: #c19aff; }
+
+  .ac-wallet { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-3); background: var(--surface-1); padding: 4px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--border-1); }
+  .ac-wallet:hover { color: var(--text-1); }
+
+  .score-row { display: flex; align-items: center; gap: 8px; }
+  .score-num { font-family: var(--font-mono); font-weight: 700; font-size: 0.95rem; min-width: 44px; }
+  .score-num.high { color: var(--green); }
+  .score-num.mid { color: var(--amber); }
+  .score-num.low { color: #ff8787; }
+  .score-bar { flex: 1; height: 6px; background: var(--surface-1); border-radius: 3px; overflow: hidden; }
+  .score-fill { height: 100%; background: linear-gradient(90deg, #ff8787, var(--amber), var(--green)); transition: width 0.4s; }
+  .score-label { font-size: 0.68rem; color: var(--text-3); font-family: var(--font-mono); }
+
+  .ac-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .metric { text-align: center; background: var(--surface-1); border-radius: 6px; padding: 6px 4px; }
+  .m-val { font-family: var(--font-mono); font-weight: 600; font-size: 0.85rem; }
+  .m-val.warn { color: var(--amber); }
+  .m-val.bad { color: #ff8787; }
+  .m-val.good { color: var(--green); }
+  .m-lbl { font-size: 0.6rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+  .ac-price { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-1); padding-top: 8px; font-family: var(--font-mono); font-size: 0.78rem; }
+  .ac-price-val { color: var(--text-1); font-weight: 600; }
+  .surge-pill { padding: 2px 8px; border-radius: 999px; background: rgba(255,170,0,0.12); color: var(--amber); font-size: 0.65rem; font-weight: 700; }
+
+  .banned-pill { background: #4a1515; color: #ff8787; font-size: 0.65rem; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-family: var(--font-mono); }
+  .active-pill { background: rgba(57,211,83,0.12); color: var(--green); font-size: 0.65rem; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-family: var(--font-mono); display: inline-flex; align-items: center; gap: 4px; }
+  .active-pill::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--green); animation:pulse 1.6s infinite; }
+
+  .mini-strip { display: flex; gap: 3px; align-items: flex-end; height: 18px; }
+  .mini-bar { flex: 1; min-width: 3px; border-radius: 1px; opacity: 0.85; }
+  .mini-bar.settle { background: var(--green); }
+  .mini-bar.bid_claim { background: #c19aff; }
+  .mini-bar.refund { background: var(--amber); }
+  .mini-bar.slash { background: #ff8787; }
+  .mini-bar.empty { background: var(--surface-1); height: 3px; align-self: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sim-wrap">
+  <div class="sim-header">
+    <div class="sim-title">
+      <span class="pulse-dot" id="pulse"></span>
+      Live Simulation Control Room
+    </div>
+    <div class="sim-controls">
+      <button class="sim-btn" id="btn-slow">0.5× slower</button>
+      <button class="sim-btn primary" id="btn-fast">2× faster</button>
+      <button class="sim-btn" id="btn-start">Start</button>
+      <button class="sim-btn danger" id="btn-stop">Stop</button>
+    </div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-label">Status</div><div class="stat-val" id="stat-status">-</div></div>
+    <div class="stat-card"><div class="stat-label">Sim Clock</div><div class="stat-val" id="stat-clock" style="font-size:0.95rem;">-</div></div>
+    <div class="stat-card"><div class="stat-label">Ticks</div><div class="stat-val" id="stat-ticks">0</div></div>
+    <div class="stat-card"><div class="stat-label">Speed</div><div class="stat-val" id="stat-speed">-</div></div>
+    <div class="stat-card"><div class="stat-label">Active Sessions</div><div class="stat-val" id="stat-active">0</div></div>
+    <div class="stat-card" style="background:linear-gradient(180deg, rgba(95,227,227,0.08), var(--surface-1)); border-color:rgba(95,227,227,0.25);">
+      <div class="stat-label" style="color:#5fe3e3;">A2A Payments</div>
+      <div class="stat-val" id="stat-a2a" style="color:#5fe3e3;">0</div>
+    </div>
+    <div class="stat-card"><div class="stat-label">Events Logged</div><div class="stat-val" id="stat-events">0</div></div>
+  </div>
+
+  <div class="sim-grid">
+    <div class="panel">
+      <div class="panel-head">
+        <span>Event Stream</span>
+        <span id="event-count">0 events</span>
+      </div>
+      <div class="event-body" id="event-log"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span>Agent Profiles · Live</span>
+        <span id="roster-ts">-</span>
+      </div>
+      <div class="roster-body" id="agent-roster"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  let lastEventId = 0;
+  let totalEvents = 0;
+  let totalA2A = 0;
+  const logEl = document.getElementById('event-log');
+  const rosterEl = document.getElementById('agent-roster');
+
+  // Per-agent recent-event history for mini-strip (last 16 events per agent)
+  const history = new Map();
+  // Agents currently pulsed (id → clearTimeoutHandle)
+  const pulsed = new Map();
+
+  const CAT_COLORS = {
+    'Development':       '#7fb3ff',
+    'Data & Analytics':  '#c19aff',
+    'Content':           '#ffcb7f',
+    'Finance':           '#87e887',
+    'Research':          '#7feaea',
+    'Security':          '#ff8787',
+    'Automation':        '#ffaebf',
+  };
+
+  function fmtTs(unix) {
+    const d = new Date(unix * 1000);
+    return d.toISOString().slice(11, 19);
+  }
+  function scoreClass(s) { return s >= 800 ? 'high' : s >= 600 ? 'mid' : 'low'; }
+  function shorten(addr) { return addr ? addr.slice(0, 6) + '…' + addr.slice(-4) : ''; }
+  function initials(name) {
+    return name.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  }
+
+  function renderEvent(ev) {
+    const el = document.createElement('div');
+    const isA2A = ev.kind === 'a2a_hire' || ev.kind === 'a2a_settle';
+    el.className = 'event' + (isA2A ? ' evt-a2a' : '');
+    if (isA2A) totalA2A++;
+    const amt = ev.amountUSDC ? `${ev.amountUSDC.toFixed(2)} USDC` : '';
+    el.innerHTML = `
+      <span class="ts">${fmtTs(ev.ts)}</span>
+      <span class="tag ${ev.kind}">${ev.kind.replace('_', ' ')}</span>
+      <span class="msg">${ev.message}</span>
+      <span class="amt">${amt}</span>
+    `;
+    logEl.prepend(el);
+    while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild);
+
+    // record for history + pulse the card
+    if (ev.agentId) {
+      const hist = history.get(ev.agentId) || [];
+      hist.push({ kind: ev.kind, ts: ev.ts, amt: ev.amountUSDC });
+      while (hist.length > 16) hist.shift();
+      history.set(ev.agentId, hist);
+
+      const card = document.getElementById(`ac-${ev.agentId}`);
+      if (card) {
+        const cls = ev.kind === 'slash' ? 'slash' : 'pulse';
+        card.classList.remove('pulse', 'slash');
+        void card.offsetWidth; // reflow so animation restarts
+        card.classList.add(cls);
+        clearTimeout(pulsed.get(ev.agentId));
+        pulsed.set(ev.agentId, setTimeout(() => card.classList.remove(cls), 1200));
+      }
+    }
+  }
+
+  async function refreshRoster() {
+    try {
+      const r = await fetch('/api/agents?per_page=50');
+      const data = await r.json();
+      const agents = data.agents || data;
+
+      const profiles = await Promise.all(agents.map(a =>
+        Promise.all([
+          fetch(`/api/agents/${a.id}/profile`).then(x => x.json()).catch(() => ({})),
+          fetch(`/api/agents/${a.id}/bond`).then(x => x.json()).catch(() => ({})),
+        ])
+      ));
+
+      rosterEl.innerHTML = '';
+      agents.forEach((a, i) => {
+        const [p, s] = profiles[i];
+        const tier = p.tier || 1;
+        const score = p.score || 500;
+        const banned = p.banned;
+        const surge = a.surge_multiplier || 1;
+        const color = CAT_COLORS[a.category] || '#888';
+        const hist = history.get(a.id) || [];
+        const strip = Array.from({ length: 16 }, (_, idx) => {
+          const h = hist[hist.length - 16 + idx];
+          if (!h) return '<div class="mini-bar empty"></div>';
+          const height = Math.max(4, Math.min(18, Math.log10((h.amt || 1) + 1) * 6));
+          return `<div class="mini-bar ${h.kind}" style="height:${height}px;" title="${h.kind} · ${(h.amt||0).toFixed(2)} USDC"></div>`;
+        }).join('');
+
+        const surgePill = surge > 1.05
+          ? `<span class="surge-pill">SURGE ×${surge.toFixed(2)}</span>`
+          : '<span style="color:var(--text-3); font-size:0.68rem; font-family:var(--font-mono);">stable</span>';
+
+        const bond = Number(s.bonddUSDCDisplay || 0);
+        const incidents = p.repIncidentCount || p.incidentCount || 0;
+        const bondInc = s.incidentCount || 0;
+        const tasks = p.tasksCompleted || 0;
+
+        const card = document.createElement('div');
+        card.className = 'agent-card' + (banned ? ' banned' : '');
+        card.id = `ac-${a.id}`;
+        card.innerHTML = `
+          <div class="ac-head">
+            <div class="avatar" style="background:${color};">${initials(a.name)}</div>
+            <div class="ac-ident">
+              <div class="ac-name">${a.name}</div>
+              <div class="ac-cat">${a.category}</div>
+            </div>
+            <span class="ac-tier tier-${tier}">T${tier}</span>
+          </div>
+
+          <div class="ac-wallet" title="Click to copy" data-wallet="${p.wallet || ''}">
+            ${shorten(p.wallet || '')}
+          </div>
+
+          <div class="score-row">
+            <span class="score-num ${scoreClass(score)}">${score}</span>
+            <div class="score-bar"><div class="score-fill" style="width:${score/10}%;"></div></div>
+            <span class="score-label">/1000</span>
+          </div>
+
+          <div class="ac-metrics">
+            <div class="metric">
+              <div class="m-val">${tasks.toLocaleString()}</div>
+              <div class="m-lbl">Tasks</div>
+            </div>
+            <div class="metric">
+              <div class="m-val">${bond.toLocaleString()}</div>
+              <div class="m-lbl">Bond $</div>
+            </div>
+            <div class="metric">
+              <div class="m-val ${incidents > 0 ? 'warn' : ''}">${incidents}</div>
+              <div class="m-lbl">Rep Inc</div>
+            </div>
+            <div class="metric">
+              <div class="m-val ${bondInc > 0 ? 'bad' : ''}">${bondInc}</div>
+              <div class="m-lbl">Slashes</div>
+            </div>
+          </div>
+
+          <div class="mini-strip" title="Last 16 events">${strip}</div>
+
+          <div class="ac-price">
+            <div>
+              <span class="ac-price-val">$${Number(a.current_price || 0).toFixed(4)}</span>
+              <span style="color:var(--text-3);">/ tok</span>
+            </div>
+            ${banned ? '<span class="banned-pill">BANNED</span>' : surgePill}
+          </div>
+        `;
+        // Wallet copy
+        card.querySelector('.ac-wallet').onclick = (e) => {
+          const w = e.currentTarget.getAttribute('data-wallet');
+          if (!w) return;
+          navigator.clipboard.writeText(w);
+          const orig = e.currentTarget.textContent;
+          e.currentTarget.textContent = 'copied ✓';
+          setTimeout(() => { e.currentTarget.textContent = orig; }, 900);
+        };
+        rosterEl.appendChild(card);
+      });
+      document.getElementById('roster-ts').textContent = new Date().toISOString().slice(11, 19) + 'Z';
+    } catch (e) { console.error(e); }
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(`/api/sim/events?since=${lastEventId}&limit=50`);
+      const data = await r.json();
+      const st = data.status;
+      document.getElementById('pulse').className = 'pulse-dot' + (st.running ? '' : ' stopped');
+      document.getElementById('stat-status').textContent = st.running ? 'RUNNING' : 'STOPPED';
+      document.getElementById('stat-clock').textContent = st.simClockIso.replace('T', ' ').slice(0, 19);
+      document.getElementById('stat-ticks').textContent = st.tickCount.toLocaleString();
+      document.getElementById('stat-speed').textContent = st.acceleration;
+      document.getElementById('stat-active').textContent = st.activeSessions;
+      for (const ev of data.events) {
+        renderEvent(ev);
+        lastEventId = Math.max(lastEventId, ev.id);
+        totalEvents++;
+      }
+      document.getElementById('stat-events').textContent = totalEvents.toLocaleString();
+      document.getElementById('stat-a2a').textContent = totalA2A.toLocaleString();
+      document.getElementById('event-count').textContent = `${totalEvents.toLocaleString()} events`;
+    } catch (e) { /* noop */ }
+  }
+
+  async function ctl(path, body) {
+    await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : null,
+    });
+    poll();
+  }
+
+  document.getElementById('btn-start').onclick = () => ctl('/api/sim/start');
+  document.getElementById('btn-stop').onclick = () => ctl('/api/sim/stop');
+  document.getElementById('btn-fast').onclick = async () => {
+    const r = await fetch('/api/sim/status'); const s = await r.json();
+    ctl('/api/sim/speed', { tickRealSeconds: Math.max(0.25, s.tickRealSeconds / 2) });
+  };
+  document.getElementById('btn-slow').onclick = async () => {
+    const r = await fetch('/api/sim/status'); const s = await r.json();
+    ctl('/api/sim/speed', { tickRealSeconds: Math.min(8, s.tickRealSeconds * 2) });
+  };
+
+  poll();
+  refreshRoster();
+  setInterval(poll, 1200);
+  setInterval(refreshRoster, 3500);
+})();
+</script>
+{% endblock %}

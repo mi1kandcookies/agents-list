@@ -1,0 +1,802 @@
+{% extends "base.html" %}
+{% block title %}Create Agent Listing{% endblock %}
+
+{% block content %}
+<div class="container-sm" style="padding-top:40px; padding-bottom:72px;">
+
+  <!-- Page header -->
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:32px;">
+    <div>
+      <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.14em; color:var(--text-3); margin-bottom:6px;">Seller · New Listing</div>
+      <h1 style="font-size:1.625rem; font-weight:600; letter-spacing:-.03em; margin:0 0 6px;">List Your Agent</h1>
+      <p style="font-size:.8125rem; color:var(--text-3); margin:0;">Four steps to go live on the marketplace.</p>
+    </div>
+    <a href="/seller/earnings" class="btn btn-ghost btn-sm" style="font-family:var(--font-mono); font-size:.625rem; flex-shrink:0; margin-top:4px;">← Dashboard</a>
+  </div>
+
+  <!-- Step Progress — segmented bar style -->
+  <div style="display:flex; gap:6px; margin-bottom:28px;">
+    {% for num, label in [(1,'Info'),(2,'Pricing'),(3,'Verification'),(4,'Review')] %}
+    <div id="step-{{ num }}-indicator" class="step-item {{ 'active' if num == 1 else '' }}"
+         style="flex:1; display:flex; flex-direction:column; gap:8px; cursor:default;">
+      <div style="height:3px; border-radius:100px; background:{{ 'var(--blue)' if num == 1 else 'var(--border)' }};" class="step-bar-line"></div>
+      <div style="display:flex; align-items:center; gap:7px;">
+        <div class="step-num" style="width:18px; height:18px; font-size:.5625rem;">{{ num }}</div>
+        <div class="step-label" style="font-size:.5625rem;">{{ label }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Bond notice — live-checks the seller's on-chain stake. Flips to a
+       green "bonded ✓" state when the wallet already has >= $100 staked. -->
+  <div id="bond-notice" style="display:flex; align-items:center; gap:10px; padding:9px 14px; background:rgba(245,158,11,.04); border:1px solid rgba(245,158,11,.15); border-radius:var(--radius); margin-bottom:16px;">
+    <svg id="bond-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span id="bond-text" style="font-size:.8125rem; color:var(--text-2);">
+      <strong style="color:#f59e0b; font-weight:600;">Bond required</strong> — $100 USDC account + $25 per agent before going live.
+      <a href="/seller/earnings" style="color:#f59e0b; font-weight:500; margin-left:6px;">Manage →</a>
+    </span>
+  </div>
+  <script>
+  // Live bond check — updates the notice to reflect the seller's real
+  // on-chain stake so a buyer who just bonded on /seller/earnings sees
+  // "Bonded ✓" here instead of the stale "Bond required" banner.
+  (async () => {
+    try {
+      const r = await fetch('/api/seller/bond-status');
+      const d = await r.json();
+      if (d && d.bonded) {
+        const notice = document.getElementById('bond-notice');
+        const text   = document.getElementById('bond-text');
+        const icon   = document.getElementById('bond-icon');
+        if (notice) {
+          notice.style.background = 'rgba(34,197,94,.06)';
+          notice.style.borderColor = 'rgba(34,197,94,.3)';
+        }
+        if (icon) {
+          icon.setAttribute('stroke', 'var(--green)');
+          icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+        }
+        if (text) {
+          text.innerHTML = '<strong style="color:var(--green); font-weight:600;">Bonded ✓</strong>' +
+                           ' — $' + (d.totalStakedUSDC || 0).toLocaleString() + ' USDC staked on-chain' +
+                           (d.agentCount ? ' across ' + d.agentCount + ' agent(s)' : '') + '.' +
+                           ' <a href="/seller/earnings" style="color:var(--green); font-weight:500; margin-left:6px;">View →</a>';
+        }
+      }
+    } catch (_) {}
+  })();
+  </script>
+
+  <!-- ═══ Step 1: Agent Info ═══ -->
+  <div class="form-step" id="step-1" style="display:block;">
+    <div style="background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; margin-bottom:20px;">
+
+      <!-- Card title bar -->
+      <div style="padding:20px 28px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div style="font-size:.9375rem; font-weight:600; letter-spacing:-.01em;">Agent Information</div>
+          <div style="font-size:.75rem; color:var(--text-3); margin-top:2px;">Identity, description, and classification</div>
+        </div>
+        <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3);">Step 1 / 4</div>
+      </div>
+
+      <div style="padding:28px;">
+
+        <!-- Section: Identity -->
+        <div class="form-section">
+          <div class="form-section-eyebrow">Identity</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
+            <div class="fl-group">
+              <label class="fl-label" for="create-name">Agent Name <span style="color:var(--red);">*</span></label>
+              <input class="fl-input" type="text" id="create-name" name="name" placeholder="e.g. CodeReview Pro" autocomplete="off">
+              <span class="fl-hint">Shown on marketplace cards and search results</span>
+            </div>
+            <div class="fl-group" style="position:relative;">
+              <label class="fl-label">AI Model <span style="color:var(--red);">*</span></label>
+              <!-- Hidden native input for form submission -->
+              <input type="hidden" id="create-model" name="model">
+              <!-- Custom dropdown trigger -->
+              <div class="mdl-trigger" id="mdl-trigger" tabindex="0">
+                <span class="mdl-trigger-text" id="mdl-trigger-text" style="color:var(--text-3);">Select model</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;transition:transform .15s ease;" id="mdl-chevron"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <!-- Dropdown panel -->
+              <div class="mdl-panel" id="mdl-panel">
+                {% set model_groups = [
+                  ('OpenAI',     [('gpt-4.1','GPT-4.1'),('gpt-4.1-mini','GPT-4.1 mini'),('o3','o3'),('o4-mini','o4-mini')]),
+                  ('Anthropic',  [('claude-opus-4','Claude Opus 4'),('claude-sonnet-4','Claude Sonnet 4'),('claude-haiku-4','Claude Haiku 4')]),
+                  ('Google',     [('gemini-2.5-pro','Gemini 2.5 Pro'),('gemini-2.5-flash','Gemini 2.5 Flash')]),
+                  ('Meta',       [('llama-4-maverick','Llama 4 Maverick'),('llama-4-scout','Llama 4 Scout')]),
+                  ('xAI',        [('grok-3','Grok 3'),('grok-3-mini','Grok 3 mini')]),
+                  ('DeepSeek',   [('deepseek-v3','DeepSeek V3'),('deepseek-r1','DeepSeek R1')]),
+                  ('Mistral',    [('mistral-large-3','Mistral Large 3'),('codestral-2025','Codestral 2025')]),
+                  ('Other',      [('custom','Custom / Fine-tuned')]),
+                ] %}
+                {% for group, models in model_groups %}
+                <div class="mdl-group-label">{{ group }}</div>
+                {% for val, label in models %}
+                <div class="mdl-option" data-value="{{ val }}">{{ label }}</div>
+                {% endfor %}
+                {% endfor %}
+              </div>
+              <span class="fl-hint">Underlying model powering this agent</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Description -->
+        <div class="form-section">
+          <div class="form-section-eyebrow">Description</div>
+          <div class="fl-group" style="margin-bottom:24px;">
+            <label class="fl-label" for="create-desc">Tagline <span style="color:var(--red);">*</span></label>
+            <input class="fl-input" type="text" id="create-desc" name="description" placeholder="One punchy line shown on marketplace cards" maxlength="120" autocomplete="off" oninput="updateDescCounter(this)">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span class="fl-hint">Shown on listing cards — make it count</span>
+              <span class="fl-counter" id="desc-counter">0 / 120</span>
+            </div>
+          </div>
+          <div class="fl-group">
+            <label class="fl-label" for="create-long-desc">Full Description <span style="color:var(--red);">*</span></label>
+            <textarea class="fl-textarea" id="create-long-desc" name="long_description" placeholder="Describe capabilities, ideal use cases, and what buyers can expect from this agent." style="min-height:110px;"></textarea>
+          </div>
+        </div>
+
+        <!-- Section: Classification -->
+        <div class="form-section">
+          <div class="form-section-eyebrow">Classification</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-bottom:24px;">
+            <div class="fl-group">
+              <label class="fl-label" for="create-category">Category <span style="color:var(--red);">*</span></label>
+              <div class="fl-select-wrap">
+                <select class="fl-select" id="create-category" name="category">
+                  <option value="">Select category</option>
+                  {% for cat in categories %}
+                  <option value="{{ cat }}">{{ cat }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="fl-group">
+              <label class="fl-label" for="create-use-case">Primary Use Case <span style="color:var(--red);">*</span></label>
+              <div class="fl-select-wrap">
+                <select class="fl-select" id="create-use-case" name="use_case">
+                  <option value="">Select use case</option>
+                  {% for uc in use_cases %}
+                  <option value="{{ uc }}">{{ uc }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:28px;">
+            <div class="fl-group">
+              <label class="fl-label" for="create-tags">Tags</label>
+              <input class="fl-input" type="text" id="create-tags" name="tags" placeholder="code, python, security, review">
+              <span class="fl-hint">Comma-separated keywords for discovery</span>
+            </div>
+            <div class="fl-group">
+              <label class="fl-label" for="create-demo">Demo URL <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-3);">(optional)</span></label>
+              <input class="fl-input" type="url" id="create-demo" name="demo_url" placeholder="https://your-agent-demo.com">
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Capabilities -->
+        <div class="form-section">
+          <div class="form-section-eyebrow">Capabilities <span style="color:var(--red);">*</span></div>
+          <div class="fl-group">
+            <textarea class="fl-textarea" id="create-capabilities" name="capabilities"
+              placeholder="Static code analysis&#10;Security vulnerability detection&#10;Performance optimization&#10;Documentation generation"
+              style="min-height:100px;"></textarea>
+            <span class="fl-hint">One capability per line — these appear as feature bullets on your listing</span>
+          </div>
+        </div>
+
+      </div><!-- /padding -->
+    </div><!-- /card -->
+  </div>
+
+  <!-- Step 2: Pricing + Subagent Editor -->
+  <div class="form-step" id="step-2" style="display:none;">
+
+    <!-- SubagentEditor -->
+    <div class="card mb-20">
+      <h3 style="margin-bottom:6px;">Execution Model</h3>
+      <p class="text-sm mb-16">Define whether your agent runs a multi-stage pipeline with sub-agents, or operates as a standalone model.</p>
+
+      <!-- Toggle -->
+      <div class="subagent-toggle-row" id="subagent-toggle">
+        <div>
+          <div class="font-bold text-sm mb-2 toggle-label">Standalone (no sub-agents)</div>
+          <p class="text-xs">All stages run within this agent. No external agent calls.</p>
+        </div>
+        <div class="toggle-switch" id="sa-switch"></div>
+      </div>
+
+      <!-- Editor panel (hidden until toggled on) -->
+      <div id="subagent-editor-panel" style="display:none;">
+        <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:10px;">Stages</div>
+
+        <div class="stage-editor-list" id="stage-editor-list"></div>
+
+        <button class="btn btn-ghost btn-sm w-full" onclick="addStage()" style="margin-bottom:20px;">+ Add Stage</button>
+
+        <!-- Live preview -->
+        <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:8px;">Buyer Preview</div>
+        <div class="workflow-preview">
+          <div class="workflow-preview-header">How this agent works - buyer view</div>
+          <div id="editor-preview-list">
+            <div style="font-size:.8125rem; color:var(--text-3); padding:12px 16px;">No stages defined yet.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-24">
+      <h3 style="margin-bottom:8px;">Configure Pricing</h3>
+      <p class="text-sm mb-24">Set your billing model and price range. the prototype's surge pricing will dynamically adjust within your defined range.</p>
+
+      <div class="form-group mb-24">
+        <label class="form-label">Billing Model *</label>
+        <div class="grid-2 gap-16">
+          <div class="tier-card" data-tier="per_token" onclick="selectBilling('per_token')">
+            <div style="font-family:var(--font-mono); font-size:.625rem; font-weight:700; color:var(--blue); letter-spacing:.1em; text-transform:uppercase; margin-bottom:8px;">TKN</div>
+            <div class="font-bold mb-4">Per Token</div>
+            <p class="text-sm">Charge per output token. Best for text-based agents.</p>
+          </div>
+          <div class="tier-card" data-tier="per_minute" onclick="selectBilling('per_minute')">
+            <div style="font-family:var(--font-mono); font-size:.625rem; font-weight:700; color:var(--blue); letter-spacing:.1em; text-transform:uppercase; margin-bottom:8px;">MIN</div>
+            <div class="font-bold mb-4">Per Minute</div>
+            <p class="text-sm">Charge per processing minute. Best for time-intensive agents.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2 gap-20 mb-24">
+        <!-- Input cost: min + max -->
+        <div class="form-group">
+          <label class="form-label">Input Cost (USD) *</label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
+            <div>
+              <div class="form-hint" style="margin-bottom:4px; font-size:.5rem; text-transform:uppercase; letter-spacing:.1em;">Min</div>
+              <input type="number" class="form-input" id="create-min-input" name="min_input_tokens" step="0.01" min="0.01" placeholder="0.25" oninput="updateTokenPreview()">
+            </div>
+            <div>
+              <div class="form-hint" style="margin-bottom:4px; font-size:.5rem; text-transform:uppercase; letter-spacing:.1em;">Max</div>
+              <input type="number" class="form-input" id="create-max-input" name="max_input_tokens" step="0.01" min="0.01" placeholder="2.00" oninput="updateTokenPreview()">
+            </div>
+          </div>
+          <div class="form-hint">Estimated input-side USD range per task</div>
+        </div>
+        <!-- Output cost: min + max (output max should exceed input max) -->
+        <div class="form-group">
+          <label class="form-label">Output Cost (USD) * <span style="font-size:.6875rem; color:var(--text-3); font-weight:400;">(max should exceed input max)</span></label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
+            <div>
+              <div class="form-hint" style="margin-bottom:4px; font-size:.5rem; text-transform:uppercase; letter-spacing:.1em;">Min</div>
+              <input type="number" class="form-input" id="create-min-output" name="min_output_tokens" step="0.01" min="0.01" placeholder="0.75" oninput="updateTokenPreview()">
+            </div>
+            <div>
+              <div class="form-hint" style="margin-bottom:4px; font-size:.5rem; text-transform:uppercase; letter-spacing:.1em;">Max</div>
+              <input type="number" class="form-input" id="create-max-output" name="max_output_tokens" step="0.01" min="0.01" placeholder="6.00" oninput="updateTokenPreview()">
+            </div>
+          </div>
+          <div class="form-hint">Estimated output-side USD range per task</div>
+        </div>
+      </div>
+
+      <!-- Cost range preview -->
+      <div class="card card-sm" style="background:var(--card-2); border-color:var(--border);">
+        <div class="flex-center gap-8 mb-10">
+          <span style="font-family:var(--font-mono); font-size:.5625rem; font-weight:700; letter-spacing:.1em; color:var(--blue); background:var(--blue-dim); border:1px solid var(--blue-border); padding:3px 7px; border-radius:4px;">USD</span>
+          <span class="font-bold text-sm">Cost Scope</span>
+        </div>
+        <p class="text-sm" style="color:var(--text-2);">Set your expected input and output USD ranges per task. Buyers use this envelope to estimate spend before hiring.</p>
+        <div class="flex-between mt-12 text-sm">
+          <span class="text-muted">Cost range preview</span>
+          <span class="font-bold text-accent" id="price-preview">Set USD ranges above</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Verification -->
+  <div class="form-step" id="step-3" style="display:none;">
+    <div class="card mb-24">
+      <h3 style="margin-bottom:8px;">Choose Verification Tier</h3>
+      <p class="text-sm mb-24">All agents must pass at least Basic Verification before listing. Verified agents earn the trust badge and get priority placement.</p>
+
+      <input type="hidden" id="selected-tier" value="">
+      <div class="grid-2 gap-16 mb-24">
+        <div class="tier-card" data-tier="basic">
+          <span class="badge badge-unverified mb-12" style="display:inline-flex;">Unverified badge</span>
+          <div class="tier-price">$10 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
+          <div class="font-bold mb-12">Basic Verification</div>
+          <div class="tier-feature">Required for all listings</div>
+          <div class="tier-feature">Automated safety testing</div>
+          <div class="tier-feature">Performance benchmarking</div>
+          <div class="tier-feature">Content policy check</div>
+          <div class="mt-12 text-xs text-muted">Results in 60 seconds</div>
+        </div>
+        <div class="tier-card" data-tier="thorough">
+          <span class="badge badge-verified mb-12" style="display:inline-flex;">Verified badge</span>
+          <div class="tier-price">$50 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
+          <div class="font-bold mb-12">Premium Audit</div>
+          <div class="tier-feature">Everything in Basic</div>
+          <div class="tier-feature">Deeper reliability testing</div>
+          <div class="tier-feature">On-chain identity registration</div>
+          <div class="tier-feature">Priority marketplace placement</div>
+          <div class="mt-12 text-xs text-muted">Results in 1-5 minutes</div>
+        </div>
+      </div>
+
+      <!-- Verification Fee -->
+      <div class="card card-sm" style="background:var(--card-2);">
+        <div class="flex-between">
+          <span class="font-bold">Verification Fee</span>
+          <span class="font-bold text-accent" id="verification-price">Select a tier above</span>
+        </div>
+        <p class="text-xs text-muted mt-8">Paid in USDC via your connected wallet. Non-refundable.</p>
+      </div>
+    </div>
+
+    <!-- Required Bond -->
+    <div class="card" style="border-color: var(--red-border);">
+      <div class="flex-between mb-12">
+        <h3 style="margin:0;">Required Bond</h3>
+        <span class="badge" style="background:var(--red-dim); color:var(--red); border:1px solid var(--red-border);">BondingSlashing.sol</span>
+      </div>
+      <p class="text-sm mb-20">Post USDC capital before your listing goes live. Severe buyer disputes (gatekeeper-signed) slash this bond. The bond amount you choose determines the highest <b style="color:var(--text);">auction tier</b> you can serve.</p>
+
+      <input type="hidden" id="selected-bond" name="bond_tier" value="">
+      <div class="grid-3 gap-12 mb-16">
+        <label class="tier-card" data-bond="1" for="bond-t1">
+          <input type="radio" name="bond-radio" id="bond-t1" value="1" style="display:none;">
+          <div style="font-family:var(--font-mono); font-size:.625rem; letter-spacing:.1em; text-transform:uppercase; color:var(--red);">Tier 1</div>
+          <div class="tier-price" style="margin-top:8px;">100 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
+          <div class="font-bold mb-8" style="margin-top:6px;">Baseline</div>
+          <div class="tier-feature">Accept bids with minTier = 1</div>
+          <div class="tier-feature">All categories</div>
+          <div class="tier-feature">Slash cap: 100 USDC total</div>
+        </label>
+        <label class="tier-card" data-bond="2" for="bond-t2">
+          <input type="radio" name="bond-radio" id="bond-t2" value="2" style="display:none;">
+          <div style="font-family:var(--font-mono); font-size:.625rem; letter-spacing:.1em; text-transform:uppercase; color:var(--red);">Tier 2</div>
+          <div class="tier-price" style="margin-top:8px;">250 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
+          <div class="font-bold mb-8" style="margin-top:6px;">Skilled</div>
+          <div class="tier-feature">Gated: score ≥ 700 · 50+ tasks</div>
+          <div class="tier-feature">Accept bids with minTier ≤ 2</div>
+          <div class="tier-feature">Higher deposit caps</div>
+        </label>
+        <label class="tier-card" data-bond="3" for="bond-t3">
+          <input type="radio" name="bond-radio" id="bond-t3" value="3" style="display:none;">
+          <div style="font-family:var(--font-mono); font-size:.625rem; letter-spacing:.1em; text-transform:uppercase; color:var(--red);">Tier 3</div>
+          <div class="tier-price" style="margin-top:8px;">1,000 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
+          <div class="font-bold mb-8" style="margin-top:6px;">Elite</div>
+          <div class="tier-feature">Gated: score ≥ 900 · 200+ tasks</div>
+          <div class="tier-feature">Accept every bid · unlimited cap</div>
+          <div class="tier-feature">Priority in UI ranking</div>
+        </label>
+      </div>
+
+      <div class="card card-sm" style="background:var(--card-2);">
+        <div class="flex-between mb-8 text-sm">
+          <span class="text-muted">Slash schedule per severe incident</span>
+          <span class="font-mono" style="color:var(--red);">25% → 75% → 100% + ban</span>
+        </div>
+        <div class="flex-between mb-8 text-sm">
+          <span class="text-muted">Distribution</span>
+          <span class="font-mono">60% buyer · 40% insurance</span>
+        </div>
+        <div class="flex-between text-sm">
+          <span class="text-muted">Unbond delay</span>
+          <span class="font-mono">7 days</span>
+        </div>
+      </div>
+
+      <p class="text-xs text-muted mt-12">Bond is held by <span class="font-mono">BondingSlashing</span>. You recover unspent bond anytime after the 7-day unbond window - never by Agent's List or the buyer.</p>
+    </div>
+  </div>
+
+  <!-- Step 4: Review -->
+  <div class="form-step" id="step-4" style="display:none;">
+    <div class="card mb-24">
+      <h3 style="margin-bottom:20px;">Review & Submit</h3>
+      <div class="flex-col gap-16">
+        <div class="card card-sm" style="background:var(--card-2);">
+          <div class="font-bold mb-12">Agent Summary</div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Name</span><span id="review-name">Your Agent Name</span></div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Category</span><span id="review-category">Development</span></div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Billing</span><span id="review-billing">Per Token</span></div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Price Range</span><span id="review-range">$0.002 - $0.010</span></div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Verification</span><span id="review-verification">Basic ($10 USDC)</span></div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Bond Tier</span><span id="review-bond">Tier 1 (100 USDC)</span></div>
+          <div class="flex-between text-sm"><span class="text-muted">Bonding Wallet</span><span class="font-mono" id="review-wallet" style="font-size:.72rem;">not connected</span></div>
+        </div>
+
+        <div class="escrow-notice">
+          <span class="icon">ℹ</span>
+          <p>By submitting, you agree to the prototype's terms. The verification fee is spent. The bond is deposited into <span class="font-mono">BondingSlashing.sol</span> - slashable on severe incidents, otherwise refundable after a 7-day unbond delay.</p>
+        </div>
+
+        <div class="card card-sm" style="background: rgba(34,197,94,.04); border-color: rgba(34,197,94,.15);">
+          <div class="flex-between mb-8">
+            <span class="text-sm text-muted">Verification fee (non-refundable)</span>
+            <span class="font-mono" id="review-fee-val">$10.00 USDC</span>
+          </div>
+          <div class="flex-between mb-10">
+            <span class="text-sm text-muted">Bond deposit (refundable after 7d)</span>
+            <span class="font-mono" id="review-bond-val">$100.00 USDC</span>
+          </div>
+          <div class="divider"></div>
+          <div class="flex-between">
+            <span class="font-bold">Total Due Today</span>
+            <span class="font-bold text-success" id="review-total">$110.00 USDC</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation Buttons -->
+  <div class="flex-between">
+    <button class="btn btn-ghost" id="step-prev" style="display:none;">← Back</button>
+    <div style="margin-left:auto; display:flex; gap:12px;">
+      <button class="btn btn-primary" id="step-next">Continue →</button>
+      <button class="btn btn-gradient" id="step-submit" style="display:none;">Submit & Pay Verification Fee</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* ── Custom model dropdown ─────────────────────────────────── */
+.mdl-trigger {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0 9px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: .9375rem;
+  color: var(--text);
+  transition: border-color .15s ease;
+  user-select: none;
+  gap: 8px;
+}
+.mdl-trigger:hover, .mdl-trigger:focus { border-color: var(--blue); outline: none; }
+.mdl-trigger.open { border-color: var(--blue); }
+.mdl-trigger.open #mdl-chevron { transform: rotate(180deg); }
+.mdl-trigger-text { flex: 1; }
+.mdl-panel {
+  position: absolute; top: calc(100% - 8px); left: 0; right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  z-index: 200;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  display: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.mdl-panel.open { display: block; }
+.mdl-group-label {
+  padding: 8px 14px;
+  margin: 6px 6px 2px;
+  font-family: var(--font-mono);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  border-radius: 6px;
+  border: none;
+}
+.mdl-group-label:first-child { margin-top: 4px; }
+.mdl-option {
+  padding: 10px 14px;
+  font-size: .875rem;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .1s ease, color .1s ease;
+  border-radius: 6px;
+  margin: 2px 6px;
+}
+.mdl-option:hover { background: var(--card-2); color: var(--text); }
+.mdl-option.selected { color: var(--blue); font-weight: 600; }
+[data-theme="light"] .mdl-panel {
+  background: #fff;
+  border-color: rgba(0,0,0,.12);
+  box-shadow: 0 8px 32px rgba(0,0,0,.12);
+}
+[data-theme="light"] .mdl-option { color: #18181b; }
+[data-theme="light"] .mdl-option:hover { background: #f4f4f5; color: #000; }
+[data-theme="light"] .mdl-group-label { color: #fff; }
+</style>
+<script>
+  /* ── Char counter for tagline ──────────────────────────────── */
+  function updateDescCounter(input) {
+    const counter = document.getElementById('desc-counter');
+    if (!counter) return;
+    const len = input.value.length, max = 120;
+    counter.textContent = len + ' / ' + max;
+    counter.className = 'fl-counter' + (len > max ? ' over' : len > 100 ? ' warn' : '');
+  }
+
+  /* ── Patch goToStep to animate the segmented bar lines ──────── */
+  const _origGoToStep = goToStep;
+  window.goToStep = function(step) {
+    _origGoToStep(step);
+    document.querySelectorAll('.step-bar-line').forEach((line, i) => {
+      const s = i + 1;
+      if (s < step)       line.style.background = 'var(--green)';
+      else if (s === step) line.style.background = 'var(--blue)';
+      else                 line.style.background = 'var(--border)';
+    });
+  };
+
+  goToStep(1);
+  initSubagentEditor();
+
+  /* ── Per-step validation ──────────────────────────────────────────
+     Intercepts the Continue button BEFORE the generic goToStep handler in
+     main.js runs - if validation fails, stopImmediatePropagation blocks
+     the step advance and surfaces a toast. */
+  (function attachStepValidation() {
+    const nextBtn = document.getElementById('step-next');
+    if (!nextBtn) return;
+    nextBtn.addEventListener('click', (e) => {
+      const step = (window.currentStep !== undefined) ? window.currentStep : null;
+      // Step 2: enforce min < max, both positive
+      const activeStep = document.querySelector('.form-step[style*="display:block"], .form-step[style*="display: block"]');
+      if (activeStep && activeStep.id === 'step-2') {
+        const minIn  = parseFloat(document.getElementById('create-min-input')?.value);
+        const maxIn  = parseFloat(document.getElementById('create-max-input')?.value);
+        const minOut = parseFloat(document.getElementById('create-min-output')?.value);
+        const maxOut = parseFloat(document.getElementById('create-max-output')?.value);
+        if (!minIn || !maxIn || !minOut || !maxOut) {
+          showToast('Fill in all four USD cost fields (min/max for input and output).', 'warning');
+          e.stopImmediatePropagation(); return;
+        }
+        if (maxIn <= minIn) {
+          showToast('Input cost max must exceed input cost min.', 'error');
+          e.stopImmediatePropagation(); return;
+        }
+        if (maxOut <= minOut) {
+          showToast('Output cost max must exceed output cost min.', 'error');
+          e.stopImmediatePropagation(); return;
+        }
+        if (maxOut <= maxIn) {
+          showToast('Output cost max must exceed input cost max.', 'error');
+          e.stopImmediatePropagation(); return;
+        }
+      }
+      // Step 1: enforce name, description, category
+      if (activeStep && activeStep.id === 'step-1') {
+        const req = [['create-name', 'agent name'],
+                     ['create-desc', 'short description'],
+                     ['create-long-desc', 'full description']];
+        for (const [id, label] of req) {
+          const v = (document.getElementById(id)?.value || '').trim();
+          if (!v) {
+            showToast('Please fill in the ' + label + '.', 'warning');
+            e.stopImmediatePropagation();
+            return;
+          }
+        }
+        if (!(document.getElementById('create-category')?.value || '').trim()) {
+          showToast('Select a category.', 'warning');
+          e.stopImmediatePropagation();
+          return;
+        }
+      }
+      // Step 3: require verification tier AND bond tier
+      if (activeStep && activeStep.id === 'step-3') {
+        const verifySel = activeStep.querySelector('.tier-card[data-tier].selected');
+        const bondSel  = activeStep.querySelector('.tier-card[data-bond].selected');
+        if (!verifySel) {
+          showToast('Choose a verification tier before continuing.', 'warning');
+          e.stopImmediatePropagation();
+          return;
+        }
+        if (!bondSel) {
+          showToast('Choose a bond tier before continuing.', 'warning');
+          e.stopImmediatePropagation();
+          return;
+        }
+        // Populate review summary now so it shows real values on step 4.
+        const name     = (document.getElementById('create-name')?.value || '').trim() || 'Unnamed agent';
+        const category = document.getElementById('create-category')?.value || '-';
+        const billing  = document.querySelector('#step-2 .tier-card.selected[data-tier="per_token"], #step-2 .tier-card.selected[data-tier="per_minute"]');
+        const billingLbl = billing && billing.dataset.tier === 'per_minute' ? 'Per Minute' : 'Per Token';
+        // Input-side min and Output-side max give the true range the buyer pays.
+        const minV = parseFloat(document.getElementById('create-min-input')?.value) || 0;
+        const maxV = parseFloat(document.getElementById('create-max-output')?.value) || 0;
+        const verifyKind = verifySel.dataset.tier === 'thorough' ? 'Premium Audit' : 'Basic';
+        const verifyFee  = verifySel.dataset.tier === 'thorough' ? 50 : 10;
+        const bondUSDC  = bondSel.dataset.bond === '3' ? 1000 : bondSel.dataset.bond === '2' ? 250 : 100;
+
+        const set = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+        set('review-name', name);
+        set('review-category', category);
+        set('review-billing', billingLbl);
+        set('review-range', `$${minV.toFixed(5)} - $${maxV.toFixed(5)}`);
+        set('review-verification', `${verifyKind} ($${verifyFee} USDC)`);
+        set('review-bond', `Tier ${bondSel.dataset.bond} (${bondUSDC.toLocaleString()} USDC)`);
+        set('review-fee-val', `$${verifyFee.toFixed(2)} USDC`);
+        set('review-bond-val', `$${bondUSDC.toFixed(2)} USDC`);
+        set('review-total', `$${(verifyFee + bondUSDC).toFixed(2)} USDC`);
+        // Show the wallet that will bond
+        const w = (window.Agent's List && window.Agent's List.address) || null;
+        const wEl = document.getElementById('review-wallet');
+        if (wEl) {
+          if (w) {
+            wEl.textContent = w.slice(0, 6) + '…' + w.slice(-4);
+            wEl.style.color = 'var(--green)';
+          } else {
+            wEl.textContent = 'not connected - click Connect Wallet';
+            wEl.style.color = 'var(--red)';
+          }
+        }
+      }
+    }, true); // capture phase - runs before main.js's bubble listener
+  })();
+
+  // Keep the review-wallet in sync with connect events
+  window.addEventListener('agents-list:connected', (e) => {
+    const w = e.detail && e.detail.address;
+    const el = document.getElementById('review-wallet');
+    if (el && w) {
+      el.textContent = w.slice(0, 6) + '…' + w.slice(-4);
+      el.style.color = 'var(--green)';
+    }
+  });
+
+  // ── Submit handler ─────────────────────────────────────────────────────────
+  document.getElementById('step-submit').addEventListener('click', async () => {
+    const btn = document.getElementById('step-submit');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    const byId = (id) => (document.getElementById(id)?.value || '').trim();
+    const step2 = document.getElementById('step-2');
+    const step3 = document.getElementById('step-3');
+    const billingEl = step2 ? step2.querySelector('[data-tier].selected') : null;
+    const verifyEl = step3 ? step3.querySelector('.tier-card[data-tier].selected') : null;
+    const bondEl  = step3 ? step3.querySelector('.tier-card[data-bond].selected') : null;
+
+    // Wallet is optional — server auto-generates a demo wallet if missing,
+    // so the Submit click always produces a real Fuji tx.
+    const walletAddr = (window.Agent's List && window.Agent's List.address) || '';
+
+    const payload = {
+      name:              byId('create-name'),
+      description:       byId('create-desc'),
+      long_description:  byId('create-long-desc'),
+      category:          byId('create-category'),
+      use_case:          byId('create-use-case'),
+      tags:              byId('create-tags'),
+      capabilities:      byId('create-capabilities'),
+      billing:           billingEl ? billingEl.dataset.tier : 'per_token',
+      min_price:         byId('create-min-input')  || '0.002',
+      max_price:         byId('create-max-output') || '0.010',
+      min_input_tokens:  byId('create-min-input'),
+      max_input_tokens:  byId('create-max-input'),
+      min_output_tokens: byId('create-min-output'),
+      max_output_tokens: byId('create-max-output'),
+      verification_tier: verifyEl ? verifyEl.dataset.tier : 'basic',
+      bond_tier:        bondEl  ? Number(bondEl.dataset.bond) : 1,
+      wallet:            walletAddr,
+      seller:            walletAddr,
+    };
+
+    if (!payload.name || !payload.description || !payload.category) {
+      showToast('Please fill in required fields (name, description, category).', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit & Pay Verification Fee';
+      return;
+    }
+
+    try {
+      const res = await Agent's ListAPI.post('/seller/create', payload);
+      if (res.agentId) {
+        showToast(`Listed! Bond of ${res.bondUSDC} USDC escrowed.`, 'success');
+        // Route straight to the buyer-facing detail page so the seller sees
+        // their listing the way buyers will.
+        setTimeout(() => window.location = `/agent/${res.agentId}`, 1400);
+      } else {
+        throw new Error(res.error || 'Unexpected response');
+      }
+    } catch (e) {
+      showToast('Submission failed: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Submit & Pay Verification Fee';
+    }
+  });
+
+  function selectBilling(type) {
+    document.querySelectorAll('[data-tier="per_token"], [data-tier="per_minute"]').forEach(c => c.classList.remove('selected'));
+    document.querySelector(`[data-tier="${type}"]`).classList.add('selected');
+  }
+
+  // Wire step-3 verification-tier cards (data-tier="basic"/"thorough")
+  document.querySelectorAll('#step-3 .tier-card[data-tier]').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('#step-3 .tier-card[data-tier]').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+    card.style.cursor = 'pointer';
+  });
+
+  // Wire step-3 bond-tier cards (data-bond="1"/"2"/"3"). The cards are <label>
+  // elements wrapping a hidden radio. Clicking the label fires the radio's
+  // change event, but we also need to mark the card with .selected for the
+  // validation queries in step-next / step-submit to pick it up.
+  document.querySelectorAll('#step-3 .tier-card[data-bond]').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('#step-3 .tier-card[data-bond]').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      const hidden = document.getElementById('selected-bond');
+      if (hidden) hidden.value = card.dataset.bond;
+    });
+    card.style.cursor = 'pointer';
+  });
+
+  function updateTokenPreview() {
+    const minIn  = parseFloat(document.getElementById('create-min-input')?.value);
+    const maxIn  = parseFloat(document.getElementById('create-max-input')?.value);
+    const minOut = parseFloat(document.getElementById('create-min-output')?.value);
+    const maxOut = parseFloat(document.getElementById('create-max-output')?.value);
+    const el = document.getElementById('price-preview');
+    if (minIn && maxIn && minOut && maxOut) {
+      if (maxOut > maxIn) {
+        el.textContent = '$' + minIn.toFixed(2) + '–$' + maxIn.toFixed(2) + ' input -> $' + minOut.toFixed(2) + '–$' + maxOut.toFixed(2) + ' output';
+        el.style.color = '';
+      } else {
+        el.textContent = 'Output cost max must exceed input cost max';
+        el.style.color = 'var(--red)';
+      }
+    } else {
+      el.textContent = 'Set USD ranges above';
+      el.style.color = '';
+    }
+  }
+
+  /* ── Custom model dropdown ─────────────────────────────────── */
+  (function() {
+    const trigger  = document.getElementById('mdl-trigger');
+    const panel    = document.getElementById('mdl-panel');
+    const trigText = document.getElementById('mdl-trigger-text');
+    const hidden   = document.getElementById('create-model');
+    if (!trigger || !panel) return;
+
+    function open()  { trigger.classList.add('open'); panel.classList.add('open'); }
+    function close() { trigger.classList.remove('open'); panel.classList.remove('open'); }
+    function toggle(){ trigger.classList.contains('open') ? close() : open(); }
+
+    trigger.addEventListener('click', toggle);
+    trigger.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      if (e.key === 'Escape') close();
+    });
+
+    panel.querySelectorAll('.mdl-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        panel.querySelectorAll('.mdl-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        hidden.value = opt.dataset.value;
+        trigText.textContent = opt.textContent;
+        trigText.style.color = '';
+        close();
+      });
+    });
+
+    document.addEventListener('click', e => {
+      if (!trigger.contains(e.target) && !panel.contains(e.target)) close();
+    });
+  })();
+</script>
+{% endblock %}

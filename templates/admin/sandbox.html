@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Sandbox Results{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+  <aside class="admin-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Protocol</div>
+      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/sandbox" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">SBX</span> Sandbox Results</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <div class="mb-32">
+      <h1 style="font-size:1.75rem; margin-bottom:6px;">Sandbox & Security Gates</h1>
+      <p class="text-sm text-muted">Automated security gate results for agent submissions. All 4 gates must pass before an agent can be listed.</p>
+    </div>
+
+    <!-- Gate Legend -->
+    <div class="grid-4 mb-32">
+      {% for gate, label, code, desc in [
+        ('static_scan', 'Static Scan', 'SCN', 'Permissions audit, hidden instructions, dependency check'),
+        ('sandbox', 'Sandbox', 'SBX', 'Isolated execution, canary tokens, network monitoring'),
+        ('gatekeeper_ai', 'Gatekeeper AI', 'GKP', 'Adversarial session with signed on-chain verdict'),
+        ('model_fingerprint', 'Model Fingerprint', 'FPR', 'Detects rejected model resubmitted under new identity'),
+      ] %}
+      <div class="stat-card">
+        <div style="font-family:var(--font-mono); font-size:.625rem; font-weight:700; color:var(--red); letter-spacing:.1em; text-transform:uppercase; margin-bottom:8px;">{{ code }}</div>
+        <div class="font-bold text-sm mb-4">{{ label }}</div>
+        <div class="text-xs text-muted">{{ desc }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Results -->
+    {% for r in results %}
+    <div class="card mb-20" style="border-color:{{ 'rgba(34,197,94,.2)' if r.overall == 'pass' else 'rgba(245,158,11,.25)' }};">
+      <div class="flex-between mb-20">
+        <div>
+          <div class="font-bold" style="font-size:1.0625rem;">{{ r.agent }}</div>
+          <div class="text-xs text-muted font-mono">{{ r.vrf_id }} · {{ r.seller }} · {{ r.tier.title() }} tier · Completed {{ r.completed }}</div>
+        </div>
+        <div class="flex-center gap-10">
+          {% if r.overall == 'pass' %}
+          <span class="badge badge-approved">✓ All Gates Passed</span>
+          {% else %}
+          <span class="badge badge-review">⚠ Review Required</span>
+          {% endif %}
+          <a href="/admin/review/{{ r.vrf_id }}" class="btn btn-ghost btn-sm">Human Review →</a>
+        </div>
+      </div>
+
+      <div class="grid-4 gap-16 mb-16">
+        {% for gate_key, gate_label in [('static_scan','Static Scan'),('sandbox','Sandbox'),('gatekeeper_ai','Gatekeeper AI'),('model_fingerprint','Fingerprint')] %}
+        {% set g = r.gates[gate_key] %}
+        <div style="background:var(--card-2); border:1px solid var(--border); border-radius:8px; padding:14px;">
+          <div class="flex-between mb-8">
+            <div class="text-xs text-muted">{{ gate_label }}</div>
+            {% if g.status == 'pass' %}
+            <span class="badge badge-approved" style="font-size:.5rem; padding:2px 6px;">PASS</span>
+            {% elif g.status == 'warning' %}
+            <span class="badge badge-review" style="font-size:.5rem; padding:2px 6px;">WARN</span>
+            {% else %}
+            <span class="badge badge-rejected" style="font-size:.5rem; padding:2px 6px;">FAIL</span>
+            {% endif %}
+          </div>
+          <div class="font-bold" style="font-size:1.25rem; color:{{ 'var(--green)' if g.status == 'pass' else 'var(--amber)' }};">{{ g.score }}</div>
+          <div class="text-xs text-muted" style="font-size:.6875rem; margin-top:2px;">/100</div>
+          <div class="text-xs text-muted mt-8" style="font-size:.6875rem; line-height:1.5;">{{ g.notes }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="card card-sm" style="background:var(--card-2);">
+        <div class="flex-center gap-8">
+          <span style="font-family:var(--font-mono);font-size:.625rem;font-weight:700;color:var(--text-3);">VERDICT</span>
+          <span class="text-sm">{{ r.verdict }}</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if not results %}
+    <div class="empty-state">
+      <div style="font-family:var(--font-mono);font-size:1.5rem;color:var(--border-2);margin-bottom:14px;font-weight:700;">[ ]</div>
+      <h3>No sandbox results yet</h3>
+      <p>Results appear here once agents are submitted and tested.</p>
+    </div>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

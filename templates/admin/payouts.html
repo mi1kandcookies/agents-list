@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Payouts{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+  <aside class="admin-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Protocol</div>
+      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <div class="flex-between mb-32">
+      <div>
+        <h1 style="font-size:1.75rem; margin-bottom:4px;">Payout Control</h1>
+        <p>Manage escrow releases, holds, and refunds</p>
+      </div>
+      <div class="flex-center gap-10">
+        <button class="btn btn-primary" id="release-all-btn">Release All Eligible</button>
+      </div>
+    </div>
+
+    <!-- Stats — every number aggregated from ChainTransaction -->
+    {% set pending = stats.total_volume - stats.usdc_settled %}
+    <div class="grid-4 mb-32">
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Pending Release</div>
+        <div class="stat-value" style="color:var(--warning);">${{ "{:,.2f}".format(pending if pending > 0 else 0) }}</div>
+        <div class="text-xs text-muted mt-8">{{ stats.active_orders }} escrow sessions</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Released (lifetime)</div>
+        <div class="stat-value" style="color:var(--success);">${{ "{:,.2f}".format(stats.usdc_settled) }}</div>
+        <div class="stat-change up mt-8">{{ stats.settle_count }} settle events</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Slashed (cumulative)</div>
+        <div class="stat-value" style="color:var(--error);">{{ stats.slash_count }}</div>
+        <div class="text-xs text-muted mt-8">Gatekeeper-signed incidents</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Protocol Revenue</div>
+        <div class="stat-value" style="color:var(--accent);">${{ "{:,.2f}".format(stats.platform_fees) }}</div>
+        <div class="text-xs text-muted mt-8">10 bps of ${{ "{:,.0f}".format(stats.total_volume) }}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex-between mb-16">
+        <h3>Payout Queue</h3>
+        <select class="form-select" style="width:auto;" onchange="filterPayouts(this.value)">
+          <option value="">All</option>
+          <option value="pending">Pending</option>
+          <option value="released">Released</option>
+          <option value="held">Held</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Payout ID</th>
+              <th>Seller</th>
+              <th>Agent</th>
+              <th>Amount</th>
+              <th>Net (after fee)</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="payouts-table">
+            {% for payout in payouts %}
+            <tr data-status="{{ payout.status }}">
+              <td class="font-bold text-accent">{{ payout.id }}</td>
+              <td class="font-bold">{{ payout.seller }}</td>
+              <td class="text-muted">{{ payout.agent }}</td>
+              <td class="font-bold">${{ "{:,.2f}".format(payout.amount) }}</td>
+              <td class="text-success font-bold">${{ "{:,.2f}".format(payout.amount * 0.999) }}</td>
+              <td>
+                {% if payout.status == 'released' %}
+                <span class="badge badge-approved">Released</span>
+                {% elif payout.status == 'pending' %}
+                <span class="badge badge-review">Pending</span>
+                {% elif payout.status == 'held' %}
+                <span class="badge badge-rejected">On Hold</span>
+                {% endif %}
+              </td>
+              <td class="text-muted">{{ payout.date }}</td>
+              <td>
+                <div class="flex-center gap-6">
+                  {% if payout.status == 'pending' %}
+                  <button class="btn btn-success btn-sm release-btn" data-payout-id="{{ payout.id }}">Release</button>
+                  <button class="btn btn-ghost btn-sm hold-btn" data-payout-id="{{ payout.id }}">Hold</button>
+                  {% elif payout.status == 'held' %}
+                  <button class="btn btn-success btn-sm release-btn" data-payout-id="{{ payout.id }}">Release</button>
+                  <button class="btn btn-danger btn-sm refund-btn" data-payout-id="{{ payout.id }}">Refund</button>
+                  {% elif payout.status == 'released' %}
+                  <span class="text-xs text-muted">Complete</span>
+                  {% elif payout.status == 'refunded' %}
+                  <span class="text-xs text-muted">Refunded</span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterPayouts(status) {
+  document.querySelectorAll('#payouts-table tr').forEach(row => {
+    row.style.display = (!status || row.dataset.status === status) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

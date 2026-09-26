@@ -1,0 +1,15 @@
+flask>=3.0.0
+requests>=2.31.0
+# Database
+Flask-SQLAlchemy>=3.1.0
+psycopg2-binary>=2.9.9
+# CORS — needed once frontend is decoupled from Flask server
+Flask-CORS>=4.0.0
+# Rate limiting
+Flask-Limiter>=3.5.0
+# Optional — enables Python-native on-chain calls (no Node service needed).
+web3>=6.15.0
+eth-account>=0.11.0
+eth-abi>=5.0.0
+# Production app server (Linux deploy targets)
+gunicorn>=23.0.0
