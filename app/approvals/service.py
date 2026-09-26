@@ -340,6 +340,7 @@ def start_device(approval: Approval) -> Approval:
         db.session.commit()
         raise ApprovalStateError(approval.state, "approval has expired")
     if approval.state == "pending":
+        db.session.commit()  # release the row lock
         return approval  # already started: idempotent
     if approval.state != "created":
         raise ApprovalStateError(approval.state, f"approval is {approval.state}")
@@ -365,15 +366,11 @@ def poll(approval: Approval) -> Approval:
     """Advance a pending approval: expire it when due, and for the device flow
     ask the provider once (never faster than its poll interval)."""
     approval = _lock(approval.id)
-    if approval.state != "pending":
-        return approval
-    if _expire_if_due(approval):
-        db.session.commit()
-        return approval
-    if approval.flow != "device" or not approval.device_code:
-        return approval
+    _expire_if_due(approval)
     now = _now()
-    if approval.next_poll_at is not None and now < _aware(approval.next_poll_at):
+    if approval.state != "pending" or approval.flow != "device" or not approval.device_code \
+            or (approval.next_poll_at is not None and now < _aware(approval.next_poll_at)):
+        db.session.commit()  # persist a TTL expiry, release the row lock
         return approval
 
     client = world_client()
