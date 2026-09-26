@@ -466,6 +466,7 @@ tbody tr:hover { background: var(--surface-2); }
 .nav-signin { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2); padding: 0 10px; height: 36px; display: inline-flex; align-items: center; border-radius: var(--radius-sm); }
 .nav-signin:hover { color: var(--ink); background: var(--surface-2); }
 .nav-toggle { display: none; }
+.nav-mobile-only { display: none; }
 
 /* Wallet control + popovers */
 .wallet-wrap { position: relative; }
@@ -1457,6 +1458,7 @@ tbody tr:hover { background: var(--surface-2); }
     border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
   }
   .nav-signin { display: none; }
+  .nav-mobile-only { display: list-item; list-style: none; }
   .grid-2, .grid-3, .does-grid { grid-template-columns: 1fr; }
   .guarantee { grid-template-columns: 1fr; }
   .guarantee > div + div { border-left: none; border-top: 1px solid var(--border); }

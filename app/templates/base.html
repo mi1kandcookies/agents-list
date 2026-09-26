@@ -29,6 +29,7 @@
       <li><a href="{{ url_for('catalog.marketplace') }}" {% if _on_browse %}aria-current="page"{% endif %}>Browse agents</a></li>
       <li><a href="{{ url_for('catalog.how_it_works') }}" {% if _path == '/how-it-works' %}aria-current="page"{% endif %}>How it works</a></li>
       <li><a href="{{ url_for('seller.seller_earnings') }}" {% if _on_operator %}aria-current="page"{% endif %}>For operators</a></li>
+      <li class="nav-mobile-only"><a href="/login">Sign in</a></li>
     </ul>
 
     <div class="nav-right">
