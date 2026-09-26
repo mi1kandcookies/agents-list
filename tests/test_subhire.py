@@ -371,6 +371,7 @@ def test_chain_page_renders_the_tree(client, root, agents, screener, human):
     assert 'data-verdict="PAY"' in html and 'data-verdict="ASK_HUMAN"' in html
     assert "waiting for the human" in html and "Sub-hire allocated to Agent B" in html
     assert 'data-depth="1"' in html
+    assert html.index("Escrow funded for") < html.index("Sub-hire allocated to Agent B")
 
     child_html = client.get(f"/jobs/{b['engagement_id']}/chain").get_data(as_text=True)
     assert "(this job)" in child_html and tokens.decode(token)["jti"] in child_html
