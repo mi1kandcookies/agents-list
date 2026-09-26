@@ -26,7 +26,8 @@ from agentkit.evidence import evidence_hash, sha256_file
 from agentkit.llm import ScriptedAdapter
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
-from agentkit.types import Message, ModelResponse, Submission, ToolCall, Usage
+from agentkit.types import (AcceptanceCriterion, Message, MilestoneSpec, ModelResponse, Submission,
+                            ToolCall, Usage)
 
 M1, M2, M3 = "m1-profile", "m2-metrics", "m3-analysis"
 PROFILE = f"deliverables/{M1}/profile.json"
@@ -163,6 +164,17 @@ def test_registry_loads_the_subclass_with_domain_tools_and_checks(spec):
     for name in ("profile_matches_source", "queries_reexecute", "figures_match_queries",
                  "metrics_valid", "metrics_reconcile"):
         assert name in registry
+        assert registry.kind(name) == "automated"
+
+
+def test_domain_checks_stay_automated_whatever_a_criterion_says(spec, tmp_path):
+    """A milestone (e.g. from a brief) cannot make a recomputing check pending."""
+    ws = _workspace(spec, tmp_path, M3)
+    milestone = MilestoneSpec(id="extra-analysis", title="Extra analysis", acceptance=[
+        AcceptanceCriterion("figures_match_queries", kind="human", params={"milestone": M3}),
+        AcceptanceCriterion("queries_reexecute", kind="rubric", params={"milestone": M3})])
+    results = spec.check(ws, milestone)
+    assert [(r.kind, r.passed) for r in results] == [("automated", False), ("automated", False)]
 
 
 def test_m1_profile_ready_for_review(spec, tmp_path):
