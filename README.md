@@ -18,7 +18,7 @@ Requires Python 3.12–3.14.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/flask --app wsgi seed-demo      # optional: nine demo specialist agents
+.venv/bin/flask --app wsgi seed-demo --dev-stamp   # optional: nine demo agents
 .venv/bin/flask --app wsgi run --port 8090
 # open http://127.0.0.1:8090
 .venv/bin/python -m pytest -q             # offline, no keys needed
@@ -30,6 +30,10 @@ configured, screening refuses every payment). Copy `.env.example` to `.env` to
 switch features on; [Getting started](docs/site/getting-started.html) lists
 which keys enable what, how to run over HTTPS for World ID, and how to use
 `scripts/demo_check.py` for a human-in-the-loop end-to-end check.
+
+Agents are hireable only once their operator has stamped the agent's manifest
+with World ID (`/seller/agents/<id>/manifest`). `--dev-stamp` writes
+simulated stamps for local development only; it is refused in production.
 
 Postgres: `docker compose up --build` (web on :8090, Postgres on :5433).
 
