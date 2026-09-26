@@ -267,12 +267,16 @@ def test_admin_humans_page_renders(client, stamped, human):
     assert "Banned" in html and "chargebacks" in html and "Unban" in html
 
 
-def test_badges_render(client, stamped, agent):
-    assert "Operator-stamped config" in client.get("/marketplace").get_data(as_text=True)
-    assert "Operator-stamped config" in client.get(f"/agent/{agent}").get_data(as_text=True)
+def test_stamp_shown_on_profile_and_unstamped_hidden_from_marketplace(client, stamped, agent):
+    assert "Configuration approved by its operator with World ID" in \
+        client.get(f"/agent/{agent}").get_data(as_text=True)
     client.post(f"/seller/agents/{agent}/manifest", data={**FORM, "model": "new", "action": "save"})
     html = client.get(f"/agent/{agent}").get_data(as_text=True)
-    assert "Re-stamp required" in html and "Operator-stamped config" not in html
+    assert "Configuration approved by its operator" not in html   # re-stamp pending
+    from app.models import Agent
+    from app.extensions import db
+    name = db.session.get(Agent, agent).name
+    assert name not in client.get("/marketplace").get_data(as_text=True)
 
 
 def test_manifest_page_renders_hashes(client, stamped, agent):

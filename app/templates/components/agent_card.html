@@ -98,7 +98,6 @@ No ratings yet
 {%- endmacro %}
 
 {% macro agent_card(agent) -%}
-{%- set badges = trust_badges(agent)|trim -%}
 <article class="agent-card">
   <div class="agent-card-top">
     {{ monogram(agent) }}
@@ -109,9 +108,6 @@ No ratings yet
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>
   {% if agent.ens_name %}<div class="agent-card-ens mono">{{ agent.ens_name }}</div>{% endif %}
-  {%- if badges %}
-  <div class="agent-card-badges">{{ badges }}</div>
-  {%- endif %}
   <div class="agent-card-foot">
     <div class="agent-card-price">
       <div>{{ price(agent) }}</div>
