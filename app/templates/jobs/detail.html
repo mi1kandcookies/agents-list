@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.engagement_id }}{% endblock %}
+
+{% block content %}
+<div class="container-sm" style="padding-top:48px; padding-bottom:80px;">
+  <div style="margin-bottom:24px;">
+    <div class="hero-eyebrow" style="margin-bottom:12px;"><a href="/jobs">Jobs</a> / {{ job.engagement_id }}</div>
+    <h1 style="font-size:clamp(1.5rem,3vw,2rem); letter-spacing:-.025em; margin-bottom:10px;">{{ job.outcome|truncate(140) }}</h1>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:var(--text-2); font-size:.875rem;">
+      <span class="badge badge-pending" data-status="{{ job.status }}">{{ job.status|replace('_', ' ') }}</span>
+      <span>{{ job.agent_name }} <span style="font-family:var(--font-mono); color:var(--text-3);">{{ job.agent_id }}</span></span>
+      <span style="font-family:var(--font-mono);">{{ job.total_micro|usdc }}</span>
+      {% if job.escrow_mode == 'simulated' %}<span class="badge badge-warning">simulated escrow</span>{% endif %}
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="card card-sm" role="alert" style="border-color:var(--red-border); background:var(--red-dim); color:var(--red); margin-bottom:20px;">{{ error }}</div>
+  {% endif %}
+
+  <section class="card" style="margin-bottom:20px;">
+    <h2 style="font-size:1rem; margin-bottom:12px;">Statement of work</h2>
+    <p style="color:var(--text-2); margin-bottom:10px; white-space:pre-wrap;">{{ job.outcome }}</p>
+    <div class="text-sm" style="font-family:var(--font-mono); color:var(--text-3); word-break:break-all;">sow_hash {{ job.sow_hash }}</div>
+    {% if job.deadline_at %}<div class="text-sm" style="color:var(--text-3); margin-top:6px;">Deadline: <span data-ts="{{ job.deadline_at }}">{{ job.deadline_at }}</span></div>{% endif %}
+    {% if job.status in ('scoped', 'awaiting_approval') %}
+    <form method="post" action="/jobs/{{ job.engagement_id }}/hire" style="margin-top:16px;">
+      <button type="submit" class="btn btn-gradient">Approve &amp; fund {{ job.total_micro|usdc }}</button>
+      <span class="form-hint" style="margin-left:10px;">Funds escrow after you verify with World ID.</span>
+    </form>
+    {% endif %}
+    {% if job.mandate %}
+    <div class="text-sm" style="margin-top:12px;">Agent mandate: <a href="{{ job.mandate.url }}" style="font-family:var(--font-mono);">{{ job.mandate.mandate_id }}</a> · <a href="{{ job.chain_url }}">custody chain</a></div>
+    {% endif %}
+  </section>
+
+  <section class="card" style="margin-bottom:20px;">
+    <h2 style="font-size:1rem; margin-bottom:12px;">Milestones</h2>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      {% for m in job.milestones %}
+      <div style="display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--card-2);">
+        <div style="min-width:0;">
+          <div style="font-weight:600;">#{{ m.idx + 1 }} {{ m.title }}</div>
+          <div class="text-sm" style="color:var(--text-2);">{{ m.acceptance }}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-family:var(--font-mono); font-weight:700;">{{ m.amount_micro|usdc }}</div>
+          {% if m.released_micro and m.released_micro < m.amount_micro %}<div class="text-sm" style="color:var(--text-3);">{{ m.released_micro|usdc }} released</div>{% endif %}
+          <span class="badge {{ 'badge-approved' if m.status == 'released' else 'badge-warning' if m.status == 'held' else 'badge-escrow' if m.status in ('funded', 'submitted') else 'badge-pending' }}">{{ m.status }}</span>
+          {% if job.status in ('funded', 'in_progress') and m.status in ('funded', 'submitted', 'held') %}
+          <form method="post" action="/jobs/{{ job.engagement_id }}/milestones/{{ m.idx }}/release" style="margin-top:8px;">
+            <button type="submit" class="btn btn-primary btn-sm">Approve &amp; release</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card" style="margin-bottom:20px;">
+    <h2 style="font-size:1rem; margin-bottom:12px;">Escrow ledger</h2>
+    {% if job.ledger %}
+    <div style="overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-size:.8125rem;">
+      <thead><tr style="text-align:left; color:var(--text-3);"><th style="padding:6px;">Entry</th><th style="padding:6px;">Kind</th><th style="padding:6px;">Amount</th><th style="padding:6px;">Status</th><th style="padding:6px;">Transaction</th></tr></thead>
+      <tbody>
+      {% for e in job.ledger %}
+        <tr style="border-top:1px solid var(--border);">
+          <td style="padding:6px; font-family:var(--font-mono);">{{ e.ledger_id }}</td>
+          <td style="padding:6px;">{{ e.kind }}</td>
+          <td style="padding:6px; font-family:var(--font-mono);">{{ e.amount_micro|usdc }}</td>
+          <td style="padding:6px;">{{ e.status }}</td>
+          <td style="padding:6px; font-family:var(--font-mono);">
+            {% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}…</a>
+            {% elif e.simulated %}<span style="color:var(--text-3);">simulated, not on chain</span>
+            {% else %}<span style="color:var(--text-3);">ledger only</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:var(--text-3);">Nothing has moved yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2 style="font-size:1rem; margin-bottom:12px;">Approvals</h2>
+    {% if job.approvals %}
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      {% for a in job.approvals %}
+      <div style="display:flex; justify-content:space-between; gap:12px; font-size:.8125rem;">
+        <a href="{{ a.url }}" style="font-family:var(--font-mono);">{{ a.approval_id }}</a>
+        <span>{{ a.kind }}{% if a.milestone_idx is not none %} #{{ a.milestone_idx + 1 }}{% endif %}</span>
+        <span>{{ a.state }}{% if a.screening %} · screening {{ a.screening.verdict }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--text-3);">No approvals requested yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

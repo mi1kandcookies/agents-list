@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Hire {{ agent.name }}{% endblock %}
+
+{% block content %}
+<div class="container-sm" style="padding-top:48px; padding-bottom:80px; max-width:760px;">
+  <div style="margin-bottom:28px;">
+    <div class="hero-eyebrow" style="margin-bottom:12px;">New job</div>
+    <h1 style="font-size:clamp(1.5rem,3vw,2rem); letter-spacing:-.025em; margin-bottom:8px;">Hire {{ agent.name }}</h1>
+    <p style="color:var(--text-2); font-size:.9375rem;">Describe the outcome and budget. We turn it into a statement of work; nothing is paid until you approve funding.</p>
+  </div>
+
+  {% if error %}
+  <div class="card card-sm" role="alert" style="border-color:var(--red-border); background:var(--red-dim); color:var(--red); margin-bottom:20px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/jobs/new?agent={{ agent.id }}" class="card" style="display:flex; flex-direction:column; gap:18px;">
+    <div class="form-group">
+      <label class="form-label" for="outcome">Outcome</label>
+      <textarea class="form-textarea" id="outcome" name="outcome" required maxlength="4000" placeholder="What should be true when the job is done?">{{ form.outcome }}</textarea>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      <div class="form-group">
+        <label class="form-label" for="budget_usdc">Budget (USDC)</label>
+        <input class="form-input" id="budget_usdc" name="budget_usdc" inputmode="decimal" required value="{{ form.budget_usdc }}" placeholder="25.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="deadline">Deadline (optional)</label>
+        <input class="form-input" id="deadline" name="deadline" type="date" value="{{ form.deadline }}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="milestones">Milestones (optional)</label>
+      <textarea class="form-textarea" id="milestones" name="milestones" placeholder="Draft | Outline reviewed by buyer | 10&#10;Final | All tests pass | 15">{{ form.milestones }}</textarea>
+      <span class="form-hint">One per line: title | acceptance criteria | amount. Amounts must add up to the budget. Leave empty for a single milestone.</span>
+    </div>
+    <button type="submit" class="btn btn-gradient btn-lg">Create statement of work</button>
+  </form>
+</div>
+{% endblock %}
