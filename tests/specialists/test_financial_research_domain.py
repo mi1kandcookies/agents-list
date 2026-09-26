@@ -571,3 +571,16 @@ def test_rubrics_are_well_formed():
         assert set(rubric) == {"name", "criteria", "threshold"}, path.name
         assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9, path.name
         assert all(set(c) == {"id", "description", "weight"} for c in rubric["criteria"])
+
+
+def test_eval_cases_are_well_formed(manifest):
+    from agentkit.types import Brief
+    milestones = {m["id"] for m in manifest["milestones"]}
+    cases = sorted((PKG / "evals" / "cases").glob("*.json"))
+    assert len(cases) >= 3
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert set(case) == {"name", "brief", "milestone", "notes"}, path.name
+        assert case["name"] == path.stem and case["milestone"] in milestones
+        brief = Brief.from_dict(case["brief"])
+        assert brief.specialist == "financial-research"
