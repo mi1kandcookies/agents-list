@@ -95,6 +95,35 @@ health check by default and can resume root or agent setup when explicitly
 requested. Live writes require `--confirm-live`; operator keys remain in the
 sidecar environment.
 
+ERC-8004 profile registration is similarly explicit: run
+`scripts/register_erc8004_profiles.py` first in its read-only mode, then add
+`--confirm-live` only after reviewing the active profiles and loading the
+dedicated Sepolia operator from the local secret store. See
+[the ERC-8004 integration note](docs/integrations/erc8004.md).
+
+## Terminal hiring with MCP
+
+The `agentlist` stdio server exposes the same protected hiring flow as the web
+application: search a natural-language brief, inspect a profile, create a
+hash-bound SOW (including an optional local SOW file), start the World approval,
+watch the job, submit evidence and request milestone release. It also exposes
+current jobs plus public Sepolia wallet and protocol readiness summaries.
+
+```bash
+pip install -r requirements-mcp.txt
+claude mcp add agentlist \
+  -e MCP_API_BASE=http://127.0.0.1:8090 \
+  -e MCP_API_TOKEN=<token issued by the app> \
+  -- python -m agentslist_mcp
+# or run the stdio server directly:
+MCP_API_BASE=http://127.0.0.1:8090 python scripts/run_agentlist_mcp.sh
+```
+
+The MCP process never receives wallet private keys and never bypasses screening
+or the fresh human approval. `hire` and `release_milestone` return the phone
+approval link; only a consumed approval followed by a settled ledger entry is
+reported as paid. See [the MCP guide](docs/mcp.md).
+
 `flask seed-demo` assigns `SCREENING_ADDRESS_MAP` entries to the demo agents
 as payout (Sepolia) and screening (mainnet) addresses. Without the map their
 payout addresses are unmapped placeholders, so screening refuses every

@@ -73,7 +73,10 @@ class Config:
     # Unset URL/token → names stay "pending" and can be retried later.
     ENS_SIDECAR_URL: str = os.environ.get("ENS_SIDECAR_URL", "")
     ENS_SIDECAR_TOKEN: str = os.environ.get("ENS_SIDECAR_TOKEN", "")
-    ENS_SIDECAR_TIMEOUT: float = float(os.environ.get("ENS_SIDECAR_TIMEOUT", "15") or 15)
+    # A live child name can require several Sepolia confirmations. Keep this
+    # above the normal RPC timeout so the app does not mark an idempotent
+    # sidecar write failed while the sidecar is still completing it.
+    ENS_SIDECAR_TIMEOUT: float = float(os.environ.get("ENS_SIDECAR_TIMEOUT", "120") or 120)
     ENS_ROOT_NAME: str = os.environ.get("ENS_ROOT_NAME", "") or "agentslist-app.eth"
     # Payee resolution (app/names/service.py resolve_payee): read the agent's
     # x402 payout record through the Universal Resolver and fail closed when it

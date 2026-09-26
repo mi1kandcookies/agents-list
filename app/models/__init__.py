@@ -76,6 +76,11 @@ class Agent(db.Model):
     manifest_stamp_approval_id = db.Column(db.String(32), nullable=True)
     manifest_stamp_sub  = db.Column(db.String(255), nullable=True)
     ens_name            = db.Column(db.String(255), nullable=True)
+    # Canonical ERC-8004 IdentityRegistry token. The registry contract is
+    # protocol-owned and configured in chain.config; this row stores the
+    # token id that binds the marketplace profile to the on-chain identity.
+    erc8004_agent_id    = db.Column(db.BigInteger, nullable=True)
+    erc8004_registry    = db.Column(db.String(64), nullable=True)
 
     @property
     def tags(self) -> list[str]:
@@ -119,6 +124,8 @@ class Agent(db.Model):
             "demo_listing": bool(self.demo_listing),
             "icon": self.icon,
             "ens_name": self.ens_name,
+            "erc8004_agent_id": self.erc8004_agent_id,
+            "erc8004_registry": self.erc8004_registry,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "deployer_wallet": self.deployer_wallet,

@@ -100,6 +100,14 @@ def test_agent_records_from_manifest(db, agent_row, sidecar):
     assert row.records["erc8004_agent_id"] == "12"
 
 
+def test_agent_records_prefer_registered_erc8004_identity(db, agent_row, sidecar):
+    agent_row.erc8004_agent_id = 10541
+    agent_row.erc8004_registry = "0x" + "a" * 40
+    agent_row.manifest_json = '{"erc8004_agent_id": "stale"}'
+    row = service.on_agent_published(agent_row)
+    assert row.records["erc8004_agent_id"] == "10541"
+
+
 def test_resolve_active_agent_name(client, db, agent_row, sidecar):
     row = service.on_agent_published(agent_row)
     response = client.get("/api/names/resolve", query_string={"name": row.name.upper()})

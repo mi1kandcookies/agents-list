@@ -5,8 +5,10 @@
   <h2 class="apr-panel-title">Confirm it's you</h2>
   <p class="apr-muted">You'll verify with World ID again, even if you signed in recently. That fresh check is what authorises this exact action.</p>
   <div class="apr-actions">
-    <a class="btn btn-primary btn-lg apr-world" href="{{ url_for('approvals.start', approval_id=approval.id) }}">Continue with World ID</a>
+    <button class="btn btn-primary btn-lg apr-world" type="button" data-approval-popup="{{ url_for('approvals.start', approval_id=approval.id) }}">Continue with World ID</button>
+    <a class="btn btn-secondary" href="{{ url_for('approvals.start', approval_id=approval.id) }}" target="_blank" rel="noopener" data-popup-fallback hidden>Open in a new tab</a>
     <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
   </div>
+  <p class="apr-popup-note" role="status" data-popup-note hidden>Approval window opened. Keep this page open while the provider checks your approval.</p>
   <p class="apr-live" role="status">{% if approval.state == 'pending' %}<span class="apr-spinner" aria-hidden="true"></span>Waiting for World ID, expires in{% else %}Expires in{% endif %} <span class="mono" data-countdown>…</span></p>
 </section>

@@ -11,7 +11,7 @@ from chain.config import (
 CHAIN_ENV = ("CHAIN_ID", "CHAIN_NAME", "RPC_URL", "EXPLORER_URL", "NATIVE_CURRENCY_SYMBOL",
              "NATIVE_CURRENCY_NAME", "ESCROW_ADDRESS", "AGENT_REGISTRY_ADDRESS",
              "REPUTATION_ADDRESS", "STAKING_ADDRESS", "ERC8004_IDENTITY_REGISTRY",
-             "PAYMENT_RECIPIENT")
+             "PAYMENT_RECIPIENT", "PAYMENT_TOKEN_MODE", "MOCK_USDC_ADDRESS", "USDC_ADDRESS")
 TX = "ab" * 32
 ADDR = "0x" + "1" * 40
 
@@ -81,6 +81,22 @@ def test_contract_addresses():
     assert "EscrowPayment" in get_deployment()["notDeployed"]
 
 
+def test_mock_payment_token_is_opt_in(monkeypatch):
+    mock = "0x" + "2" * 40
+    monkeypatch.setenv("MOCK_USDC_ADDRESS", mock)
+    assert get_address("USDC") == "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+    monkeypatch.setenv("PAYMENT_TOKEN_MODE", "mock")
+    assert get_address("USDC") == mock
+    assert get_address("MockUSDC") == mock
+    assert get_deployment()["paymentTokenMode"] == "mock"
+
+
+def test_invalid_payment_token_mode_falls_back_to_circle(monkeypatch):
+    monkeypatch.setenv("PAYMENT_TOKEN_MODE", "not-a-mode")
+    monkeypatch.setenv("MOCK_USDC_ADDRESS", "0x" + "2" * 40)
+    assert get_address("USDC") == "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+
+
 def test_invalid_address_override_is_ignored(monkeypatch):
     monkeypatch.setenv("ESCROW_ADDRESS", "0xnot-an-address")
     assert get_address("EscrowPayment") is None
@@ -97,6 +113,22 @@ def test_config_js_is_sepolia(client):
     assert '"chainIdHex": "0xaa36a7"' in body
     assert "sepolia.etherscan.io" in body
     assert not LEGACY_STRINGS.search(body)
+
+
+def test_wallet_status_is_public_and_token_guarded(client, monkeypatch):
+    monkeypatch.setenv("MCP_API_TOKEN", "mcp-test-token")
+    assert client.get("/api/wallet/status").status_code == 401
+    response = client.get("/api/wallet/status", headers={"Authorization": "Bearer mcp-test-token"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert "wallets" in body and "private_key" not in response.get_data(as_text=True)
+
+
+def test_protocol_status_reports_fail_closed_integrations(client):
+    body = client.get("/api/protocol/status").get_json()
+    assert body["onchain"]["chainId"] == SEPOLIA_CHAIN_ID
+    assert body["integrations"]["intercepta"]["fail_closed"] is True
+    assert body["integrations"]["world_approval"]["backend_gate"] is True
 
 
 def test_onchain_info(client):

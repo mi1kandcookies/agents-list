@@ -13,6 +13,11 @@
 {%- endmacro %}
 <section class="apr-panel apr-terminal is-{{ tone }}" id="approval-terminal" data-outcome="{{ outcome }}">
 {% if approval.state == 'consumed' %}
+  {% if payment_pending %}
+  {{ icon('wait', 'muted') }}
+  <h2>Payment pending</h2>
+  <p class="apr-muted">The approval was validated and the Sepolia transaction was submitted. Waiting for the token transfer receipt; no second payment will be signed.</p>
+  {% else %}
   {{ icon('ok', tone) }}
   <h2>Approved &amp; done</h2>
   <p class="apr-muted">{{ result.summary if result and result.summary else 'The action was carried out.' }}</p>
@@ -34,6 +39,7 @@
   {% endif %}
   {% if result and result.redirect %}
   <div class="apr-actions"><a class="btn btn-primary" href="{{ result.redirect }}">Continue</a></div>
+  {% endif %}
   {% endif %}
 {% elif approval.state == 'approved' %}
   {{ icon('wait', tone) }}

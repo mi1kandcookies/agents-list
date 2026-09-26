@@ -167,6 +167,23 @@ def test_create_engagement_returns_sow_milestones_and_preview(client, screener, 
     assert same["sow_hash"] == body["sow_hash"] and same["engagement_id"] != body["engagement_id"]
 
 
+def test_uploaded_sow_is_hash_bound_without_storing_raw_document(client, screener, agent_public_id):
+    document = {"filename": "api-spec.txt", "content": "GET /health\nreturns 200\n"}
+    body = _engagement(client, agent_public_id, sow_document=document)
+    assert body["sow"]["source_document"]["filename"] == "api-spec.txt"
+    assert body["sow"]["source_document"]["bytes"] == len(document["content"].encode())
+    assert body["sow"]["source_document"]["sha256"].startswith("0x")
+    assert document["content"] not in body["sow_json"] if "sow_json" in body else True
+
+
+def test_engagement_list_is_read_only_summary(client, screener, agent_public_id):
+    first = _engagement(client, agent_public_id)
+    second = _engagement(client, agent_public_id, outcome="Write a second report")
+    body = client.get("/api/engagements?limit=1").get_json()
+    assert body["count"] == 1 and body["engagements"][0]["engagement_id"] == second["engagement_id"]
+    assert "mandate_token" not in body["engagements"][0]
+
+
 def test_default_single_milestone(client, screener, agent_public_id):
     body = _engagement(client, agent_public_id, milestones=None, budget_usdc=7.5)
     assert [(m["idx"], m["amount_micro"]) for m in body["milestones"]] == [(0, 7_500_000)]

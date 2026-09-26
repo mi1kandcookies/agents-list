@@ -79,7 +79,17 @@ class AgentListClient:
     # --- §7 endpoints -----------------------------------------------------
 
     def search_agents(self, q: str = "", category: str | None = None, limit: int | None = None):
-        return self.request("GET", "/api/agents", params={"q": q, "category": category, "limit": limit})
+        # The Flask API calls this parameter ``per_page``.  Sending ``limit``
+        # here used to silently fall back to the web page default, which made
+        # terminal search results disagree with the UI.
+        return self.request("GET", "/api/agents", params={"q": q, "category": category,
+                                                            "per_page": limit})
+
+    def get_agent_profile(self, agent_id: str) -> dict:
+        return self.request("GET", f"/api/agents/ref/{_seg(agent_id)}")
+
+    def list_engagements(self, *, status: str | None = None, limit: int | None = None) -> dict:
+        return self.request("GET", "/api/engagements", params={"status": status, "limit": limit})
 
     def parse_sow(self, filename: str, data: bytes) -> dict:
         """Upload a statement of work (multipart ``file``); returns the draft scope."""
@@ -113,6 +123,18 @@ class AgentListClient:
 
     def get_chain(self, engagement_id: str) -> dict:
         return self.request("GET", f"/api/engagements/{_seg(engagement_id)}/chain")
+
+    def get_wallet_status(self) -> dict:
+        return self.request("GET", "/api/wallet/status")
+
+    def get_onchain_info(self) -> dict:
+        return self.request("GET", "/api/onchain/info")
+
+    def get_protocol_status(self) -> dict:
+        return self.request("GET", "/api/protocol/status")
+
+    def get_names_tree(self, root: str | None = None) -> dict:
+        return self.request("GET", "/api/names/tree", params={"root": root})
 
     def get_approval(self, approval_id: str) -> dict:
         return self.request("GET", f"/api/approvals/{_seg(approval_id)}")

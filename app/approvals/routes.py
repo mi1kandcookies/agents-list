@@ -49,6 +49,9 @@ def status(approval_id):
     if approval is None:
         return render_template("404.html"), 404
     approval = service.poll(approval)  # expire / advance before rendering
+    _refresh_payment(approval)
+    approval = service.get(approval.id)
+    context = _page_context(approval)
     return render_template(
         "approvals/status.html",
         approval=approval,
@@ -61,7 +64,7 @@ def status(approval_id):
         failure=service.failure_text(approval.failure_code),
         replays=service.replay_attempts(approval),
         start_error=request.args.get("error"),
-        **_page_context(approval),
+        **context,
     )
 
 
@@ -87,8 +90,29 @@ def _page_context(approval) -> dict:
         "amount_micro": action.get("amount_micro"),
         "screening": screening,
         "ledger": entries,
+        "payment_pending": any(e["status"] == "pending" for e in entries),
         "job_url": f"/jobs/{approval.engagement_id}" if approval.engagement_id else None,
     }
+
+
+def _refresh_payment(approval) -> None:
+    """Reconcile a pending on-chain receipt before rendering or polling.
+
+    Approval consumption is intentionally immediate after broadcast, but a
+    transaction is not called confirmed until its receipt is mined. Keeping
+    this small read-only reconciliation on the approval page makes that
+    distinction visible without allowing the browser to submit a second
+    payment.
+    """
+    if not approval.engagement_id:
+        return
+    from app.extensions import db
+    from app.models import Engagement
+    engagement = db.session.get(Engagement, approval.engagement_id)
+    if engagement is None:
+        return
+    from app.engagements import service as engagements
+    engagements.refresh(engagement)
 
 
 @bp.get("/approvals/<approval_id>/start")
@@ -118,7 +142,13 @@ def api_get(approval_id):
     if approval is None:
         return _api_error("approval not found", "NOT_FOUND", 404)
     approval = service.poll(approval)
-    return jsonify(service.to_dict(approval))
+    _refresh_payment(approval)
+    approval = service.get(approval.id)
+    out = service.to_dict(approval)
+    context = _page_context(approval)
+    out["payment_pending"] = context["payment_pending"]
+    out["ledger"] = context["ledger"]
+    return jsonify(out)
 
 
 @bp.post("/api/approvals/<approval_id>/cancel")

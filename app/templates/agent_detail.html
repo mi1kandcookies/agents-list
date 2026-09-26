@@ -30,6 +30,13 @@
           {% if agent.ens_name %}
           <div class="profile-ens mono" aria-label="ENS agent name">{{ agent.ens_name }}</div>
           {% endif %}
+          {% if agent.erc8004_agent_id is not none and agent.erc8004_registry %}
+          <div class="profile-chain-id" aria-label="ERC-8004 on-chain identity">
+            <span class="eyebrow">On-chain identity</span>
+            <span class="mono">ERC-8004 #{{ agent.erc8004_agent_id }}</span>
+            <a href="{{ explorer_url('address', agent.erc8004_registry) }}" target="_blank" rel="noopener">Identity registry ↗</a>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
