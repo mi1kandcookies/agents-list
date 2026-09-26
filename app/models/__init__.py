@@ -49,6 +49,9 @@ class Agent(db.Model):
     seller_rating       = db.Column(db.Float, nullable=False, default=0.0)
     tasks_completed     = db.Column(db.Integer, nullable=False, default=0)
     avg_completion_time = db.Column(db.String(20), nullable=False, default=" - ")
+    on_time_rate        = db.Column(db.Float, nullable=True)       # 0..1, None = no data yet
+    repeat_hire_rate    = db.Column(db.Float, nullable=True)       # 0..1, None = no data yet
+    demo_listing        = db.Column(db.Boolean, nullable=False, default=False)  # sample listing
     # On-chain identity (each agent is an independently-deployed entity)
     model_provider      = db.Column(db.String(40), nullable=True)
     model_name          = db.Column(db.String(80), nullable=True)
@@ -108,6 +111,9 @@ class Agent(db.Model):
             "seller_rating": self.seller_rating,
             "tasks_completed": self.tasks_completed,
             "avg_completion_time": self.avg_completion_time,
+            "on_time_rate": self.on_time_rate,
+            "repeat_hire_rate": self.repeat_hire_rate,
+            "demo_listing": bool(self.demo_listing),
             "ens_name": self.ens_name,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
