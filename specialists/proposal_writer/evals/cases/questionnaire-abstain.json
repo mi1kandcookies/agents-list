@@ -1,6 +1,7 @@
 {
   "name": "questionnaire-abstain",
   "milestone": "m3-draft",
+  "fixture": "questionnaire",
   "brief": {
     "engagement_id": "eval-pw-003",
     "specialist": "proposal-writer",
