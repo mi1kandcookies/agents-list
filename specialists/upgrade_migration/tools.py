@@ -18,9 +18,11 @@ code, not from the model:
     scan_patterns           old-API detector: regex match counts per rule
     export_patch            git diff of repo/ written to a deliverable
 
-Tools are plain functions `fn(workspace, *, fetch=None, run=None, **args)`.
-Network and subprocess access only go through the injected `fetch` / `run`
-(egress- and shell-policy checked by the kit). Snapshots live under
+Tools are plain functions `fn(workspace, *, fetch=None, run=None,
+resolve_path=None, **args)`. Network and subprocess access only go through
+the injected `fetch` / `run` (egress- and shell-policy checked by the kit),
+and every model-supplied path through `resolve_path` (workspace jail,
+inputs/ read-only, .agentkit/ refused). Snapshots live under
 .agentkit/upgrade_migration/, which the model cannot write to directly, so
 checks.py can trust them as recorded evidence.
 """
@@ -32,10 +34,13 @@ import json
 import math
 import os
 import re
+import shlex
 import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+
+from agentkit.policy import PolicyGate, jail_path
 
 STATE_DIR = ".agentkit/upgrade_migration"
 OSV_API = "https://api.osv.dev/v1"
@@ -46,6 +51,11 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "vendor", "dist",
 
 LOCKFILE_NAMES = {"package-lock.json", "poetry.lock", "Pipfile.lock", "go.sum",
                   "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json"}
+
+# Generated trees left out of exported patches (a test run or a local venv
+# must not end up in the customer's diff when the repo has no .gitignore).
+PATCH_EXCLUDES = [f":(exclude,glob)**/{d}/**" for d in
+                  ("__pycache__", ".pytest_cache", ".mypy_cache", ".tox", ".venv", "venv", "node_modules")]
 
 # Markers that switch a test off. Adding one in a patch is a test-integrity
 # violation unless the customer approved it.
@@ -62,12 +72,18 @@ TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)(/|$)|(^|/)test_[^/]*\.py$|
 
 # --- small helpers ----------------------------------------------------------
 
+def _is_link(path: Path) -> bool:
+    return path.is_symlink() or os.path.isjunction(path)
+
+
 def walk_files(root: Path) -> list[Path]:
-    """Files under `root`, sorted, never descending into SKIP_DIRS."""
+    """Regular files under `root`, sorted, never descending into SKIP_DIRS
+    and never following a symlink or junction (it could point outside the
+    workspace)."""
     out = []
     for here, dirs, names in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-        out += [Path(here) / n for n in names]
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not _is_link(Path(here) / d))
+        out += [Path(here) / n for n in names if not _is_link(Path(here) / n)]
     return sorted(out)
 
 
@@ -82,12 +98,20 @@ def _state(workspace: Path) -> Path:
 
 
 def _inside(workspace: Path, rel: str) -> Path:
-    """Resolve a workspace-relative path and refuse anything that escapes it."""
-    root = Path(workspace).resolve()
-    target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        raise ValueError(f"path escapes the workspace: {rel}")
-    return target
+    """Resolve a path that must stay inside `workspace`, checked lexically
+    before it touches the filesystem (agentkit.policy.jail_path); raises
+    PolicyViolation. For paths from the manifest or a patch, not the model."""
+    return jail_path(Path(workspace), rel)
+
+
+def _resolver(workspace: Path, resolve_path: Callable[..., Path] | None) -> Callable[..., Path]:
+    """The kit's resolve_path when the tool runs in the harness (it also marks
+    written files as agent-authored); the same PolicyGate rules when a
+    function is called directly."""
+    if resolve_path is not None:
+        return resolve_path
+    gate = PolicyGate()
+    return lambda p, *, write=False: gate.resolve_path(Path(workspace), p, write=write)
 
 
 def _write_json(path: Path, data: Any) -> None:
@@ -311,11 +335,12 @@ def collect_dependencies(repo: Path) -> list[dict]:
     return sorted(merged.values(), key=lambda d: (d["ecosystem"], d["name"], d["version"] or ""))
 
 
-def inventory_dependencies(workspace: Path, *, fetch=None, run=None, path: str = "repo",
-                           output: str | None = None, **_: Any) -> dict:
+def inventory_dependencies(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                           path: str = "repo", output: str | None = None, **_: Any) -> dict:
     """Parse the repo's dependencies. The first call also writes the baseline
     snapshot that later OSV-delta and upgrade-log checks compare against."""
-    repo = _inside(workspace, path)
+    resolve = _resolver(workspace, resolve_path)
+    repo = resolve(path)
     if not repo.is_dir():
         return {"error": f"{path}/ does not exist"}
     deps = collect_dependencies(repo)
@@ -332,7 +357,7 @@ def inventory_dependencies(workspace: Path, *, fetch=None, run=None, path: str =
         "dependencies": deps,
     }
     if output:
-        _write_json(_inside(workspace, output), {"path": path, "dependencies": deps})
+        _write_json(resolve(output, write=True), {"path": path, "dependencies": deps})
         result["written"] = output
     return result
 
@@ -369,14 +394,14 @@ def load_osv_state(workspace: Path) -> tuple[dict, dict]:
     return queries, vulns
 
 
-def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, path: str = "repo",
-             **_: Any) -> dict:
+def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, resolve_path=None,
+             path: str = "repo", **_: Any) -> dict:
     """Query OSV for every pinned dependency currently in the repo and store
     the answers plus each advisory's full record as evidence."""
     if fetch is None:
         return {"error": "network access is not available to this tool"}
-    deps = [d for d in collect_dependencies(_inside(workspace, path))
-            if d.get("version") and d["ecosystem"] in ("PyPI", "npm", "Go")]
+    all_deps = collect_dependencies(_resolver(workspace, resolve_path)(path))
+    deps = [d for d in all_deps if d.get("version") and d["ecosystem"] in ("PyPI", "npm", "Go")]
     state = _state(workspace) / "osv"
     queries, known = load_osv_state(workspace)
     errors: list[str] = []
@@ -415,8 +440,7 @@ def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, path: 
     return {"scanned": len(deps),
             "vulnerable_packages": len({(f["ecosystem"], f["name"], f["version"]) for f in findings}),
             "findings": findings, "errors": errors,
-            "skipped_unpinned": sorted({d["name"] for d in collect_dependencies(_inside(workspace, path))
-                                        if not d.get("version")})}
+            "skipped_unpinned": sorted({d["name"] for d in all_deps if not d.get("version")})}
 
 
 def _events_intervals(events: list[dict]) -> list[tuple[str, str | None, bool]]:
@@ -552,7 +576,7 @@ FINDINGS_COLUMNS = ["ecosystem", "name", "version", "vuln_id", "aliases", "sever
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "NONE": 0, "UNKNOWN": 0}
 
 
-def plan_upgrades(workspace: Path, *, fetch=None, run=None, path: str = "repo",
+def plan_upgrades(workspace: Path, *, fetch=None, run=None, resolve_path=None, path: str = "repo",
                   findings_csv: str | None = None, output: str | None = None, **_: Any) -> dict:
     """Candidate upgrade list from the recorded OSV evidence.
 
@@ -562,7 +586,8 @@ def plan_upgrades(workspace: Path, *, fetch=None, run=None, path: str = "repo",
     advisories fixed per change, then smallest bump.
     """
     import csv
-    deps = collect_dependencies(_inside(workspace, path))
+    resolve = _resolver(workspace, resolve_path)
+    deps = collect_dependencies(resolve(path))
     queries, vulns = load_osv_state(workspace)
     unscanned = [d["name"] for d in deps if d.get("version") and d["ecosystem"] in ("PyPI", "npm", "Go")
                  and dep_key(d["ecosystem"], d["name"], d["version"]) not in queries]
@@ -594,7 +619,7 @@ def plan_upgrades(workspace: Path, *, fetch=None, run=None, path: str = "repo",
         item["risk_tier"] = {"patch": "low", "minor": "medium"}.get(item["bump"], "high")
     result = {"findings": len(findings), "packages": len(plan), "unscanned": unscanned, "plan": plan}
     if findings_csv:
-        target_path = _inside(workspace, findings_csv)
+        target_path = resolve(findings_csv, write=True)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         with target_path.open("w", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=FINDINGS_COLUMNS)
@@ -603,7 +628,7 @@ def plan_upgrades(workspace: Path, *, fetch=None, run=None, path: str = "repo",
                 writer.writerow({k: (";".join(f[k]) if isinstance(f[k], list) else f[k]) for k in FINDINGS_COLUMNS})
         result["findings_csv"] = findings_csv
     if output:
-        _write_json(_inside(workspace, output), {"plan": plan, "unscanned": unscanned})
+        _write_json(resolve(output, write=True), {"plan": plan, "unscanned": unscanned})
         result["written"] = output
     return result
 
@@ -687,15 +712,17 @@ def parse_test_summary(output: str) -> dict:
     return counts
 
 
-def run_tests(workspace: Path, *, fetch=None, run: Callable | None = None, argv: list[str] | None = None,
-              cwd: str = "repo", label: str = "", timeout: int | None = None, **_: Any) -> dict:
+def run_tests(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
+              argv: list[str] | None = None, cwd: str = "repo", label: str = "",
+              timeout: int | None = None, **_: Any) -> dict:
     """Run the test command in repo/, parse the summary and append the run to
     the tool-owned test log (checks use it to prove tests ran after each step)."""
     if run is None:
         return {"error": "command execution is not available to this tool"}
     if not argv:
         return {"error": "argv is required, e.g. [\"python\", \"-m\", \"pytest\", \"-q\"]"}
-    res = run(list(argv), cwd=str(_inside(workspace, cwd)), timeout=timeout)
+    _resolver(workspace, resolve_path)(cwd)
+    res = run(list(argv), cwd=cwd, timeout=timeout)
     out = (res.stdout or "") + "\n" + (res.stderr or "")
     counts = parse_test_summary(out)
     log = _state(workspace) / "test_runs.jsonl"
@@ -715,6 +742,33 @@ def load_test_runs(workspace: Path) -> list[dict]:
     if not log.exists():
         return []
     return [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def command_argv(command: Any) -> list[str] | None:
+    """An intake test_command ("python -m pytest -q" or an argv list) as argv."""
+    if isinstance(command, str):
+        argv = shlex.split(command)
+    elif isinstance(command, list) and all(isinstance(a, str) for a in command):
+        argv = list(command)
+    else:
+        return None
+    return argv or None
+
+
+def record_test_command(workspace: Path, command: Any) -> list[str] | None:
+    """Store the client's test command as tool-owned evidence, so tests_pass
+    re-runs exactly what the client named (not what the model chose)."""
+    argv = command_argv(command)
+    if argv:
+        _write_json(_state(workspace) / "test_command.json", {"argv": argv, "at": _now()})
+    return argv
+
+
+def recorded_test_command(workspace: Path) -> list[str] | None:
+    path = Path(workspace) / STATE_DIR / "test_command.json"
+    if not path.is_file():
+        return None
+    return command_argv(json.loads(path.read_text(encoding="utf-8")).get("argv"))
 
 
 # --- diff audit -----------------------------------------------------------------
@@ -812,10 +866,10 @@ def audit_patch_text(text: str, *, allow: list[str] | None = None, forbid: list[
     return report
 
 
-def audit_diff(workspace: Path, *, fetch=None, run=None, patch: str = "", allow: list[str] | None = None,
-               forbid: list[str] | None = None, **_: Any) -> dict:
+def audit_diff(workspace: Path, *, fetch=None, run=None, resolve_path=None, patch: str = "",
+               allow: list[str] | None = None, forbid: list[str] | None = None, **_: Any) -> dict:
     """Audit a patch file in the workspace before submitting it."""
-    target = _inside(workspace, patch)
+    target = _resolver(workspace, resolve_path)(patch)
     if not target.is_file():
         return {"error": f"{patch} not found"}
     return audit_patch_text(target.read_text(encoding="utf-8", errors="replace"), allow=allow, forbid=forbid)
@@ -846,8 +900,8 @@ def count_pattern_matches(repo: Path, detectors: list[dict]) -> dict[str, dict]:
     return out
 
 
-def scan_patterns(workspace: Path, *, fetch=None, run=None, detectors: list[dict] | None = None,
-                  path: str = "repo", **_: Any) -> dict:
+def scan_patterns(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                  detectors: list[dict] | None = None, path: str = "repo", **_: Any) -> dict:
     """Count old-API usages. The first scan of each detector id records its
     baseline (regex + count); later scans show progress toward zero."""
     detectors = detectors or []
@@ -858,7 +912,7 @@ def scan_patterns(workspace: Path, *, fetch=None, run=None, detectors: list[dict
             re.compile(det["regex"])
         except re.error as exc:
             return {"error": f"{det['id']}: bad regex: {exc}"}
-    counts = count_pattern_matches(_inside(workspace, path), detectors)
+    counts = count_pattern_matches(_resolver(workspace, resolve_path)(path), detectors)
     base_file = _state(workspace) / "detector_baseline.json"
     baseline = json.loads(base_file.read_text(encoding="utf-8")) if base_file.exists() else {}
     for det in detectors:
@@ -872,21 +926,38 @@ def scan_patterns(workspace: Path, *, fetch=None, run=None, detectors: list[dict
 
 # --- patch export -------------------------------------------------------------------
 
-def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, base_ref: str = "HEAD",
-                 output: str = "", path: str = "repo", **_: Any) -> dict:
+def is_git_repo(repo: Path) -> bool:
+    """repo/ is its own git repository (not a folder inside an enclosing one,
+    which git would otherwise walk up to)."""
+    return (Path(repo) / ".git").exists()
+
+
+def git_diff(run: Callable, cwd: str, base_ref: str = "HEAD") -> Any:
+    """`git diff <base_ref>` of the working tree at `cwd` (workspace-relative),
+    new files included (marked intent-to-add first), generated trees left
+    out, no external diff drivers or textconv filters. Returns the result
+    of `run`."""
+    spec = ["--", ".", *PATCH_EXCLUDES]
+    run(["git", "add", "--intent-to-add", "--all", *spec], cwd=cwd)
+    return run(["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", base_ref, *spec], cwd=cwd)
+
+
+def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
+                 base_ref: str = "HEAD", output: str = "", path: str = "repo", **_: Any) -> dict:
     """Write `git diff <base_ref>` of repo/ (new files included) to a deliverable."""
     if run is None:
         return {"error": "command execution is not available to this tool"}
     if not output.startswith("deliverables/"):
         return {"error": "output must be under deliverables/"}
-    if not re.fullmatch(r"[A-Za-z0-9._/~^-]+", base_ref):
+    if not re.fullmatch(r"[A-Za-z0-9._/~^][A-Za-z0-9._/~^-]*", base_ref):   # never an option
         return {"error": "invalid base_ref"}
-    cwd = str(_inside(workspace, path))
-    run(["git", "add", "--intent-to-add", "--all"], cwd=cwd)
-    res = run(["git", "diff", "--no-color", "--no-ext-diff", base_ref, "--", "."], cwd=cwd)
+    resolve = _resolver(workspace, resolve_path)
+    if not is_git_repo(resolve(path)):
+        return {"error": f"{path}/ is not a git repository"}
+    res = git_diff(run, path, base_ref)
     if res.exit_code != 0:
         return {"error": f"git diff failed: {(res.stderr or '').strip()[:400]}"}
-    target = _inside(workspace, output)
+    target = resolve(output, write=True)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(res.stdout or "", encoding="utf-8")
     audit = audit_patch_text(res.stdout or "")

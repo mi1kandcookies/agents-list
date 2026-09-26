@@ -10,17 +10,19 @@ deliverable that disagrees with the recomputation fails, whatever the
 model's report says.
 
 Signature: fn(workspace: Path, params: dict, *, run=None) ->
-{"passed": bool | None, "details": str, "score": float | None}.
+{"passed": bool | None, "details": str, "score": float | None}. Paths in
+params are checked lexically against the workspace before any file is
+opened (agentkit.policy.jail_path).
 """
 from __future__ import annotations
 
 import csv
 import json
-import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from agentkit.errors import PolicyViolation
 from specialists.upgrade_migration import tools as T
 
 SCANNABLE = ("PyPI", "npm", "Go")
@@ -40,7 +42,7 @@ def _short(items, n: int = 8) -> str:
 def _read_text(workspace: Path, rel: str) -> str | None:
     try:
         path = T._inside(workspace, rel)
-    except ValueError:
+    except PolicyViolation:
         return None
     return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else None
 
@@ -149,16 +151,21 @@ def plan_covers_findings(workspace: Path, params: dict, *, run=None) -> dict:
 # --- milestones 2/3: tests, OSV delta, diff scope ----------------------------------
 
 def _test_argv(workspace: Path, params: dict) -> list[str] | None:
+    """params.argv, else the client's test_command (recorded from the brief
+    by the specialist, or inputs/intake.json), else a guess from the repo."""
     if params.get("argv"):
         return list(params["argv"])
+    recorded = T.recorded_test_command(workspace)
+    if recorded:
+        return recorded
     intake = _read_text(workspace, "inputs/intake.json")
     if intake:
         try:
-            cmd = json.loads(intake).get("test_command")
+            cmd = T.command_argv(json.loads(intake).get("test_command"))
         except (ValueError, AttributeError):
             cmd = None
         if cmd:
-            return list(cmd) if isinstance(cmd, list) else shlex.split(cmd)
+            return cmd
     repo = T._inside(workspace, params.get("cwd", "repo"))
     if (repo / "pytest.ini").exists() or (repo / "pyproject.toml").exists() or (repo / "tests").is_dir():
         return ["python", "-m", "pytest", "-q"]
@@ -177,7 +184,8 @@ def tests_pass(workspace: Path, params: dict, *, run=None) -> dict:
     argv = _test_argv(workspace, params)
     if not argv:
         return _result(False, "no test command: set test_command in intake or argv in params")
-    cwd = str(T._inside(workspace, params.get("cwd", "repo")))
+    cwd = params.get("cwd", "repo")
+    T._inside(workspace, cwd)
     res = run(argv, cwd=cwd, timeout=params.get("timeout"))
     counts = T.parse_test_summary((res.stdout or "") + "\n" + (res.stderr or ""))
     total = counts["passed"] + counts["failed"] + counts["errors"]
@@ -273,7 +281,7 @@ def patch_matches_repo(workspace: Path, params: dict, *, run=None) -> dict:
     for f in files:
         try:
             target = T._inside(repo, f["path"])
-        except ValueError:
+        except PolicyViolation:
             bad.append(f"{f['path']} (escapes repo)")
             continue
         if f["status"] == "deleted":

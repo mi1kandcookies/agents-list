@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agentkit.errors import PolicyViolation
 from specialists.upgrade_migration import tools as T
 
 PKG_DIR = Path(T.__file__).parent
@@ -178,8 +179,40 @@ def test_inventory_baseline_is_write_once(tmp_path):
 
 
 def test_inventory_rejects_path_escape(tmp_path):
-    with pytest.raises(ValueError):
+    with pytest.raises(PolicyViolation):
         T.inventory_dependencies(tmp_path, path="../elsewhere")
+
+
+def test_tools_refuse_kit_state_and_inputs(tmp_path):
+    """Model-supplied paths cannot forge the evidence under .agentkit/ or
+    overwrite the client's inputs/."""
+    make_repo(tmp_path)
+    T.inventory_dependencies(tmp_path)
+    baseline = (tmp_path / T.STATE_DIR / "baseline.json").read_text(encoding="utf-8")
+    for output in (f"{T.STATE_DIR}/baseline.json", "inputs/inventory.json"):
+        with pytest.raises(PolicyViolation):
+            T.inventory_dependencies(tmp_path, output=output)
+    with pytest.raises(PolicyViolation):
+        T.plan_upgrades(tmp_path, findings_csv=f"{T.STATE_DIR}/osv/queries.json")
+    with pytest.raises(PolicyViolation):
+        T.audit_diff(tmp_path, patch=f"{T.STATE_DIR}/baseline.json")
+    assert (tmp_path / T.STATE_DIR / "baseline.json").read_text(encoding="utf-8") == baseline
+    assert not (tmp_path / "inputs").exists()
+
+
+def test_walk_skips_links_out_of_the_repo(tmp_path):
+    repo = make_repo(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "requirements.txt").write_text("secretpkg==1.0\n", encoding="utf-8")
+    try:
+        (repo / "linked").symlink_to(outside, target_is_directory=True)
+    except OSError:                       # Windows without symlink rights: a junction
+        import _winapi
+        _winapi.CreateJunction(str(outside), str(repo / "linked"))
+    assert (repo / "linked" / "requirements.txt").is_file()
+    names = {d["name"] for d in T.collect_dependencies(repo)}
+    assert "secretpkg" not in names and "fastjsonx" in names
 
 
 # --- OSV scan and plan ----------------------------------------------------------------
@@ -369,11 +402,18 @@ def test_scan_patterns_records_baseline(tmp_path):
 def test_export_patch_writes_deliverable(tmp_path):
     make_repo(tmp_path)
     run = fake_run(CLEAN_PATCH)
+    # repo/ must be a repository of its own, or git would diff an enclosing one
+    assert "not a git repository" in T.export_patch(tmp_path, run=run, output="deliverables/p.patch")["error"]
+    assert run.calls == []
+    (tmp_path / "repo" / ".git").mkdir()
     out = T.export_patch(tmp_path, run=run, output="deliverables/m2-upgrade/repo.patch")
     assert out["files"] == 2 and (tmp_path / "deliverables/m2-upgrade/repo.patch").read_text() == CLEAN_PATCH
-    assert run.calls[-1][0][:2] == ["git", "diff"]
+    argv, cwd = run.calls[-1]
+    assert argv[:2] == ["git", "diff"] and "--no-textconv" in argv and cwd == "repo"
+    assert any("__pycache__" in a for a in argv)                    # generated trees excluded
     assert "error" in T.export_patch(tmp_path, run=run, output="repo/x.patch")
     assert "error" in T.export_patch(tmp_path, run=run, output="deliverables/x.patch", base_ref="HEAD; rm -rf /")
+    assert "error" in T.export_patch(tmp_path, run=run, output="deliverables/x.patch", base_ref="-R")
 
 
 def test_tool_defs_are_well_formed():
@@ -469,6 +509,12 @@ def test_tests_pass(tmp_path):
     run = fake_run("7 passed")
     assert C.tests_pass(ws, {}, run=run)["passed"] is True
     assert run.calls[0][0] == ["python", "-m", "pytest", "-x"]
+    # the command recorded from the brief wins over inputs/intake.json
+    assert T.record_test_command(ws, ["python", "-m", "pytest", "-q", "tests"])
+    run = fake_run("7 passed")
+    assert C.tests_pass(ws, {}, run=run)["passed"] is True
+    assert run.calls[0] == (["python", "-m", "pytest", "-q", "tests"], "repo")
+    assert T.record_test_command(ws, "") is None and T.record_test_command(ws, {"x": 1}) is None
 
 
 def test_osv_delta(tmp_path):
