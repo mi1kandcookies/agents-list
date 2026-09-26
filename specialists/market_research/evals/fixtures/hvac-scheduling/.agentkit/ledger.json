@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {"id": "S1", "uri": "https://data.statistics-bureau.example.gov/contractors/2026", "title": "Contractor establishments release 2026", "retrieved_at": "2026-09-01T10:00:00Z"},
+    {"id": "S2", "uri": "https://brightwrench.example.com/pricing", "title": "Brightwrench pricing", "retrieved_at": "2026-09-01T10:05:00Z"},
+    {"id": "S3", "uri": "https://tallyho-dispatch.example.com/plans", "title": "Tallyho Dispatch plans", "retrieved_at": "2026-09-01T10:07:00Z"},
+    {"id": "S4", "uri": "https://fieldops-weekly.example.net/2026/scheduling-survey", "title": "FieldOps Weekly scheduling survey", "retrieved_at": "2026-09-01T10:12:00Z"},
+    {"id": "S5", "uri": "https://market-notes.example.org/fsm-spend-2025", "title": "FSM spend 2025", "retrieved_at": "2026-09-01T10:20:00Z"}
+  ],
+  "claims": [
+    {"id": "C1", "text": "There were 118,400 US HVAC contractor establishments in 2025.", "source": "S1", "quote": "In 2025 there were 118,400 HVAC contractor establishments in the United States", "location": "para 1"},
+    {"id": "C2", "text": "91,200 US HVAC contractor establishments had fewer than 20 employees in 2025.", "source": "S1", "quote": "of which 91,200 had fewer than 20 employees", "location": "para 1"},
+    {"id": "C3", "text": "Brightwrench Pro costs $59 per technician per month, billed annually.", "source": "S2", "quote": "Pro plan: $59 per technician per month, billed annually.", "location": "plans table"},
+    {"id": "C4", "text": "Tallyho Dispatch Team costs $49 per user per month.", "source": "S3", "quote": "Team plan costs $49 per user per month.", "location": "plans table"},
+    {"id": "C5", "text": "38% of small HVAC contractors use dedicated scheduling software.", "source": "S4", "quote": "38% of small HVAC contractors already use dedicated scheduling software", "location": "para 1"},
+    {"id": "C6", "text": "US trades spent $1.9B on field-service management software in 2025.", "source": "S5", "quote": "Spending on field-service management software for US trades reached $1.9 billion in 2025", "location": "para 1"},
+    {"id": "C7", "text": "HVAC was 22% of US trades FSM software spend in 2025.", "source": "S5", "quote": "HVAC accounted for 22% of it", "location": "para 1"}
+  ]
+}
