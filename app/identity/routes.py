@@ -34,7 +34,7 @@ def login():
     if current_human() is not None:
         return redirect(nxt)
     client = service.world_client()
-    if not (client.configured and client.redirect_uri):
+    if not (client.configured and service.redirect_uri()):
         return _error_page("Sign-in not configured",
                            "World ID sign-in is not set up on this server.", 200)
     approval = service.create_approval("session.login", {}, flow="web")

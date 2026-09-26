@@ -1,0 +1,37 @@
+# Uploaded to Vercel: the web app (wsgi.py, app/, chain/), requirements.txt
+# and vercel.json. Everything below runs elsewhere or only locally.
+# See docs/deploy/vercel.md.
+.git
+.github
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.worktrees/
+.claude/
+.pytest_cache/
+__pycache__/
+*.pyc
+instance/
+*.db
+*.sqlite
+*.sqlite3
+node_modules/
+public/
+
+# Not imported by the web app
+tests/
+docs/
+demo/
+scripts/
+ens/
+agentkit/
+specialists/
+agentslist_mcp/
+requirements-agents.txt
+requirements-dev.txt
+requirements-mcp.txt
+docker-compose.yml
+Dockerfile
+.dockerignore

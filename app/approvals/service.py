@@ -45,7 +45,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from flask import current_app, has_app_context
+from flask import current_app, has_app_context, has_request_context, request
 from sqlalchemy.exc import IntegrityError
 
 from app.approvals import actions
@@ -56,7 +56,8 @@ from app.common.ids import new_id
 from app.extensions import db
 from app.humans import service as humans
 from app.identity import pkce
-from app.identity.world import IdTokenError, WorldClient, WorldError
+from app.identity.world import (IdTokenError, WorldClient, WorldError, allowed_hosts,
+                                derive_redirect_uri)
 from app.models import (Approval, ApprovalEvent, Engagement, Human, Screening,
                         UsedIdTokenJti)
 
@@ -65,7 +66,7 @@ log = logging.getLogger("agents_list.approvals")
 __all__ = [
     "ApprovalError", "ApprovalNotFound", "ApprovalStateError", "ExecutionResult",
     "create_approval", "start_web", "complete_web", "start_device", "poll", "cancel",
-    "consume", "get", "to_dict", "world_client",
+    "consume", "get", "to_dict", "world_client", "redirect_uri",
 ]
 
 DEFAULT_TTL_SECONDS = 180
@@ -126,6 +127,21 @@ def world_client() -> WorldClient:
     if client is None:
         client = current_app.extensions["world_client"] = WorldClient()
     return client
+
+
+def redirect_uri() -> Optional[str]:
+    """The web-flow callback URL: WORLD_REDIRECT_URI when set; otherwise
+    https://<request host>/auth/world/callback, but only for a host listed in
+    WORLD_ALLOWED_HOSTS (e.g. a preview deployment). None when neither applies.
+
+    The callback arrives on the host that started the flow, so the start and
+    the code exchange derive the same value."""
+    configured = world_client().redirect_uri
+    if configured:
+        return configured
+    if not has_request_context():
+        return None
+    return derive_redirect_uri(request.host, allowed_hosts())
 
 
 def _event(approval: Approval, event: str, **detail) -> None:
@@ -322,7 +338,7 @@ def start_web(approval: Approval) -> str:
     state = pkce.new_state()
     url = world_client().authorize_url(state=state, nonce=approval.nonce,
                                        code_challenge=pkce.challenge_s256(verifier),
-                                       prompt="login", max_age=0)
+                                       prompt="login", max_age=0, redirect_uri=redirect_uri())
     approval.state_param = state
     approval.pkce_verifier = verifier
     if approval.state == "created":
@@ -369,7 +385,7 @@ def complete_web(state: str, code: Optional[str], error: Optional[str]) -> Appro
 
     client = world_client()
     try:
-        tokens = client.exchange_code(code, verifier)
+        tokens = client.exchange_code(code, verifier, redirect_uri=redirect_uri())
         claims = client.validate_id_token(tokens["id_token"], expected_nonce=approval.nonce,
                                           not_before=unix(approval.created_at),
                                           max_age_s=stepup_max_age_seconds())
@@ -435,7 +451,8 @@ def poll(approval: Approval) -> Approval:
         return approval
 
     client = world_client()
-    result = client.poll_device(approval.device_code)
+    # The stored interval carries slow_down across serverless instances.
+    result = client.poll_device(approval.device_code, interval=approval.poll_interval)
     interval = result.interval or approval.poll_interval or 5
     if result.status in ("pending", "slow_down"):
         if result.status == "slow_down":

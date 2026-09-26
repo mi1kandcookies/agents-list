@@ -21,6 +21,10 @@ Environment:
     WORLD_CLIENT_ID       OIDC client id
     WORLD_CLIENT_SECRET   OIDC client secret
     WORLD_REDIRECT_URI    callback URL for the web flow
+    WORLD_ALLOWED_HOSTS   comma-separated hosts; when WORLD_REDIRECT_URI is
+                          unset, a request to one of these hosts uses
+                          https://<host>/auth/world/callback (see
+                          derive_redirect_uri)
     WORLD_REQUIRED_ACR    if set, ID tokens must carry exactly this `acr`
                           (e.g. https://world.org/oidc/acr/orb-v3)
 
@@ -53,6 +57,7 @@ AUTH_TIME_SKEW_SECONDS = 5          # auth_time vs. when we started the flow
 DEFAULT_DEVICE_INTERVAL = 5
 SLOW_DOWN_STEP = 5                  # RFC 8628 section 3.5
 HTTP_TIMEOUT_SECONDS = 10
+CALLBACK_PATH = "/auth/world/callback"
 
 ID_TOKEN_ERROR_CODES = frozenset({
     "BAD_SIGNATURE", "BAD_ALG", "BAD_ISSUER", "BAD_AUDIENCE", "EXPIRED",
@@ -116,6 +121,26 @@ class IdClaims:
 def _env(name: str) -> Optional[str]:
     value = os.environ.get(name, "").strip()
     return value or None
+
+
+def allowed_hosts(raw: Optional[str] = None) -> frozenset[str]:
+    """WORLD_ALLOWED_HOSTS as a set of lower-case hosts (host[:port])."""
+    raw = _env("WORLD_ALLOWED_HOSTS") if raw is None else raw
+    return frozenset(h.strip().lower() for h in (raw or "").split(",") if h.strip())
+
+
+def derive_redirect_uri(host: Optional[str], allowed: frozenset[str]) -> Optional[str]:
+    """``https://<host>/auth/world/callback`` when ``host`` is exactly one of
+    ``allowed``, else None.
+
+    Only exact matches count (no wildcards), so a forged Host header can never
+    name a callback outside the list; the provider also accepts only callbacks
+    registered for the client.
+    """
+    host = (host or "").strip().lower()
+    if not host or host not in allowed:
+        return None
+    return f"https://{host}{CALLBACK_PATH}"
 
 
 def _is_int(value: Any) -> bool:
@@ -184,16 +209,20 @@ class WorldClient:
     # ── web flow ────────────────────────────────────────────────────────────
 
     def authorize_url(self, *, state, nonce, code_challenge, prompt="login", max_age=0,
-                      acr_values=None) -> str:
-        """Authorization URL for the code flow with PKCE S256."""
+                      acr_values=None, redirect_uri=None) -> str:
+        """Authorization URL for the code flow with PKCE S256.
+
+        ``redirect_uri`` overrides WORLD_REDIRECT_URI (e.g. one derived from
+        the request host); exchange_code() must then get the same value."""
         if not (state and nonce and code_challenge):
             raise ValueError("state, nonce and code_challenge are required")
-        if not self.client_id or not self.redirect_uri:
+        redirect_uri = redirect_uri or self.redirect_uri
+        if not self.client_id or not redirect_uri:
             raise WorldError("WORLD_CLIENT_ID and WORLD_REDIRECT_URI must be set")
         params = {
             "response_type": "code",
             "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
+            "redirect_uri": redirect_uri,
             "scope": "openid",
             "state": state,
             "nonce": nonce,
@@ -208,14 +237,15 @@ class WorldClient:
         sep = "&" if "?" in endpoint else "?"
         return endpoint + sep + urlencode(params)
 
-    def exchange_code(self, code, code_verifier) -> dict:
+    def exchange_code(self, code, code_verifier, redirect_uri=None) -> dict:
         """Redeem an authorization code; returns the token response."""
-        if not self.redirect_uri:
+        redirect_uri = redirect_uri or self.redirect_uri
+        if not redirect_uri:
             raise WorldError("WORLD_REDIRECT_URI must be set")
         status, body = self._token_request({
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": self.redirect_uri,
+            "redirect_uri": redirect_uri,
             "code_verifier": code_verifier,
         })
         if status != 200:
@@ -255,10 +285,15 @@ class WorldClient:
             self._device_intervals[start.device_code] = start.interval
         return start
 
-    def poll_device(self, device_code) -> DevicePoll:
-        """One token-endpoint poll for a device authorization (RFC 8628 section 3.4)."""
+    def poll_device(self, device_code, interval=None) -> DevicePoll:
+        """One token-endpoint poll for a device authorization (RFC 8628 section 3.4).
+
+        ``interval`` is the caller's stored poll interval. It is used when this
+        process has not seen the device code (another serverless instance
+        started it, or this one restarted), so a slow_down is never lost."""
         with self._lock:
-            interval = self._device_intervals.get(device_code, DEFAULT_DEVICE_INTERVAL)
+            known = self._device_intervals.get(device_code)
+        interval = max(known or 0, int(interval or 0)) or DEFAULT_DEVICE_INTERVAL
         try:
             status, body = self._token_request({"grant_type": DEVICE_GRANT, "device_code": device_code})
         except WorldError as exc:
