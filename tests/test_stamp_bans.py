@@ -286,6 +286,28 @@ def test_manifest_editor_round_trips_spec_hash(client, stamped, agent):
     assert stamp.stamp_status(_agent(agent)).ok
 
 
+def test_public_api_shows_only_the_manifest_hash_a_spec_hash_can_be_checked_against(
+        client, approve, stamped, agent):
+    # The public API exposes manifest_hash, never the manifest or its spec
+    # hash; a claimed spec hash is checked by rebuilding the whole manifest.
+    approval = _stamp(client, approve, agent, form={**FORM, "spec_hash": SPEC})
+    assert approval.state == "consumed", approval.failure_detail
+    row = _agent(agent)
+    one = client.get(f"/api/agents/{agent}").get_json()
+    listed = [a for a in client.get("/api/agents?per_page=50").get_json()["agents"]
+              if a["public_id"] == row.public_id]
+    assert len(listed) == 1
+    for public in (one, listed[0]):
+        assert public["operator_stamped"] is True
+        assert public["manifest_hash"] == row.manifest_hash
+        assert "spec_hash" not in public and SPEC not in str(public)
+    rebuilt = stamp.build_manifest(row, **FORM, spec_hash=SPEC)
+    assert stamp.manifest_hash(rebuilt) == one["manifest_hash"]
+    for claimed in (None, "0x" + "0" * 64):
+        wrong = stamp.build_manifest(row, **FORM, spec_hash=claimed)
+        assert stamp.manifest_hash(wrong) != one["manifest_hash"]
+
+
 # ── bans ──────────────────────────────────────────────────────────────────
 def test_banned_operator_blocks_agents_and_approvals(client, approve, stamped, agent, human):
     from app.humans import service as humans
