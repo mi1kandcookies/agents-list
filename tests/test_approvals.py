@@ -204,6 +204,50 @@ def test_banned_or_over_cap_buyer_is_blocked_before_the_provider(db, agent, huma
         service.start_web(banned)
 
 
+@pytest.mark.parametrize("verdict, state", [("PAY", "consumed"), ("REFUSE", "blocked"),
+                                            ("ASK_HUMAN", "blocked")])
+def test_consume_rescreens_the_payee(client, app, db, world_idp, calls, agent, fake_screener,
+                                     verdict, state):
+    payee = "0x" + "ab" * 20
+    app.extensions["screener"] = fake_screener
+    fake_screener.set(payee, verdict)
+    eng = _engagement(db, agent, None)
+    approval = service.create_approval(
+        "engagement.fund", {"engagement_id": eng.id, "amount_micro": 5_000_000,
+                            "payee_address": payee}, flow="web")
+    params = _start_web(client, approval.id)
+    _callback(client, params, code=world_idp.issue_code(nonce=params["nonce"]))
+    row = _reload(db, approval.id)
+    assert row.state == state and "rescreened" in _events(row)
+    assert fake_screener.calls[-1]["hop"] == "engagement.fund"
+    assert fake_screener.calls[-1]["chain_address"] == payee
+    assert len(calls) == (1 if verdict == "PAY" else 0)
+    if state == "blocked":
+        assert row.failure_code == "SCREENING_REFUSED"
+
+
+def test_bound_screening_is_shown_and_refuse_blocks(client, db, agent):
+    from app.models import Screening
+    rows = {}
+    for verdict in ("PAY", "REFUSE"):
+        rows[verdict] = Screening(hop="engagement.fund", chain_address="0x" + "ab" * 20,
+                                  verdict=verdict, reasons=[], traits=[], provider="fake")
+        db.session.add(rows[verdict])
+    db.session.commit()
+    eng = _engagement(db, agent, None)
+    fields = {"engagement_id": eng.id, "amount_micro": 1}
+
+    ok = service.create_approval("engagement.fund", {**fields, "screening_id": rows["PAY"].id},
+                                 flow="device")
+    data = client.get(f"/api/approvals/{ok.id}").get_json()
+    assert data["state"] == "created" and data["screening"]["verdict"] == "PAY"
+    assert {"cap_micro", "reasons", "fail_closed"} <= set(data["screening"])
+
+    refused = service.create_approval("engagement.fund",
+                                      {**fields, "screening_id": rows["REFUSE"].id}, flow="device")
+    assert refused.state == "blocked" and refused.failure_code == "SCREENING_REFUSED"
+
+
 def test_callback_from_another_browser_is_refused(client, app, db, world_idp, calls):
     approval = service.create_approval("manifest.publish", MANIFEST, flow="web")
     params = _start_web(client, approval.id)
