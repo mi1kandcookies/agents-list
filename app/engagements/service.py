@@ -150,8 +150,15 @@ def create_engagement(*, human_id: str, agent_id: int | None, title: str, brief:
     human = db.session.get(Human, human_id)
     if not human:
         raise EngagementError("human is not registered")
-    if agent_id is not None and not db.session.get(Agent, int(agent_id)):
-        raise EngagementError("agent not found")
+    selected_agent = None
+    if agent_id is not None:
+        if isinstance(agent_id, str) and not agent_id.isdigit():
+            from app.common.agent_ids import require_agent_id
+            selected_agent = Agent.query.filter_by(public_id=require_agent_id(agent_id)).first()
+        else:
+            selected_agent = db.session.get(Agent, int(agent_id))
+        if not selected_agent:
+            raise EngagementError("agent not found")
     title, brief = str(title or "").strip(), str(brief or "").strip()
     if not title or not brief:
         raise EngagementError("title and brief are required")
@@ -176,7 +183,7 @@ def create_engagement(*, human_id: str, agent_id: int | None, title: str, brief:
     depth = (parent.depth + 1) if parent else 0
     row = Engagement(
         id=_new_id("ENG"), human_id=human_id, parent_engagement_id=parent_engagement_id,
-        agent_id=agent_id, title=title, brief=brief, status="draft",
+        agent_id=selected_agent.id if selected_agent else None, title=title, brief=brief, status="draft",
         budget_atomic=int(budget_atomic), sow_hash=sow_hash(title, brief, int(budget_atomic), deadline, normalized),
         depth=depth, deadline=datetime.fromisoformat(deadline) if deadline else None,
     )

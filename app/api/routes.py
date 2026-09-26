@@ -71,6 +71,19 @@ def api_agent(agent_id):
     return jsonify(agent)
 
 
+@bp.route("/agents/public/<public_id>")
+def api_agent_public(public_id):
+    """Resolve the stable, check-digit agent identifier used by MCP."""
+    from app.common.agent_ids import is_valid_agent_id
+    from app.models import Agent as AgentModel
+    if not is_valid_agent_id(public_id):
+        return api_error("invalid agent id", 400, code="INVALID_AGENT_ID")
+    row = AgentModel.query.filter_by(public_id=public_id.upper()).first()
+    if not row:
+        return api_error("agent not found", 404, code="AGENT_NOT_FOUND")
+    return jsonify(row.to_dict())
+
+
 @bp.route("/agents/<int:agent_id>/rate", methods=["POST"])
 def api_rate_agent(agent_id):
     from app.models import Agent as AgentModel, Review as ReviewModel
