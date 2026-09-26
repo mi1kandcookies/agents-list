@@ -566,6 +566,33 @@ def test_bearer_token_enforced_when_configured(client, screener, agent_public_id
     assert resp.status_code == 201
 
 
+def test_same_origin_browser_allowed_without_token(client, screener, agent_public_id, monkeypatch):
+    """Our own pages call the JSON API from the browser without the MCP token."""
+    monkeypatch.setenv("MCP_API_TOKEN", "s3cret")
+    body = {"agent_id": agent_public_id, "outcome": "x", "budget_usdc": 1}
+    ok = client.post("/api/engagements", json=body, headers={"Sec-Fetch-Site": "same-origin"})
+    assert ok.status_code == 201
+    eid = ok.get_json()["engagement_id"]
+    # ...but a same-origin browser never receives the hired agent's mandate token
+    got = client.get(f"/api/engagements/{eid}", headers={"Sec-Fetch-Site": "same-origin"}).get_json()
+    assert "mandate_token" not in got
+    # Origin fallback (browsers without Sec-Fetch-Site)
+    assert client.post("/api/engagements", json=body,
+                       headers={"Origin": "http://localhost"}).status_code == 201
+
+
+def test_cross_site_browser_still_needs_token(client, screener, agent_public_id, monkeypatch):
+    monkeypatch.setenv("MCP_API_TOKEN", "s3cret")
+    body = {"agent_id": agent_public_id, "outcome": "x", "budget_usdc": 1}
+    assert client.post("/api/engagements", json=body,
+                       headers={"Sec-Fetch-Site": "cross-site"}).status_code == 401
+    assert client.post("/api/engagements", json=body,
+                       headers={"Origin": "https://evil.example"}).status_code == 401
+    # a same-site subdomain is not our origin either
+    assert client.post("/api/engagements", json=body,
+                       headers={"Sec-Fetch-Site": "same-site"}).status_code == 401
+
+
 # ── pages ─────────────────────────────────────────────────────────────────
 def test_agent_page_hire_links_into_jobs(client, agent):
     html = client.get(f"/agent/{agent}").get_data(as_text=True)

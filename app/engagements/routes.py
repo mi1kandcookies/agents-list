@@ -49,6 +49,19 @@ def _error(exc: EngagementError):
     return jsonify(body), exc.status
 
 
+def _same_origin_browser() -> bool:
+    """True for requests made by our own pages in a browser.
+
+    Browsers set Sec-Fetch-Site on every fetch and scripts cannot forge it;
+    Origin is the fallback for older browsers. Other sites and non-browser
+    clients don't qualify and must present the bearer token."""
+    site = request.headers.get("Sec-Fetch-Site")
+    if site is not None:
+        return site == "same-origin"
+    origin = request.headers.get("Origin")
+    return bool(origin) and origin.rstrip("/") == request.host_url.rstrip("/")
+
+
 def _api(fn):
     """Bearer MCP_API_TOKEN when configured (no-op otherwise, like
     require_api_key); EngagementError → {error, code, field}. Sets
@@ -59,10 +72,14 @@ def _api(fn):
         g.api_token_ok = False
         if token:
             provided = request.headers.get("Authorization", "")
-            if not hmac.compare_digest(provided.encode(), f"Bearer {token}".encode()):
+            if hmac.compare_digest(provided.encode(), f"Bearer {token}".encode()):
+                g.api_token_ok = True
+            elif not _same_origin_browser():
                 return jsonify({"error": "missing or invalid bearer token",
                                 "code": "UNAUTHORIZED"}), 401
-            g.api_token_ok = True
+            # Same-origin browser calls (our own pages) are allowed without the
+            # token but never get g.api_token_ok, so they can't read mandate
+            # tokens; money still moves only through a World ID approval.
         try:
             return fn(*args, **kwargs)
         except EngagementError as exc:
