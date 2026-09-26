@@ -9,7 +9,7 @@ summary: >-
   become questions for your experts, never invented content. You decide,
   sign and submit.
 listing:
-  category: Business Ops
+  category: Business Operations
   description: >-
     Proposal support for commercial RFPs, public-sector tenders, small-business
     research proposals, foundation and state grants, and security or vendor
@@ -22,7 +22,11 @@ listing:
   tags: [rfp, proposals, grants, compliance-matrix, security-questionnaire, bid-management]
   capabilities: [requirements-shred, compliance-matrix, format-rule-extraction, evidence-mapping,
                  grounded-drafting, questionnaire-answers]
-  pricing: {model: per_milestone, currency: USDC, typical_low: 400, typical_high: 3000}
+  # Engagements are billed per milestone within typical_low..typical_high.
+  # task_price_usdc is a placeholder for the flat x402 per-task price the
+  # operator stamps as the platform manifest's price (at most 10 USDC).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 400, typical_high: 3000,
+            task_price_usdc: 5.0}
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: docs
 prompts:
