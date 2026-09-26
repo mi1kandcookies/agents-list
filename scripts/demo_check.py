@@ -244,6 +244,10 @@ def step_hire_and_approve(api: Api, res: Results, eng: dict) -> dict | None:
     if status != 202:
         code = approval.get("code")
         res.check("start hire approval", False, f"{status} {code}")
+        if code in ("NOT_STAMPED", "RESTAMP_REQUIRED"):
+            say("  The agent's operator has not stamped its current manifest. Stamp it from "
+                "/seller/agents/<id>/manifest with World ID, or in development run "
+                "`flask --app wsgi seed-demo --dev-stamp`.")
         if code == "SCREENING_REFUSED":
             reasons = ((approval.get("screening") or {}).get("reasons") or [{}])
             say(f"  Screening refused the payee ({reasons[0].get('code')}). A payee with no "
