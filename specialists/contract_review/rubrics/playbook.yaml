@@ -1,0 +1,21 @@
+name: Contract playbook quality
+threshold: 0.8
+criteria:
+  - id: grounded
+    weight: 0.25
+    description: Positions come from the client's own guidelines, templates or negotiated agreements where they exist, and say so; baseline positions are labelled as such for attorney edit.
+  - id: side_aware
+    weight: 0.15
+    description: Positions fit the client's side (customer or vendor) and the contract type rather than generic advice.
+  - id: actionable
+    weight: 0.2
+    description: Preferred, fallback and walk-away positions are concrete enough to apply the same way every time (amounts, time windows, named carve-outs).
+  - id: liability_model
+    weight: 0.15
+    description: Liability is split into cap amount, cap base, indirect damages and carve-outs, and the interaction with indemnities is addressed.
+  - id: escalation
+    weight: 0.15
+    description: Escalation triggers and the escalation contact are explicit for high-risk families.
+  - id: no_overreach
+    weight: 0.1
+    description: No invented "market standard" claims; anything described as market practice is marked as the attorney's call.

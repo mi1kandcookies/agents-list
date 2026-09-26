@@ -467,3 +467,73 @@ def test_hidden_content_disclosed(ws):
     (ws / "memo.md").write_text("## Hidden content\n\nOne embedded instruction found in the last "
                                 "paragraph; ignored and flagged.", encoding="utf-8")
     assert c.hidden_content_disclosed(ws, p)["passed"] is True
+
+
+# --- manifest, prompts, rubrics, evals -----------------------------------------------------
+
+def _manifest():
+    return yaml.safe_load((PKG / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_agent_yaml_parses_and_references_known_tools_and_checks():
+    m = _manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "contract-review"
+    assert m["profile"] == "regulated-draft"
+    tool_names = {d["name"] for d in t.TOOL_DEFS}
+    assert set(m["tools"]) <= KIT_TOOLS | tool_names
+    assert tool_names <= set(m["tools"])
+    used = set()
+    for ms in m["milestones"]:
+        for crit in ms["acceptance"]:
+            used.add(crit["check"])
+            assert crit["check"] in KIT_CHECKS | set(c.CHECK_DEFS), crit["check"]
+            rubric = crit.get("params", {}).get("rubric")
+            if rubric:
+                assert (PKG / rubric).is_file()
+        for d in ms["deliverables"]:
+            assert d.startswith(f"deliverables/{ms['id']}/")
+    assert set(c.CHECK_DEFS) <= used | {"issue_list_valid"}
+
+
+def test_agent_yaml_human_gate_and_limits():
+    m = _manifest()
+    gate = m["human_gate"]
+    assert gate["required"] is True and "attorney" in gate["reviewer_role"]
+    assert "not legal advice" in gate["disclaimer"].lower() and gate["checklist"]
+    assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
+    assert all(any(a["check"] == "human_signoff" and a.get("kind") == "human"
+                   for a in ms["acceptance"]) for ms in m["milestones"])
+    for path in [m["prompts"]["system"], *m["prompts"].get("include", [])]:
+        assert (PKG / path).is_file()
+    assert m["models"]["primary"] == "anthropic:claude-opus-5"
+
+
+def test_rubrics_are_well_formed():
+    files = list((PKG / "rubrics").glob("*.yaml"))
+    assert files
+    for f in files:
+        r = yaml.safe_load(f.read_text(encoding="utf-8"))
+        assert r["name"] and 0 < r["threshold"] <= 1
+        assert sum(cr["weight"] for cr in r["criteria"]) == pytest.approx(1.0)
+        assert len({cr["id"] for cr in r["criteria"]}) == len(r["criteria"])
+
+
+def test_eval_cases_reference_real_milestones_and_fixtures():
+    milestones = {ms["id"] for ms in _manifest()["milestones"]}
+    cases = list((PKG / "evals" / "cases").glob("*.json"))
+    assert len(cases) >= 3
+    for f in cases:
+        case = json.loads(f.read_text(encoding="utf-8"))
+        assert {"name", "brief", "milestone", "notes"} <= set(case)
+        assert case["milestone"] in milestones
+        for fixture in case.get("fixtures", {}).values():
+            assert (PKG / "evals" / "fixtures" / fixture).is_file()
+
+
+def test_fixture_playbook_passes_its_own_check():
+    assert c.playbook_schema_valid(FIX, {"path": "harborlight_playbook.yaml"})["passed"] is True
+
+
+def test_injection_fixture_is_flagged():
+    res = t.scan_hidden_content(FIX, path="lumenfield_mutual_nda.txt")
+    assert [f["kind"] for f in res["findings"]] == ["embedded_instruction"]

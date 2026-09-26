@@ -1,0 +1,21 @@
+name: Contract issue list quality
+threshold: 0.8
+criteria:
+  - id: correctness
+    weight: 0.3
+    description: Each issue correctly describes what the quoted text does and how it departs from the playbook position.
+  - id: severity
+    weight: 0.2
+    description: Severities follow the playbook; walk-away items are critical and escalated; nothing critical is buried.
+  - id: interactions
+    weight: 0.15
+    description: Clause interactions are caught, e.g. an indemnity that sits under a low liability cap, or a definition that widens an obligation.
+  - id: recommendations
+    weight: 0.15
+    description: Recommendations and fallbacks are specific and proportionate, not rewrites of the whole clause.
+  - id: review_flags
+    weight: 0.1
+    description: Subjective legal judgements carry a review flag instead of being stated as fact.
+  - id: disclosure
+    weight: 0.1
+    description: Review notes disclose hidden content, missing inputs and assumptions plainly.
