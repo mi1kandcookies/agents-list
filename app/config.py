@@ -75,6 +75,15 @@ class Config:
     ENS_SIDECAR_TOKEN: str = os.environ.get("ENS_SIDECAR_TOKEN", "")
     ENS_SIDECAR_TIMEOUT: float = float(os.environ.get("ENS_SIDECAR_TIMEOUT", "15") or 15)
     ENS_ROOT_NAME: str = os.environ.get("ENS_ROOT_NAME", "") or "agentslist-app.eth"
+    # Payee resolution (app/names/service.py resolve_payee): read the agent's
+    # x402 payout record through the Universal Resolver and fail closed when it
+    # disagrees with the profile. Off → payees come from the profile.
+    ENS_RESOLVE_PAYEES: bool = _flag("ENS_RESOLVE_PAYEES", "0")
+    ENS_UNIVERSAL_RESOLVER: str = os.environ.get("ENS_UNIVERSAL_RESOLVER", "")
+
+    # ── Agent tasks paid over x402 v2 (app/api/tasks.py) ──────────────────
+    AGENT_TASK_PRICE_USDC: str = os.environ.get("AGENT_TASK_PRICE_USDC", "") or "0.05"
+    X402_MAX_PAYMENT_USDC: str = os.environ.get("X402_MAX_PAYMENT_USDC", "") or "10"
 
     # ── Runtime behavior controls ──────────────────────────────────────────
     # AUTO_MIGRATE: run `alembic upgrade head` at boot. On by default for local
@@ -97,6 +106,7 @@ class TestingConfig(Config):
     RATELIMIT_ENABLED = False
     AUTO_MIGRATE = False  # tests build the schema with create_all()
     ENS_SIDECAR_URL = ""  # tests install a fake names client
+    ENS_RESOLVE_PAYEES = False  # tests install a fake resolver
 
 
 class ProductionConfig(Config):
