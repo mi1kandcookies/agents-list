@@ -399,3 +399,19 @@ def test_manifest_parses_and_references_known_tools_and_checks():
         assert "human" in [a.get("kind", "automated") for a in ms["acceptance"]]
         for a in ms["acceptance"]:
             assert a["check"] in KIT_BUILTIN_CHECKS | set(CHECK_DEFS), a["check"]
+
+
+def test_prompts_and_rubrics_referenced_by_the_manifest_exist():
+    m = _manifest()
+    for rel in [m["prompts"]["system"], *m["prompts"]["include"]]:
+        assert (PACK / rel).is_file(), rel
+    system = (PACK / m["prompts"]["system"]).read_text(encoding="utf-8")
+    assert "not an audit" in system and "draft - do not post" in system
+    rubrics = [a["params"]["rubric"] for ms in m["milestones"] for a in ms["acceptance"]
+               if a["check"] == "rubric_grader"]
+    assert rubrics
+    for rel in rubrics:
+        rubric = yaml.safe_load((PACK / rel).read_text(encoding="utf-8"))
+        assert rubric["name"] and 0 < rubric["threshold"] <= 1
+        assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9
+        assert all(c["id"] and c["description"] for c in rubric["criteria"])
