@@ -11,6 +11,13 @@ Blueprints:
     admin    /admin/*
     api      /api/* (JSON)
     chain    /config.js, /api/x402/*, /api/onchain/*, legacy contract reads
+
+Custody-chain blueprints (docs/decisions/0001-custody-chain.md):
+    identity /login, /auth/world/*          approvals /approvals/*, /api/approvals/*
+    engagements /api/engagements/*          screening /api/screening/*
+    mandates /api/mandates/*, /api/engagements/<id>/chain
+    humans   /humans/*
+    names    /api/names/*, /names
 """
 from __future__ import annotations
 
@@ -25,8 +32,11 @@ MIGRATIONS_DIR = str(Path(__file__).resolve().parent / "models" / "migrations")
 
 
 def _load_dotenv(path: Path) -> None:
-    """Minimal .env loader (no python-dotenv dependency). Existing env wins."""
-    if not path.exists():
+    """Minimal .env loader (no python-dotenv dependency). Existing env wins.
+
+    Skipped under FLASK_ENV=testing so a developer's local .env can't leak
+    keys into the test suite."""
+    if os.environ.get("FLASK_ENV") == "testing" or not path.exists():
         return
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -70,8 +80,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     limiter.init_app(app)
 
     # Import models so their tables are registered on db.metadata before
-    # migrations or create_all() run. (Upstream called create_all() before the
-    # models were imported, so a fresh database came up with no tables.)
+    # migrations or create_all() run.
     from app import models  # noqa: F401
 
     from app.admin import bp as admin_bp
@@ -80,7 +89,23 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     from app.chain import bp as chain_bp
     from app.seller import bp as seller_bp
 
-    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
+    from app.intake import bp as intake_bp
+
+    # intake serves /new (the guided flow).
+    for bp in (intake_bp, catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
+        app.register_blueprint(bp)
+
+    # Custody chain (docs/decisions/0001-custody-chain.md); routes land per area.
+    from app.approvals import bp as approvals_bp
+    from app.engagements import bp as engagements_bp
+    from app.humans import bp as humans_bp
+    from app.identity import bp as identity_bp
+    from app.mandates import bp as mandates_bp
+    from app.names import bp as names_bp
+    from app.screening import bp as screening_bp
+
+    for bp in (identity_bp, approvals_bp, engagements_bp, screening_bp, mandates_bp,
+               humans_bp, names_bp):
         app.register_blueprint(bp)
 
     from chain.config import explorer_url, get_address, get_chain_config
@@ -131,6 +156,21 @@ def _register_cli(app: Flask) -> None:
         from app.sample_data import seed_sample_agents
         added = seed_sample_agents(db, Agent)
         print(f"Added {added} sample agents.")
+
+    @app.cli.command("seed-stamps")
+    def seed_stamps_command():
+        """DEVELOPMENT ONLY: mark the sample agents operator-stamped (simulated,
+        no World ID approval) so there are hireable listings to try."""
+        import sys
+        from app.seller.stamp import seed_sample_stamps, seed_stamps_refusal
+        refusal = seed_stamps_refusal(app)
+        if refusal:
+            print(f"Refusing: {refusal}", file=sys.stderr)
+            sys.exit(1)
+        names = seed_sample_stamps()
+        print(f"SIMULATED dev stamps written for {len(names)} sample agents: {', '.join(names) or '-'}")
+
+    app.cli.add_command(__import__("app.demo_seed", fromlist=["seed_demo"]).seed_demo)
 
 
 def _init_database(app: Flask) -> None:

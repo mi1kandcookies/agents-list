@@ -1,0 +1,12 @@
+<section class="apr-panel" id="approval-pending">
+  {% if start_error %}
+  <p class="apr-alert" role="alert">The identity provider could not be reached. Try again.</p>
+  {% endif %}
+  <h2 class="apr-panel-title">Confirm it's you</h2>
+  <p class="apr-muted">You'll verify with World ID again, even if you signed in recently. That fresh check is what authorises this exact action.</p>
+  <div class="apr-actions">
+    <a class="btn btn-primary btn-lg apr-world" href="{{ url_for('approvals.start', approval_id=approval.id) }}">Continue with World ID</a>
+    <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
+  </div>
+  <p class="apr-live" role="status">{% if approval.state == 'pending' %}<span class="apr-spinner" aria-hidden="true"></span>Waiting for World ID · expires in{% else %}Expires in{% endif %} <span class="mono" data-countdown>…</span></p>
+</section>

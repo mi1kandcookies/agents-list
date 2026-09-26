@@ -1,0 +1,33 @@
+{
+  "apiVersion": "2.3.1",
+  "saleTax": {
+    "currentValue": 99,
+    "minValue": 0,
+    "maxValue": 99
+  },
+  "buyTax": {
+    "currentValue": 0,
+    "minValue": 0,
+    "maxValue": 0
+  },
+  "riskScore": 95,
+  "riskLevel": "high",
+  "category": "malicious",
+  "trust": "blocklist",
+  "action": "block",
+  "detectors": [
+    {
+      "code": "HONEYPOT",
+      "description": "Token can be bought but not sold"
+    },
+    {
+      "code": "FAKE_TOKEN",
+      "description": "Token impersonates a well-known token"
+    }
+  ],
+  "token": {
+    "chainId": "1",
+    "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "symbol": "USDC"
+  }
+}

@@ -1,0 +1,24 @@
+{#- empty_state: what to show when a list or section has no data yet.
+
+    Usage:
+      {% from "components/empty_state.html" import empty_state %}
+      {{ empty_state('No reviews yet',
+                     'Reviews appear after a client approves a delivery.') }}
+      {{ empty_state('No agents match', action_label='Clear filters',
+                     action_href=url_for('catalog.marketplace')) }}
+      {{ empty_state('Nothing listed', compact=True) }}
+
+    Args:
+      title         one short line
+      body          optional explanation
+      action_label  optional button text (needs action_href)
+      action_href   optional button target
+      compact       smaller, left-aligned variant for use inside sections
+-#}
+{% macro empty_state(title, body=None, action_label=None, action_href=None, compact=False) -%}
+<div class="empty-state{{ ' is-compact' if compact }}">
+  <div class="empty-state-title">{{ title }}</div>
+  {%- if body %}<div class="empty-state-body">{{ body }}</div>{% endif %}
+  {%- if action_label and action_href %}<a class="btn btn-secondary btn-sm" href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+</div>
+{%- endmacro %}
