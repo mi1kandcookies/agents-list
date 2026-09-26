@@ -272,6 +272,13 @@ def test_m2_checks_pass_and_fail(ws):
     assert C.kb_consistent(ws, {"terms": ["deliver"], "articles_dir": f"{M2}/articles"})["passed"] is False
     grounded = C.articles_grounded(ws, {"articles_dir": f"{M2}/articles"})
     assert grounded["passed"] is False and "T99" in grounded["details"]
+    # a file written during the engagement is not client material, even via inputs/..
+    for src in (f"{M1}/intent_rules.json", f"inputs/../{M1}/intent_rules.json"):
+        (ws / M2 / "articles" / "late.md").write_text(
+            f"---\nintents: delivery_status\nsources: {src}\n---\nDeliveries arrive within 5 business days.\n",
+            encoding="utf-8")
+        own = C.articles_grounded(ws, {"articles_dir": f"{M2}/articles"})
+        assert own["passed"] is False and "late.md: source not found under inputs/" in own["details"]
     (ws / M2 / "macros.json").write_text(json.dumps([{"id": "x", "intents": ["nope"], "body": ""}]),
                                          encoding="utf-8")
     assert C.macros_valid(ws, {"macros": p["macros"], "rules": p["rules"]})["passed"] is False
@@ -317,6 +324,29 @@ def test_eval_holdout_sealed(ws):
     leak = C.eval_holdout_sealed(ws, {**base, "articles_dir": f"{M2}/articles"})
     assert leak["passed"] is False and held[0] in leak["details"]
     assert C.eval_holdout_sealed(ws, {**base, "holdout_fraction": 0.1})["passed"] is False
+
+
+def test_eval_holdout_sealed_against_source_export(ws):
+    _m1(ws)
+    tools.split_eval_set(ws, holdout_fraction=0.5)
+    params = {"tickets": f"{M1}/tickets_labeled.csv", "source": "inputs/tickets.csv",
+              "holdout": f"{M3}/eval_holdout.csv", "build": f"{M3}/build_split.csv",
+              "holdout_fraction": 0.5, "min_size": 1}
+    assert C.eval_holdout_sealed(ws, params)["passed"] is True
+    # relabel a held-out must-escalate ticket so a weak rule set looks perfect
+    hold = ws / M3 / "eval_holdout.csv"
+    rows = list(csv.DictReader(hold.open(encoding="utf-8")))
+    target = next((r for r in rows if r["must_escalate"] == "1"), rows[0])
+    target["must_escalate"] = "0" if target["must_escalate"] == "1" else "1"
+    _write_csv(hold, rows)
+    bad = C.eval_holdout_sealed(ws, params)
+    assert bad["passed"] is False and target["ticket_id"] in bad["details"]
+    # dropping a ticket from both the labeled export and the split is caught too
+    tools.split_eval_set(ws, holdout_fraction=0.5)
+    _rewrite_csv(ws / M1 / "tickets_labeled.csv", lambda rows: rows.pop())
+    tools.split_eval_set(ws, holdout_fraction=0.5)
+    dropped = C.eval_holdout_sealed(ws, params)
+    assert dropped["passed"] is False and "inputs/tickets.csv has 6" in dropped["details"]
 
 
 def test_escalation_recall_recomputes_and_rejects_forged_report(ws):
