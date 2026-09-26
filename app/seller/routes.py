@@ -242,7 +242,7 @@ def seller_manage_agent(agent_id):
 
 # ── Operator manifest and stamp (app/seller/stamp.py) ──────────────────────
 MANIFEST_FORM_FIELDS = ("model", "tools", "mcp_servers", "skills", "price_min_usdc",
-                        "price_max_usdc", "payout_address")
+                        "price_max_usdc", "payout_address", "spec_hash")
 
 
 @bp.route("/agents/<int:agent_id>/manifest", methods=["GET", "POST"])

@@ -8,6 +8,7 @@ and the fake screener."""
 from __future__ import annotations
 
 import hashlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -69,9 +70,9 @@ def _agent(agent_id):
     return _db.session.get(Agent, agent_id)
 
 
-def _stamp(client, approve, agent_id, **claims):
-    """Save FORM and stamp it through the page; returns the approval."""
-    resp = client.post(f"/seller/agents/{agent_id}/manifest", data={**FORM, "action": "stamp"})
+def _stamp(client, approve, agent_id, form=FORM, **claims):
+    """Save ``form`` and stamp it through the page; returns the approval."""
+    resp = client.post(f"/seller/agents/{agent_id}/manifest", data={**form, "action": "stamp"})
     assert resp.status_code == 302 and "/approvals/APR-" in resp.headers["Location"]
     approval_id = resp.headers["Location"].split("/approvals/")[1].split("/")[0]
     return approve(approval_id, **claims)
@@ -197,6 +198,91 @@ def test_manifest_page_requires_login_and_the_operator(client, stamped, agent, d
     g.pop("current_human", None)
     resp = fresh.post(f"/seller/agents/{agent}/manifest", data={**FORM, "action": "save"})
     assert resp.status_code == 403
+    assert stamp.stamp_status(_agent(agent)).ok
+
+
+# ── runtime spec hash (ADR 0001, 2026-09-26 amendment) ────────────────────
+SPEC = "0x" + "5e" * 32
+VECTOR_AGENT = SimpleNamespace(public_id="AGT-000J-6HB7-U")
+VECTOR_FORM = {"model": "Anthropic | claude", "tools": "bash\nbrowser", "mcp_servers": "github",
+               "skills": "Writes tests", "price_min_usdc": "0.05", "price_max_usdc": "0.2",
+               "payout_address": "0x" + "AB" * 20}
+# The hash of VECTOR_FORM's manifest from before spec_hash existed. Pinned:
+# manifests without a spec hash must keep hashing exactly as they did.
+VECTOR_HASH = "0x7c80e596b08792b89c68611f27f9c043b11e004064da1af794b9bbf4de093f4c"
+
+
+@pytest.mark.parametrize("absent", [None, "", "  \n"])
+def test_manifest_without_spec_hash_hashes_as_before(absent):
+    manifest = stamp.build_manifest(VECTOR_AGENT, **VECTOR_FORM, spec_hash=absent)
+    assert "spec_hash" not in manifest
+    assert stamp.manifest_hash(manifest) == VECTOR_HASH
+    assert stamp.manifest_hash(stamp.build_manifest(VECTOR_AGENT, **VECTOR_FORM)) == VECTOR_HASH
+
+
+def test_spec_hash_is_normalized_and_bound_into_the_hash():
+    manifest = stamp.build_manifest(VECTOR_AGENT, **VECTOR_FORM, spec_hash=f" {SPEC.upper()}\n")
+    assert manifest["spec_hash"] == SPEC
+    canonical = ('{"agent_id":"AGT-000J-6HB7-U","mcp_servers":["github"],'
+                 '"model":"Anthropic | claude",'
+                 '"payout_address":"0xabababababababababababababababababababab",'
+                 '"price_max_micro":200000,"price_min_micro":50000,"skills":["Writes tests"],'
+                 f'"spec_hash":"{SPEC}","tools":["bash","browser"],"v":1}}')
+    assert stamp.manifest_hash(manifest) == "0x" + hashlib.sha256(canonical.encode()).hexdigest()
+    assert stamp.manifest_hash(manifest) != VECTOR_HASH
+    other = stamp.build_manifest(VECTOR_AGENT, **VECTOR_FORM, spec_hash="0x" + "0" * 64)
+    assert stamp.manifest_hash(other) != stamp.manifest_hash(manifest)
+
+
+@pytest.mark.parametrize("bad", ["0x123", "5e" * 32, "0x" + "5e" * 31 + "5",
+                                 "0x" + "5e" * 32 + "5", "0x" + "g" * 64, "0x 5e" + "5e" * 31,
+                                 42, SPEC.encode()])
+def test_invalid_spec_hash_is_rejected(bad):
+    with pytest.raises(stamp.ManifestError) as exc:
+        stamp.build_manifest(VECTOR_AGENT, **VECTOR_FORM, spec_hash=bad)
+    assert exc.value.field == "spec_hash"
+
+
+def test_changing_spec_hash_requires_restamp(client, approve, stamped, agent):
+    url = f"/seller/agents/{agent}/manifest"
+    # Adding a spec hash to a stamped manifest is an edit like any other …
+    client.post(url, data={**FORM, "spec_hash": SPEC, "action": "save"})
+    assert stamp.stamp_status(_agent(agent)).code == "RESTAMP_REQUIRED"
+    page = client.get(url).get_data(as_text=True)
+    assert '<th scope="row">spec_hash</th>' in page and f"+ {SPEC}" in page
+    # … the next stamp covers it …
+    approval = _stamp(client, approve, agent, form={**FORM, "spec_hash": SPEC})
+    assert approval.state == "consumed", approval.failure_detail
+    row = _agent(agent)
+    assert stamp.stamp_status(row).ok and stamp.stamped_manifest(row)["spec_hash"] == SPEC
+    assert approval.action["manifest_hash"] == stamp.manifest_hash(stamp.current_manifest(row))
+    # … and changing or removing it needs a new stamp before anyone can hire.
+    for spec in ("0x" + "0" * 64, ""):
+        assert client.post(url, data={**FORM, "spec_hash": spec, "action": "save"}).status_code == 302
+        row = _agent(agent)
+        assert stamp.stamp_status(row).code == "RESTAMP_REQUIRED"
+        assert ("spec_hash" in stamp.current_manifest(row)) == bool(spec)
+        resp = _hire(client, agent)
+        assert resp.status_code == 409 and resp.get_json()["code"] == "RESTAMP_REQUIRED"
+
+
+def test_manifest_editor_round_trips_spec_hash(client, stamped, agent):
+    url = f"/seller/agents/{agent}/manifest"
+    client.post(url, data={**FORM, "spec_hash": SPEC.upper(), "action": "save"})
+    saved = stamp.current_manifest(_agent(agent))
+    assert saved["spec_hash"] == SPEC
+    assert f'name="spec_hash" value="{SPEC}"' in client.get(url).get_data(as_text=True)
+    # Saving the page back unchanged keeps the same hash.
+    client.post(url, data={**FORM, "spec_hash": SPEC, "action": "save"})
+    assert stamp.manifest_hash(stamp.current_manifest(_agent(agent))) == stamp.manifest_hash(saved)
+    # A bad value is refused and shown back; the saved manifest is untouched.
+    bad = client.post(url, data={**FORM, "spec_hash": "0x123", "action": "save"})
+    body = bad.get_data(as_text=True)
+    assert bad.status_code == 400 and "spec hash must be" in body and 'value="0x123"' in body
+    assert stamp.current_manifest(_agent(agent)) == saved
+    # A blank field leaves the key out, which is exactly the stamped manifest again.
+    client.post(url, data={**FORM, "spec_hash": "", "action": "save"})
+    assert "spec_hash" not in stamp.current_manifest(_agent(agent))
     assert stamp.stamp_status(_agent(agent)).ok
 
 
