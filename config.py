@@ -65,7 +65,6 @@ class Config:
     # ── Runtime behavior controls ──────────────────────────────────────────
     # Keep development convenient while requiring explicit opt-in in production.
     AUTO_SEED_DATA: bool = os.environ.get("AUTO_SEED_DATA", "1").strip().lower() in {"1", "true", "yes", "on"}
-    ENABLE_SIM_ENGINE: bool = os.environ.get("ENABLE_SIM_ENGINE", "1").strip().lower() in {"1", "true", "yes", "on"}
     STRICT_PROD_VALIDATION: bool = os.environ.get("STRICT_PROD_VALIDATION", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -74,7 +73,6 @@ class DevelopmentConfig(Config):
     DEBUG = True
     SQLALCHEMY_ECHO = False  # flip to True to debug queries
     AUTO_SEED_DATA = True
-    ENABLE_SIM_ENGINE = True
 
 
 class TestingConfig(Config):
@@ -83,14 +81,12 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     RATELIMIT_ENABLED = False
     AUTO_SEED_DATA = True
-    ENABLE_SIM_ENGINE = False
 
 
 class ProductionConfig(Config):
     """Production - strict, no debug, env-driven secrets."""
     DEBUG = False
     AUTO_SEED_DATA = os.environ.get("AUTO_SEED_DATA", "0").strip().lower() in {"1", "true", "yes", "on"}
-    ENABLE_SIM_ENGINE = os.environ.get("ENABLE_SIM_ENGINE", "0").strip().lower() in {"1", "true", "yes", "on"}
 
     @classmethod
     def init_app(cls, app):

@@ -22,7 +22,7 @@ Env variables:
     <CONTRACT>_ADDRESS       per-contract override for any redeploy:
                              MOCK_USDC_ADDRESS, AGENT_REGISTRY_ADDRESS,
                              REPUTATION_ADDRESS, STAKING_ADDRESS,
-                             ESCROW_ADDRESS, AUCTION_ADDRESS.
+                             ESCROW_ADDRESS.
                              Any unset value falls back to the Fuji defaults
                              below - so redeploying one contract doesn't
                              force you to re-set the rest.
@@ -60,7 +60,6 @@ _DEFAULT_ADDRESSES = {
     "ReputationContract": "0x40ef89Ce1E248Df00AF6Dc37f96BBf92A9Bf603A",
     "StakingSlashing":    "0xfc942b4d1Eb363F25886b3F5935394BD4932B896",
     "EscrowPayment":      "0xD19990C7CB8C386fa865135Ce9706A5A37A3f2f2",
-    "AuctionMarket":      "0xa7AEEca5a76bd5Cd38B15dfcC2c288d3645E53E3",
 }
 
 # Map from ADDRESSES key → canonical env var name. Keep this in sync with
@@ -71,7 +70,6 @@ _ADDRESS_ENV = {
     "ReputationContract": "REPUTATION_ADDRESS",
     "StakingSlashing":    "STAKING_ADDRESS",
     "EscrowPayment":      "ESCROW_ADDRESS",
-    "AuctionMarket":      "AUCTION_ADDRESS",
 }
 
 # Resolve every address once at import, allowing env overrides per-contract.
@@ -183,24 +181,6 @@ ABI = {
          "outputs":[]},
         {"type":"function","name":"completeUnstake","stateMutability":"nonpayable",
          "inputs":[{"name":"agentId","type":"uint256"},{"name":"recipient","type":"address"}],
-         "outputs":[]},
-    ],
-    "AuctionMarket": [
-        {"type":"function","name":"postBid","stateMutability":"nonpayable",
-         "inputs":[{"name":"depositAmount","type":"uint256"},{"name":"tokenBudget","type":"uint256"},
-                   {"name":"maxPricePerToken","type":"uint256"},{"name":"categoryId","type":"uint256"},
-                   {"name":"minTier","type":"uint8"},{"name":"expiresAt","type":"uint64"}],
-         "outputs":[{"type":"uint256"}]},
-        {"type":"function","name":"getBid","stateMutability":"view",
-         "inputs":[{"name":"bidId","type":"uint256"}],
-         "outputs":[{"components":[
-             {"name":"user","type":"address"},{"name":"depositAmount","type":"uint256"},
-             {"name":"tokenBudget","type":"uint256"},{"name":"maxPricePerToken","type":"uint256"},
-             {"name":"categoryId","type":"uint256"},{"name":"minTier","type":"uint8"},
-             {"name":"expiresAt","type":"uint64"},{"name":"claimedByAgentId","type":"uint256"},
-             {"name":"settled","type":"bool"},{"name":"cancelled","type":"bool"}],"type":"tuple"}]},
-        {"type":"function","name":"cancelBid","stateMutability":"nonpayable",
-         "inputs":[{"name":"bidId","type":"uint256"}],
          "outputs":[]},
     ],
 }
@@ -341,79 +321,6 @@ class OnChain:
         h = self._sign_send(tx, self.facilitator)
         self.w3.eth.wait_for_transaction_receipt(h)
         return {"sessionId": str(session_id), "status": "cancelled", "txHash": h.hex()}
-
-    def get_bid(self, bid_id: int) -> dict:
-        b = self._contracts["AuctionMarket"].functions.getBid(int(bid_id)).call()
-        return {
-            "bidId": str(bid_id),
-            "user": b[0],
-            "depositAmount": str(b[1]),
-            "tokenBudget": str(b[2]),
-            "maxPricePerToken": str(b[3]),
-            "categoryId": str(b[4]),
-            "minTier": int(b[5]),
-            "expiresAt": int(b[6]),
-            "claimedByAgentId": str(b[7]),
-            "settled": b[8],
-            "cancelled": b[9],
-        }
-
-    def post_bid(
-        self,
-        deposit_amount: int,
-        token_budget: int,
-        max_price_per_token: int,
-        category_id: int,
-        min_tier: int,
-        expires_at: int,
-    ) -> dict:
-        """Post an open auction bid. Facilitator pays gas."""
-        if not self.facilitator:
-            raise RuntimeError("FACILITATOR_PRIVATE_KEY not set")
-        usdc = self._contracts["MockUSDC"]
-        auc = self._contracts["AuctionMarket"]
-        base_nonce = self.w3.eth.get_transaction_count(self.facilitator.address)
-
-        # AuctionMarket pulls funds via transferFrom, so approve deposit first.
-        tx1 = usdc.functions.approve(
-            ADDRESSES["AuctionMarket"],
-            int(deposit_amount),
-        ).build_transaction(self._tx_params(nonce=base_nonce))
-        h1 = self._sign_send(tx1, self.facilitator)
-        self.w3.eth.wait_for_transaction_receipt(h1)
-
-        tx2 = auc.functions.postBid(
-            int(deposit_amount), int(token_budget), int(max_price_per_token),
-            int(category_id), int(min_tier), int(expires_at)
-        ).build_transaction(self._tx_params(nonce=base_nonce + 1))
-        h2 = self._sign_send(tx2, self.facilitator)
-        receipt = self.w3.eth.wait_for_transaction_receipt(h2)
-        bid_id = None
-        for log in receipt["logs"]:
-            if log["address"].lower() == ADDRESSES["AuctionMarket"].lower():
-                if len(log["topics"]) >= 2:
-                    bid_id = int(log["topics"][1].hex(), 16)
-                    break
-        return {
-            "bidId": str(bid_id) if bid_id is not None else None,
-            "status": "posted",
-            "txHashes": {
-                "approve": h1.hex(),
-                "postBid": h2.hex(),
-            },
-            "txHash": h2.hex(),
-            "snowtrace": f"https://testnet.snowtrace.io/tx/{h2.hex()}",
-        }
-
-    def cancel_bid(self, bid_id: int) -> dict:
-        """Cancel an open auction bid. Facilitator pays gas."""
-        if not self.facilitator:
-            raise RuntimeError("FACILITATOR_PRIVATE_KEY not set")
-        auc = self._contracts["AuctionMarket"]
-        tx = auc.functions.cancelBid(int(bid_id)).build_transaction(self._tx_params())
-        h = self._sign_send(tx, self.facilitator)
-        self.w3.eth.wait_for_transaction_receipt(h)
-        return {"bidId": str(bid_id), "status": "cancelled", "txHash": h.hex()}
 
     # ── x402 execute: EIP-3009 permit alone settles the payment ──────────────
     def x402_execute(self, p: dict) -> dict:

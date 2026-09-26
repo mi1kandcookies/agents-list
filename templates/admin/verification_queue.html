@@ -44,31 +44,13 @@
               <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
                 <span class="badge {{ meta[0] }}">{{ meta[1] }} {{ meta[2] }}</span>
                 <span class="badge {{ 'badge-testing' if item.tier == 'thorough' else 'badge-pending' }}">{{ item.tier.title() }} Audit</span>
-                {% if loop.index0 % 2 == 0 %}
-                <span class="exec-type-badge exec-type-composable" style="font-size:.5rem;">A2A · 4 stages</span>
-                {% else %}
-                <span class="exec-type-badge exec-type-standalone" style="font-size:.5rem;">Standalone</span>
-                {% endif %}
               </div>
               <div class="text-sm text-muted">{{ item.id }} · by <strong style="color:var(--text);">{{ item.seller }}</strong> · Submitted {{ item.submitted }}</div>
             </div>
           </div>
-          <div class="text-sm font-bold text-accent" style="flex-shrink:0;">{{ '$50' if item.tier == 'thorough' else '$10' }} USDC</div>
+          
         </div>
 
-        <!-- Subagent workflow summary for admin -->
-        {% if loop.index0 % 2 == 0 %}
-        <div style="background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
-          <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); flex-shrink:0;">Workflow</div>
-          {% for stage_name, stage_type in [('Input Parser','internal'),('Reasoning Engine','internal'),('Sub-Agent A','subagent'),('Output Formatter','internal')] %}
-          <div class="flex-center gap-6">
-            <div style="width:6px;height:6px;border-radius:50%;background:{{ 'var(--green)' if stage_type=='subagent' else 'var(--blue)' }};"></div>
-            <span style="font-size:.75rem; font-weight:{{ '600' if stage_type=='subagent' else '400' }}; color:{{ 'var(--green)' if stage_type=='subagent' else 'var(--text)' }};">{{ stage_name }}</span>
-            {% if not loop.last %}<span style="color:var(--border-2); font-size:.625rem;">→</span>{% endif %}
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %}
 
         {% if item.safety_score is not none %}
         <div class="grid-2 gap-32 mb-20">

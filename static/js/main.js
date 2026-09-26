@@ -107,7 +107,6 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    // entry-gate uses .entry-gate-overlay (not .modal-overlay) so it is never closed here
     document.querySelectorAll('.modal-overlay.open').forEach(m => closeModal(m.id));
   }
 });
@@ -130,7 +129,6 @@ document.addEventListener('click', (e) => {
 const rolePaths = {
   buyer:  '/marketplace',
   seller: '/seller/earnings',
-  agent:  '/sim',
   admin:  '/admin/dashboard',
 };
 document.querySelectorAll('.role-btn').forEach(btn => {
@@ -155,57 +153,6 @@ window.addEventListener('agents-list:connected', (e) => {
   }
 });
 
-// ── Live Price Ticker (agent detail page) ────────────────────────────────────
-function startLivePriceTicker(agentId) {
-  const priceEl = document.getElementById('live-price');
-  if (!priceEl) return;
-
-  async function tick() {
-    try {
-      const data = await Agent's ListAPI.get(`/api/price/${agentId}`);
-      const formatted = data.price < 1 ? data.price.toFixed(5) : data.price.toFixed(4);
-      priceEl.textContent = `$${formatted}`;
-      priceEl.style.color = 'var(--green)';
-      setTimeout(() => { priceEl.style.color = ''; }, 600);
-    } catch (_) {}
-  }
-  tick();
-  setInterval(tick, 4000);
-}
-
-// ── Live Ticker Strip (base nav) ───────────────────────────────────────────
-// Polls /api/price/<id> for each agent referenced by the ticker and fills in
-// the price. IDs come from data-agent-id which is set in the Jinja template.
-(function initTickerStripPolling() {
-  const POLL_MS = 15000;
-
-  function uniqueIds() {
-    return [...new Set([...document.querySelectorAll('.ticker-item[data-agent-id]')]
-      .map(el => el.dataset.agentId).filter(Boolean))];
-  }
-
-  async function pollTicker() {
-    const ids = uniqueIds();
-    if (!ids.length) return;
-    for (const id of ids) {
-      try {
-        const data = await Agent's ListAPI.get('/api/price/' + id);
-        const display = '$' + (data.price < 1 ? data.price.toFixed(5) : data.price.toFixed(4));
-        document.querySelectorAll('.ticker-item[data-agent-id="' + id + '"] .ticker-price')
-          .forEach(el => { el.textContent = display; });
-        const panelPrice = document.getElementById('panel-price-' + id);
-        if (panelPrice) panelPrice.textContent = display;
-      } catch (_) { /* ignore single-agent failures */ }
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    if (!document.querySelector('.ticker-item[data-agent-id]')) return;
-    pollTicker();
-    setInterval(pollTicker, POLL_MS);
-  });
-})();
-
 // ── Tier Selection ────────────────────────────────────────────────────────────
 // Scope selection clearing to the card's own group (.form-step if present,
 // otherwise the containing .grid-2) so clicking a billing card doesn't
@@ -224,12 +171,6 @@ document.querySelectorAll('.tier-card').forEach(card => {
       if (hidden) hidden.value = tier;
       const priceEl = document.getElementById('verification-price');
       if (priceEl) priceEl.textContent = tier === 'thorough' ? '$50.00 USDC' : '$10.00 USDC';
-    }
-    // Stake tier selection - writes to #selected-stake for the create form.
-    const stake = card.dataset.stake;
-    if (stake) {
-      const hidden = document.getElementById('selected-stake');
-      if (hidden) hidden.value = stake;
     }
   });
 });
@@ -415,11 +356,6 @@ if (searchInput) {
     }, 500);
   });
 }
-
-// ── Surge badge tooltip ────────────────────────────────────────────────────────
-document.querySelectorAll('.badge-surge').forEach(badge => {
-  badge.title = 'Price adjusted due to peak demand';
-});
 
 // ── Order completion + rating ──────────────────────────────────────────────────
 // Real handlers live in templates/order.html (#mark-complete calls
@@ -816,42 +752,4 @@ function makeDoughnutChart(id, labels, data, colors) {
   });
 })();
 
-// ── Entry Gate - required role selection on every page until role is chosen ────
-(function initEntryGate() {
-  document.addEventListener('DOMContentLoaded', () => {
-    const overlay = document.getElementById('entry-gate');
-    if (!overlay) return;
 
-    // Entry-gate disabled — was intermittently leaving the page dimmed
-    // after the modal closed. Prototype-mode: just let users navigate.
-    return;
-    // Never show on seller, admin, or demo pages (role already implied by the URL)
-    const path = window.location.pathname;
-    if (path.startsWith('/admin') || path.startsWith('/seller') || path.startsWith('/demo')) return;
-
-    // Skip if role already chosen
-    if (localStorage.getItem('agents-list_role')) return;
-
-    // Show with short delay so page renders first, then lock scroll
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        overlay.classList.add('open');
-        document.body.style.overflow = 'hidden';
-      }, 120);
-    });
-
-    function choose(role, dest) {
-      localStorage.setItem('agents-list_role', role);
-      overlay.classList.remove('open');
-      document.body.style.overflow = '';
-      window.location.href = dest;
-    }
-
-    document.getElementById('gate-buyer-btn')
-      ?.addEventListener('click', () => choose('buyer', '/marketplace'));
-    document.getElementById('gate-seller-btn')
-      ?.addEventListener('click', () => choose('seller', '/seller/earnings'));
-    document.getElementById('gate-agent-btn')
-      ?.addEventListener('click', () => choose('agent', '/sim'));
-  });
-})();

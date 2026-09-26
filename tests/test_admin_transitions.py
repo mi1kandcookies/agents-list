@@ -3,7 +3,6 @@ import unittest
 
 os.environ["FLASK_ENV"] = "testing"
 os.environ["AUTO_SEED_DATA"] = "1"
-os.environ["ENABLE_SIM_ENGINE"] = "0"
 
 from app import app  # noqa: E402
 from extensions import db  # noqa: E402

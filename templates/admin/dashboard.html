@@ -23,52 +23,29 @@
     <div class="flex-between mb-16">
       <div>
         <h1 style="font-size:1.75rem; margin-bottom:4px;">Protocol Dashboard</h1>
-        <p class="text-sm text-muted">Agent's List · Admin · Live from <code>ChainTransaction</code> on Avalanche Fuji</p>
+        <p class="text-sm text-muted">Agent's List · Admin</p>
       </div>
       <div class="flex-center gap-10">
         <div class="footer-chain"><span class="live-dot"></span> Live</div>
       </div>
     </div>
 
-    <!-- Data source toggle — transparent split between real on-chain vs seeded demo volume -->
-    <div style="display:flex; gap:12px; align-items:center; padding:10px 16px; margin-bottom:24px; background:var(--card-2); border:1px solid var(--border); border-radius:8px; font-family:var(--font-mono); font-size:.72rem;">
-      <span style="color:var(--text-3); font-size:.56rem; text-transform:uppercase; letter-spacing:.08em;">Showing</span>
-      {% if stats.live_only %}
-        <a href="?all=1" style="padding:3px 9px; background:transparent; border:1px solid var(--border); color:var(--text-3); border-radius:4px; text-decoration:none;">All activity ({{ "{:,}".format(stats.total_ct_rows) }})</a>
-        <span style="padding:3px 9px; background:rgba(34,197,94,.1); border:1px solid var(--green); color:var(--green); border-radius:4px;">● Live on-chain only ({{ stats.real_ct_rows }})</span>
-      {% else %}
-        <span style="padding:3px 9px; background:rgba(95,227,227,.1); border:1px solid var(--accent); color:var(--accent); border-radius:4px;">All activity ({{ "{:,}".format(stats.total_ct_rows) }})</span>
-        <a href="/admin/dashboard" style="padding:3px 9px; background:transparent; border:1px solid var(--border); color:var(--text-3); border-radius:4px; text-decoration:none;">Live on-chain only ({{ stats.real_ct_rows }})</a>
-      {% endif %}
-      <span style="margin-left:auto; color:var(--text-3); font-size:.62rem;">
-        {{ stats.real_ct_rows }} real Fuji tx · {{ "{:,}".format(stats.total_ct_rows - stats.real_ct_rows) }} seeded demo activity
-      </span>
-    </div>
-
-    <!-- Live Fuji Tx Feed — real on-chain txs, newest first. Auto-refreshes every 5s. -->
-    <div class="card mb-24" style="border:1px solid var(--green); background:linear-gradient(180deg, rgba(34,197,94,.04), transparent);">
+    <!-- Transaction feed (ChainTransaction audit log), newest first -->
+    <div class="card mb-24">
       <div class="flex-between mb-12">
         <div>
-          <div style="font-family:var(--font-mono); font-size:.625rem; text-transform:uppercase; letter-spacing:.12em; color:var(--green); margin-bottom:4px;">● LIVE FUJI TX FEED</div>
-          <h3 style="margin:0;">Real on-chain transactions</h3>
-          <p class="text-sm text-muted" style="margin-top:4px;">Every row below is a real tx on Avalanche Fuji. Fire a new one at <a href="/demo" style="color:var(--accent);">/demo</a> → it appears here within 5 seconds.</p>
+          <h3 style="margin:0;">Recent on-chain transactions</h3>
+          <p class="text-sm text-muted" style="margin-top:4px;">Payments and settlements recorded by the platform.</p>
         </div>
-        <button id="btn-refresh-txs" class="btn btn-ghost btn-sm">Refresh now</button>
+        <button id="btn-refresh-txs" class="btn btn-ghost btn-sm">Refresh</button>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>Kind</th>
-              <th>Tx Hash</th>
-              <th>Agent</th>
-              <th>Amount</th>
-              <th>Time</th>
-              <th>Explorer</th>
-            </tr>
+            <tr><th>Kind</th><th>Tx Hash</th><th>Agent</th><th>Amount</th><th>Time</th><th>Explorer</th></tr>
           </thead>
           <tbody id="live-tx-tbody">
-            <tr><td colspan="6" class="text-muted" style="padding:14px;">Loading real Fuji txs…</td></tr>
+            <tr><td colspan="6" class="text-muted" style="padding:14px;">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -79,7 +56,7 @@
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Total Agents</div>
         <div class="stat-value">{{ stats.total_agents }}</div>
-        <div class="stat-change up mt-8">{{ stats.verified_agents }} verified on-chain</div>
+        <div class="stat-change up mt-8">{{ stats.verified_agents }} verified</div>
       </div>
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Pending Verifications</div>
@@ -92,9 +69,9 @@
         <div class="stat-change up mt-8">{{ stats.settle_count }} total settled</div>
       </div>
       <div class="stat-card">
-        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Total Stake Locked</div>
-        <div class="stat-value" style="color:var(--warning);">${{ "{:,.0f}".format(stats.total_stake_usdc) }}</div>
-        <div class="stat-change up mt-8">across {{ stats.verified_agents }} bonded agents</div>
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Volume (USDC)</div>
+        <div class="stat-value">${{ "{:,.2f}".format(stats.total_volume) }}</div>
+        <div class="stat-change up mt-8">${{ "{:,.4f}".format(stats.platform_fees) }} in fees</div>
       </div>
     </div>
 
@@ -170,12 +147,10 @@
               <th>Verification</th>
               <th>Rating</th>
               <th>Tasks</th>
-              <th>Surge</th>
             </tr>
           </thead>
           <tbody>
-            {# Most-recently-listed agents first so the 5 new demo agents
-               (ResumeForge, PRCopy Pro, etc) surface immediately. #}
+            {# Most recently listed agents first #}
             {% for agent in (agents | sort(attribute='id', reverse=True))[:8] %}
             <tr>
               <td class="font-bold">{{ agent.name }}</td>
@@ -195,13 +170,6 @@
                 </div>
               </td>
               <td>{{ "{:,}".format(agent.tasks_completed) }}</td>
-              <td>
-                {% if agent.surge_active %}
-                <span class="badge badge-surge">SURGE x{{ agent.surge_multiplier }}</span>
-                {% else %}
-                <span class="text-muted text-xs">--</span>
-                {% endif %}
-              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -231,12 +199,11 @@ makeDoughnutChart('breakdown-chart',
   ['#3B82F6', '#22C55E']
 );
 
-// ── Live Fuji tx feed — polls /api/transactions?real_only=1 every 5s ──────
+// ── Transaction feed — polls /api/transactions every 15s ──────
 (async function liveTxFeed() {
   const KIND_COLOR = {
-    register: '#7fb3ff', deposit: '#7fb3ff', stake: '#ffdb7f',
-    settle: '#5ade7a', a2a_hire: '#5ade7a', slash: '#ff7f7f',
-    refund: '#ffdb7f', listing_update: '#9aa4b2',
+    register: '#7fb3ff', deposit: '#7fb3ff', payment: '#7fb3ff',
+    settle: '#5ade7a', refund: '#ffdb7f', incident: '#ff7f7f',
   };
   const short = (h) => h ? ((h.startsWith('0x')?h:'0x'+h).slice(0,10) + '…' + h.slice(-6)) : '—';
   const ago = (ts) => {
@@ -249,17 +216,17 @@ makeDoughnutChart('breakdown-chart',
 
   async function refresh() {
     try {
-      const r = await fetch('/api/transactions?real_only=1&limit=20');
+      const r = await fetch('/api/transactions?limit=20');
       const d = await r.json();
       const tbody = document.getElementById('live-tx-tbody');
       if (!d.transactions || !d.transactions.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:14px;">No real Fuji txs yet. Fire one at <a href="/demo" style="color:var(--accent);">/demo</a>.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:14px;">No transactions recorded yet.</td></tr>';
         return;
       }
       tbody.innerHTML = d.transactions.map(tx => {
         const color = KIND_COLOR[tx.kind] || '#9aa4b2';
         const h = tx.txHash && tx.txHash.startsWith('0x') ? tx.txHash : '0x' + (tx.txHash || '');
-        const explorerUrl = 'https://subnets-test.avax.network/c-chain/tx/' + h;
+        const explorerUrl = tx.explorerUrl || '';
         const amt = tx.amountUSDCDisplay ? '$' + Number(tx.amountUSDCDisplay).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
         const agent = tx.agentId ? '#' + tx.agentId : '—';
         return `<tr>
@@ -268,7 +235,7 @@ makeDoughnutChart('breakdown-chart',
           <td>${agent}</td>
           <td>${amt}</td>
           <td class="text-muted text-xs">${ago(tx.ts)} ago</td>
-          <td><a href="${explorerUrl}" target="_blank" style="color:var(--accent); font-size:.72rem;">Ava Labs ↗</a></td>
+          <td>${explorerUrl ? `<a href="${explorerUrl}" target="_blank" rel="noopener" style="color:var(--accent); font-size:.72rem;">view ↗</a>` : '—'}</td>
         </tr>`;
       }).join('');
     } catch (e) {
@@ -276,7 +243,7 @@ makeDoughnutChart('breakdown-chart',
     }
   }
   await refresh();
-  setInterval(refresh, 5000);
+  setInterval(refresh, 15000);
   document.getElementById('btn-refresh-txs')?.addEventListener('click', refresh);
 })();
 </script>
