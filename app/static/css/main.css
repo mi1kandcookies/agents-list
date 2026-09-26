@@ -592,6 +592,16 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .guarantee p { font-size: var(--fs-sm); line-height: 1.6; }
 .guarantee .num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--accent); margin-bottom: 12px; display: block; }
 
+.screening-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 28px;
+  padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.screening-banner h2 { max-width: 560px; margin: 5px 0 6px; font-size: var(--fs-lg); }
+.screening-banner p { max-width: 700px; color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.6; }
+.screening-banner-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 190px; }
+.screening-banner-meta span { padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-2); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+
 /* Marketplace toolbar */
 .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-bottom: 16px; }
 .toolbar-filters { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1500,6 +1510,8 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
   .grid-2, .grid-3, .does-grid { grid-template-columns: 1fr; }
   .guarantee { grid-template-columns: 1fr; }
   .guarantee > div + div { border-left: none; border-top: 1px solid var(--border); }
+  .screening-banner { align-items: flex-start; flex-direction: column; }
+  .screening-banner-meta { justify-content: flex-start; }
   .profile-head-grid { grid-template-columns: 1fr; }
   .profile-cta { display: none; }
   .hire-bar {
