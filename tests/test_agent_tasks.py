@@ -85,16 +85,24 @@ def _challenge(client, callee, *, task="Summarize the release notes"):
 
 def _pay(client, callee, key, mandate_row, *, headers=None, amount=PRICE, mutate=None,
          task="Summarize the release notes"):
-    body = _challenge(client, callee, task=task).get_json()
+    challenge = _challenge(client, callee, task=task)
+    body = challenge.get_json()
+    intent = body["extensions"]["hireIntent"]
     req = PaymentRequirements.from_dict(body["accepts"][0])
     payload = x402_v2.sign_payment(key, req, expected=Expectation(pay_to=PAYEE, amount_micro=amount))
     if mutate:
         mutate(payload)
-    h = {"X-PAYMENT": x402_v2.encode_header(payload)}
+    encoded = x402_v2.encode_header(payload)
+    # Keep the marker out of the wire payload while making it available to
+    # replay tests that need to refer to the same server-owned intent.
+    payload["_hire_intent_id"] = intent["id"]
+    h = {"X-PAYMENT": encoded, "X-HIRE-INTENT": intent["id"],
+         "X-HIRE-INTENT-HASH": intent["hash"]}
     if mandate_row is not None:
         h["Authorization"] = f"Mandate {mandate_row.token}"
     h.update(headers or {})
-    return client.post(_url(callee), json={"task": task}, headers=h), payload
+    return client.post(_url(callee), json={"task": task, "intent_id": intent["id"]},
+                       headers=h), payload
 
 
 def _spent(db, mandate_row):
@@ -116,6 +124,8 @@ def test_unpaid_request_gets_v2_requirements(client, callee):
     assert req["scheme"] == "exact" and req["network"] == "eip155:11155111"
     assert req["amount"] == str(PRICE) and req["payTo"] == PAYEE
     assert req["extra"] == {"name": "USDC", "version": "2"}
+    assert body["extensions"]["hireIntent"]["taskHash"].startswith("0x")
+    assert resp.headers["X-HIRE-INTENT"] == body["extensions"]["hireIntent"]["id"]
     assert x402_v2.decode_header(resp.headers["PAYMENT-REQUIRED"]) == body
 
 
@@ -164,6 +174,8 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     assert body["deliverable"]["source"]["endpoint_count"] == 2
     assert body["deliverable"]["test_case_count"] == 6
     assert body["deliverable"]["source"]["sha256"].startswith("0x")
+    assert body["intent"]["state"] == "delivered"
+    assert body["intent"]["task_hash"] == body["task_hash"]
     settle = x402_v2.decode_header(resp.headers["PAYMENT-RESPONSE"])
     assert settle == {"success": True, "transaction": pay["tx_hash"], "network": "eip155:11155111",
                       "payer": payer_key.address.lower()}
@@ -183,9 +195,10 @@ def test_official_x402_client_payload_is_accepted_by_task_route(
     )
     response = client.post(
         _url(callee),
-        json={"task": "Summarize the release notes"},
+        json={"task": "Summarize the release notes", "intent_id": body["extensions"]["hireIntent"]["id"]},
         headers={
             "PAYMENT-SIGNATURE": payment_signature_header(payload),
+            "X-HIRE-INTENT": body["extensions"]["hireIntent"]["id"],
             "Authorization": f"Mandate {mandate.token}",
         },
     )
@@ -197,8 +210,9 @@ def test_payment_signature_header_is_accepted(client, db, callee, payer_key, man
     body = _challenge(client, callee).get_json()
     req = PaymentRequirements.from_dict(body["accepts"][0])
     payload = x402_v2.sign_payment(payer_key, req, expected=Expectation(pay_to=PAYEE, amount_micro=PRICE))
-    resp = client.post(_url(callee), json={"task": "t"}, headers={
+    resp = client.post(_url(callee), json={"intent_id": body["extensions"]["hireIntent"]["id"]}, headers={
         "PAYMENT-SIGNATURE": x402_v2.encode_header(payload),
+        "X-HIRE-INTENT": body["extensions"]["hireIntent"]["id"],
         "Authorization": f"Mandate {mandate.token}"})
     assert resp.status_code == 200, resp.get_json()
 
@@ -207,10 +221,46 @@ def test_payment_signature_header_is_accepted(client, db, callee, payer_key, man
 def test_replayed_payment_is_refused(client, db, callee, payer_key, mandate, screener):
     first, payload = _pay(client, callee, payer_key, mandate)
     assert first.status_code == 200
-    again = client.post(_url(callee), json={"task": "again"}, headers={
-        "X-PAYMENT": x402_v2.encode_header(payload), "Authorization": f"Mandate {mandate.token}"})
-    assert again.status_code == 409 and again.get_json()["code"] == "DUPLICATE_NONCE"
+    again = client.post(_url(callee), json={"intent_id": payload["_hire_intent_id"]}, headers={
+        "X-PAYMENT": x402_v2.encode_header({k: v for k, v in payload.items() if not k.startswith("_")}),
+        "X-HIRE-INTENT": payload["_hire_intent_id"],
+        "Authorization": f"Mandate {mandate.token}"})
+    assert again.status_code == 409 and again.get_json()["code"] == "HIRE_INTENT_USED"
     assert _spent(db, mandate) == PRICE and len(_ledger(mandate.engagement_id)) == 1
+
+
+def test_task_swap_is_rejected_without_spending(client, db, callee, payer_key, mandate, screener):
+    challenge = _challenge(client, callee, task="GET /v1/orders")
+    body = challenge.get_json()
+    intent = body["extensions"]["hireIntent"]
+    req = PaymentRequirements.from_dict(body["accepts"][0])
+    payload = x402_v2.sign_payment(
+        payer_key, req, expected=Expectation(pay_to=PAYEE, amount_micro=PRICE))
+    response = client.post(_url(callee), json={"task": "DELETE /v1/orders", "intent_id": intent["id"]},
+                           headers={"X-PAYMENT": x402_v2.encode_header(payload),
+                                    "X-HIRE-INTENT": intent["id"],
+                                    "Authorization": f"Mandate {mandate.token}"})
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "INTENT_TASK_MISMATCH"
+    assert _spent(db, mandate) == 0 and _ledger(mandate.engagement_id) == []
+    assert screener.calls == []
+
+
+def test_paid_task_uses_server_owned_task_when_body_omits_it(
+        client, db, callee, payer_agent, payer_key, mandate, screener):
+    task = "GET /v1/orders\nPOST /v1/orders"
+    challenge = _challenge(client, callee, task=task)
+    body = challenge.get_json()
+    intent = body["extensions"]["hireIntent"]
+    req = PaymentRequirements.from_dict(body["accepts"][0])
+    payload = x402_v2.sign_payment(payer_key, req, expected=Expectation(pay_to=PAYEE, amount_micro=PRICE))
+    response = client.post(_url(callee), json={"intent_id": intent["id"]}, headers={
+        "X-PAYMENT": x402_v2.encode_header(payload), "X-HIRE-INTENT": intent["id"],
+        "Authorization": f"Mandate {mandate.token}"})
+    assert response.status_code == 200, response.get_json()
+    result = response.get_json()
+    assert result["task_hash"] == intent["taskHash"]
+    assert result["deliverable"]["source"]["endpoint_count"] == 2
 
 
 def test_mandate_required(client, db, callee, payer_key, mandate, screener):

@@ -27,7 +27,9 @@ mandate, exactly once per row.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+from datetime import datetime, timezone
 
 from flask import current_app, jsonify, request
 from sqlalchemy import update
@@ -43,6 +45,8 @@ log = logging.getLogger(__name__)
 
 HOP = "subhire.hop"
 MAX_TASK_CHARS = 4000
+HIRE_INTENT_HEADER = "X-HIRE-INTENT"
+HIRE_INTENT_HASH_HEADER = "X-HIRE-INTENT-HASH"
 
 
 def _nonces() -> NonceRegistry:
@@ -65,14 +69,20 @@ def _price_micro(agent) -> int:
     return _usdc_setting("AGENT_TASK_PRICE_USDC")
 
 
-def _payment_required(req, *, error: str, code: str | None = None):
+def _payment_required(req, *, error: str, code: str | None = None, intent=None):
+    from app.hiring import intents
     body = x402_v2.payment_required(req, resource_url=request.path, error=error,
-                                    description="Run one task with this agent")
+                                    description="Run one task with this agent",
+                                    extensions=intents.extension(intent) if intent else None)
     if code:
         body["code"] = code
     resp = jsonify(body)
     resp.status_code = 402
     resp.headers[x402_v2.REQUIRED_HEADER] = x402_v2.encode_header(body)
+    if intent is not None:
+        resp.headers[HIRE_INTENT_HEADER] = intent.id
+        resp.headers[HIRE_INTENT_HASH_HEADER] = intent.intent_hash
+        resp.headers["X-HIRE-TASK-HASH"] = intent.task_hash
     return resp
 
 
@@ -126,13 +136,18 @@ def settlement_failed(entry) -> bool:
     moves ``pending → failed`` with a conditional UPDATE, and only the caller
     that wins it refunds, so repeated or concurrent polls refund once.
     Caller commits. Returns whether this call changed the row."""
-    from app.models import LedgerEntry
+    from app.models import HireIntent, LedgerEntry
     result = db.session.execute(
         update(LedgerEntry).where(LedgerEntry.id == entry.id, LedgerEntry.status == "pending")
         .values(status="failed").execution_options(synchronize_session=False))
     db.session.refresh(entry)
     if result.rowcount != 1:
         return False
+    intent = HireIntent.query.filter_by(payment_entry_id=entry.id).first()
+    if intent is not None:
+        intent.state = "failed"
+        intent.failure_code = "SETTLEMENT_FAILED"
+        intent.updated_at = datetime.now(timezone.utc)
     row = _charged_mandate(entry)
     if row is None or not _unspend(row.id, int(entry.amount_micro)):
         log.warning("x402 payment %s failed on chain; no mandate charge found to refund", entry.id)
@@ -151,8 +166,9 @@ def api_agent_task(agent_ref):
     from app.hiring.deliverables import build_api_test_plan
     from app.mandates import service as mandates
     from app.mandates.tokens import MandateError
-    from app.models import Agent, Engagement, Mandate
+    from app.models import Agent, Engagement, HireIntent, Mandate
     from app.screening import policy as screening_policy
+    from app.hiring import intents
 
     from app.seller.stamp import assert_hireable
 
@@ -165,9 +181,12 @@ def api_agent_task(agent_ref):
     if payee.address is None:
         return api_error("agent has no payout address", 409, code="PAYEE_ADDRESS_MISSING")
     body = request.get_json(silent=True)
-    task = str(body.get("task") or "").strip() if isinstance(body, dict) else ""
-    if not task or len(task) > MAX_TASK_CHARS:
-        return api_error(f"task is required (at most {MAX_TASK_CHARS} characters)", field="task")
+    requested_task = str(body.get("task") or "").strip() if isinstance(body, dict) else ""
+    body_intent_id = str(body.get("intent_id") or "").strip() if isinstance(body, dict) else ""
+    header_intent_id = request.headers.get(HIRE_INTENT_HEADER, "").strip()
+    if body_intent_id and header_intent_id and body_intent_id != header_intent_id:
+        return api_error("body and header intent ids differ", 409, code="HIRE_INTENT_MISMATCH")
+    intent_id = header_intent_id or body_intent_id
     try:
         amount = _price_micro(agent)
         req = x402_v2.build_requirements(pay_to=payee.address, amount_micro=amount)
@@ -175,8 +194,54 @@ def api_agent_task(agent_ref):
         return api_error(exc.message, 503, code=exc.code)
 
     header = _payment_header()
+    if header and not intent_id:
+        return api_error("the payment must reference the server-issued hire intent", 400,
+                         code="HIRE_INTENT_REQUIRED")
+    intent = None
+    if intent_id:
+        intent = db.session.get(HireIntent, intent_id)
+        if intent is None:
+            return api_error("hire intent was not found", 404, code="HIRE_INTENT_NOT_FOUND")
+        if intent.agent_id != agent.id:
+            return api_error("hire intent belongs to another specialist", 409,
+                             code="HIRE_INTENT_AGENT_MISMATCH")
+        if intent.is_expired():
+            if intent.state == "created":
+                intent.state = "expired"
+                intent.failure_code = "INTENT_EXPIRED"
+                db.session.commit()
+            return api_error("hire intent has expired", 409, code="HIRE_INTENT_EXPIRED")
+        if intent.state != "created":
+            code = "PAYMENT_PENDING" if intent.state == "payment_pending" else "HIRE_INTENT_USED"
+            return api_error(f"hire intent is already {intent.state}", 409, code=code)
+        if not intents.matches_snapshot(
+                intent, agent_public_id=agent.public_id, ens_name=payee.ens_name,
+                endpoint_path=request.path, network=req.network, token_address=req.asset,
+                pay_to=payee.address, amount_micro=amount):
+            return api_error("ENS, endpoint, payment terms, or agent identity changed", 409,
+                             code="HIRE_INTENT_STALE")
+        supplied_hash = request.headers.get(HIRE_INTENT_HASH_HEADER, "").strip()
+        if supplied_hash and supplied_hash != intent.intent_hash:
+            return api_error("hire intent hash does not match", 409, code="HIRE_INTENT_HASH_MISMATCH")
+        if requested_task and intents.task_hash(requested_task) != intent.task_hash:
+            return api_error("the requested task differs from the approved intent", 409,
+                             code="INTENT_TASK_MISMATCH")
+        task = intent.task_text
+    else:
+        if not requested_task or len(requested_task) > MAX_TASK_CHARS:
+            return api_error(f"task is required (at most {MAX_TASK_CHARS} characters)", field="task")
+        task = requested_task
+        intent = intents.create(
+            agent=agent, ens_name=payee.ens_name, endpoint_path=request.path, task=task,
+            network=req.network, token_address=req.asset, pay_to=payee.address,
+            amount_micro=amount)
+        db.session.add(intent)
+        db.session.commit()
+
     if not header:
-        return _payment_required(req, error="X-PAYMENT header is required")
+        return _payment_required(req, error="X-PAYMENT header is required", intent=intent)
+    if intent is None:
+        return api_error("a hire intent is required", 400, code="HIRE_INTENT_REQUIRED")
     token = _mandate_token()
     if token is None:
         return api_error("a mandate is required: Authorization: Mandate <token>", 401,
@@ -238,6 +303,21 @@ def api_agent_task(agent_ref):
                         "code": "SCREENING_REFUSED",
                         "screening": eng_svc.screening_json(verdict)}), 403
 
+    # Claim the server-owned intent once, before charging the mandate. This is
+    # the concurrency/idempotency boundary: only one payment attempt can bind
+    # the approved task, payee, and nonce to this intent.
+    claim = db.session.execute(
+        update(HireIntent)
+        .where(HireIntent.id == intent.id, HireIntent.state == "created")
+        .values(payer_agent_public_id=payer_agent.public_id, mandate_id=row.id,
+                payment_nonce=verified.nonce, state="payment_pending",
+                updated_at=datetime.now(timezone.utc))
+        .execution_options(synchronize_session=False))
+    if claim.rowcount != 1:
+        db.session.rollback()
+        return api_error("hire intent has already been claimed", 409, code="HIRE_INTENT_USED")
+    db.session.refresh(intent)
+
     # Build the read-only result before settlement, but do not publish it until
     # the transfer succeeds below. The source text is hashed into the result;
     # there is no second, unapproved task body accepted after payment.
@@ -261,23 +341,30 @@ def api_agent_task(agent_ref):
     except Exception as exc:
         log.warning("x402 settlement failed for %s: %s", agent.public_id, str(exc)[:200])
         _unspend(row.id, amount)
-        ledger.record(engagement, kind="subhire_alloc", amount_micro=amount, status="failed",
-                      from_addr=verified.payer, to_addr=verified.pay_to,
-                      approval_id=claims.get("apr"), screening_id=verdict["id"])
+        entry = ledger.record(engagement, kind="subhire_alloc", amount_micro=amount, status="failed",
+                              from_addr=verified.payer, to_addr=verified.pay_to,
+                              approval_id=claims.get("apr"), screening_id=verdict["id"])
+        intent.state = "failed"
+        intent.failure_code = "PAYMENT_FAILED"
+        intent.payment_entry_id = entry.id
         db.session.commit()
         return api_error("payment settlement failed", 502, code="PAYMENT_FAILED")
     entry = ledger.record(engagement, kind="subhire_alloc", amount_micro=amount, tx=tx,
                           from_addr=verified.payer, to_addr=verified.pay_to,
                           approval_id=claims.get("apr"), screening_id=verdict["id"])
+    intent.payment_entry_id = entry.id
+    intent.deliverable_json = json.dumps(deliverable, sort_keys=True, separators=(",", ":"))
+    intent.state = "delivered" if tx.status in ("simulated", "confirmed") else "payment_pending"
     db.session.commit()
 
     settle = x402_v2.settle_response(verified, tx)
-    resp = jsonify({
+    result = {
         "receipt_id": entry.id,
-        "status": "accepted",
+        "status": "accepted" if intent.state == "delivered" else "payment_pending",
         "agent_id": agent.public_id,
         "payer_agent_id": payer_agent.public_id,
         "task_hash": "0x" + hashlib.sha256(task.encode("utf-8")).hexdigest(),
+        "intent": intent.to_dict(),
         "mandate_id": row.id,
         "engagement_id": engagement.id,
         "payment": {**ledger.entry_json(entry), "network": verified.network,
@@ -285,8 +372,10 @@ def api_agent_task(agent_ref):
                     "payee_source": payee.source, "nonce": verified.nonce},
         "screening": eng_svc.screening_json(verdict),
         "payer_screening": eng_svc.screening_json(payer_verdict),
-        "deliverable": deliverable,
-    })
+    }
+    if intent.state == "delivered":
+        result["deliverable"] = deliverable
+    resp = jsonify(result)
     encoded = x402_v2.encode_header(settle)
     for name in x402_v2.RESPONSE_HEADERS:
         resp.headers[name] = encoded

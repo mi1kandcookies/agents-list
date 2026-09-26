@@ -149,10 +149,14 @@ def build_requirements(*, pay_to: str, amount_micro: int,
 
 def payment_required(requirements: PaymentRequirements, *, resource_url: str,
                      description: str = "", mime_type: str = "application/json",
-                     error: str = "X-PAYMENT header is required") -> dict:
-    return {"x402Version": X402_VERSION, "error": error,
+                     error: str = "X-PAYMENT header is required",
+                     extensions: dict | None = None) -> dict:
+    body = {"x402Version": X402_VERSION, "error": error,
             "resource": {"url": resource_url, "description": description, "mimeType": mime_type},
             "accepts": [requirements.to_dict()]}
+    if extensions:
+        body["extensions"] = extensions
+    return body
 
 
 # ── header encoding ─────────────────────────────────────────────────────────

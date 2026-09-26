@@ -103,6 +103,10 @@ def main() -> int:
         print(json.dumps({"stage": "requirements", "status": first.status_code,
                           "ens": identity, "body": required_body}, indent=2))
         return 1
+    hire_intent = ((required_body.get("extensions") or {}).get("hireIntent")
+                   if isinstance(required_body.get("extensions"), dict) else None)
+    if not isinstance(hire_intent, dict) or not hire_intent.get("id"):
+        raise RuntimeError("resource did not issue a server-owned hire intent")
     req = PaymentRequirements.from_dict((required_body.get("accepts") or [None])[0])
     if req.pay_to.lower() != payout:
         raise RuntimeError("x402 payTo differs from freshly resolved ENS payout; refusing")
@@ -134,8 +138,12 @@ def main() -> int:
 
     second = requests.post(
         endpoint,
-        json={"task": task},
+        # The protected route retrieves the approved task from this intent;
+        # the runner deliberately does not resend task text for the paid call.
+        json={"intent_id": hire_intent["id"]},
         headers={"PAYMENT-SIGNATURE": payment_signature_header(payload),
+                 "X-HIRE-INTENT": hire_intent["id"],
+                 "X-HIRE-INTENT-HASH": hire_intent.get("hash", ""),
                  "Authorization": f"Mandate {mandate}"},
         timeout=args.timeout,
     )
@@ -143,17 +151,18 @@ def main() -> int:
     print(json.dumps({
         "stage": "result",
         "status": second.status_code,
-        "decisions": ["ens_resolved", "terms_validated", "screened_before_sign", "signed",
+        "decisions": ["ens_resolved", "intent_frozen", "terms_validated", "screened_before_sign", "signed",
                        "submitted"],
         "ens": {"name": identity["name"], "endpoint": endpoint, "payout": payout},
         "payment": {"network": req.network, "amount_atomic": req.amount,
                     "pay_to": req.pay_to, "payer": payer.address},
+        "hire_intent": hire_intent,
         "screening": gate.last_verdict.as_dict() if gate.last_verdict else None,
         "receipt": result.get("payment"),
         "deliverable": result.get("deliverable"),
         "body": result,
     }, indent=2))
-    return 0 if second.status_code == 200 else 1
+    return 0 if second.status_code in (200, 202) else 1
 
 
 if __name__ == "__main__":
