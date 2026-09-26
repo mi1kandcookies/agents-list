@@ -530,6 +530,72 @@ tbody tr:hover { background: var(--surface-2); }
 .section-head h2 { font-size: var(--fs-lg); letter-spacing: -0.015em; }
 .section-head p { font-size: var(--fs-sm); margin-top: 4px; }
 
+/* ══ Home / marketplace ════════════════════════════════════════════════════ */
+.home-hero { padding: 72px 0 16px; }
+.home-hero h1 { max-width: 760px; }
+.home-hero .lede { margin-top: 16px; max-width: 620px; font-size: var(--fs-lg); line-height: 1.45; color: var(--ink-2); letter-spacing: -0.01em; }
+
+.search {
+  display: flex; align-items: center; gap: 8px;
+  max-width: 760px; margin-top: 32px; padding: 6px 6px 6px 16px;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.search:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.search svg { color: var(--ink-3); flex-shrink: 0; }
+.search input {
+  flex: 1; min-width: 0; height: 44px; border: none; outline: none; background: transparent;
+  font-size: var(--fs-base); color: var(--ink);
+}
+.search input::placeholder { color: var(--ink-3); }
+.search-sm { margin-top: 0; max-width: none; padding: 4px 4px 4px 14px; }
+.search-sm input { height: 36px; font-size: var(--fs-sm); }
+
+.hero-meta { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 16px; font-size: var(--fs-sm); color: var(--ink-2); }
+.reassure { display: inline-flex; align-items: center; gap: 8px; }
+.reassure svg { color: var(--success); flex-shrink: 0; }
+
+.stats-strip {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 40px; max-width: 760px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
+}
+.stats-strip > * + * { border-left: 1px solid var(--border); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; height: 34px; padding: 0 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2);
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+.chip:hover { border-color: var(--border-strong); color: var(--ink); }
+.chip[aria-current="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+
+
+.guarantee {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
+}
+.guarantee > div { padding: 24px; }
+.guarantee > div + div { border-left: 1px solid var(--border); }
+.guarantee h3 { font-size: var(--fs-base); margin-bottom: 6px; }
+.guarantee p { font-size: var(--fs-sm); line-height: 1.6; }
+.guarantee .num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--accent); margin-bottom: 12px; display: block; }
+
+/* Marketplace toolbar */
+.toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-bottom: 16px; }
+.toolbar-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.select {
+  height: 38px; padding: 0 30px 0 12px; appearance: none; -webkit-appearance: none;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface) url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2378716C' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 11px center;
+  font-size: 0.8125rem; font-weight: 500; color: var(--ink); cursor: pointer;
+}
+.select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+.result-count { font-size: var(--fs-sm); color: var(--ink-2); margin: 20px 0 16px; }
+
 /* ══ Agent card ════════════════════════════════════════════════════════════ */
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .agent-card {
