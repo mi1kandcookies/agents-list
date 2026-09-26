@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from flask import current_app
+from sqlalchemy import select, update
 
 from app.approvals.actions import build_action, describe, format_usdc
 from app.approvals.executors import ExecutionResult, executor
@@ -351,8 +352,7 @@ class _Target:
 def _load_target(action: dict):
     """Re-check the approved action against current state. Returns
     (_Target, None) or (None, reason)."""
-    from app.models import Engagement
-    eng = db.session.get(Engagement, action.get("engagement_id"))
+    eng = _lock_engagement(action.get("engagement_id"))
     if eng is None:
         return None, "engagement not found"
     if action.get("sow_hash") != eng.sow_hash:
@@ -363,6 +363,20 @@ def _load_target(action: dict):
     if action.get("payee_agent_id") != eng.agent.public_id:
         return None, "payee agent does not match"
     return _Target(eng, payee), None
+
+
+def _lock_engagement(engagement_id):
+    """Load the engagement under a write lock so concurrent executors for the
+    same engagement serialize (the no-op UPDATE takes the lock on SQLite,
+    where FOR UPDATE is ignored)."""
+    from app.models import Engagement
+    if not isinstance(engagement_id, str):
+        return None
+    db.session.execute(update(Engagement).where(Engagement.id == engagement_id)
+                       .values(status=Engagement.status))
+    return db.session.execute(
+        select(Engagement).where(Engagement.id == engagement_id).with_for_update()
+        .execution_options(populate_existing=True)).scalar_one_or_none()
 
 
 def _claim_buyer(eng, approval) -> None:
