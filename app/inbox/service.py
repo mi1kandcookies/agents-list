@@ -25,12 +25,12 @@ from app.extensions import db
 log = logging.getLogger(__name__)
 
 DEMO_AGENT_NAME = "Ledgerline Financial Analyst"
-PDF_PATH = "deliverables/northwind-equity-research.pdf"   # under app/static
-REPORT_TITLE = "Equity research: Northwind Robotics, Inc. (NWRB)"
+PDF_PATH = "deliverables/luckin-coffee-equity-research.pdf"   # under app/static
+REPORT_TITLE = "Equity research: Luckin Coffee (LKNCY), Buy, $68 price target"
 REPORT_SUMMARY = (
-    "Initiation report on Northwind Robotics with a three-year financial analysis, "
-    "a DCF and comparables valuation, key risks and an Outperform recommendation "
-    "with a $58 price target."
+    "Buy rating on Luckin Coffee with a $68 price target (88% 12-month upside): "
+    "China coffee demand model, store-count tracking against Street estimates, "
+    "unit economics versus competitors, and the variant view on margins."
 )
 DISPATCH_TIMEOUT = 5
 LOG_TRUNCATE = 280
@@ -160,10 +160,10 @@ def schedule(eng) -> "Delivery | None":
     steps += [
         (0.08, "info", f"Fetched SOW {eng.id} and verified hash {(eng.sow_hash or '')[:18]}"),
         (0.14, "info", "Loaded tools: sec_filings, spreadsheet, pdf_writer"),
-        (0.24, "info", "Gathered filings: 10-K FY2023 to FY2025, three 10-Q, proxy statement"),
-        (0.38, "info", "Built model: three-year P&L, cash flow and working capital"),
-        (0.52, "info", "Valuation: DCF (WACC 9.4%, g 3.0%) and 6-company comps set"),
-        (0.66, "info", "Drafted report: 6 pages, 6 tables, recommendation Outperform"),
+        (0.24, "info", "Gathered filings: 20-F FY2023 to FY2025, quarterly results, store-count scrape"),
+        (0.38, "info", "Built model: store growth, per-cup unit economics and five-year P&L"),
+        (0.52, "info", "Valuation: DCF and China consumer comps set, price target $68"),
+        (0.66, "info", "Drafted report: variant view, recommendation Buy"),
         (0.76, "info", "Ran checks: totals tie out, sources cited, no unverified figures"),
     ]
     for i, m in enumerate(milestones):
