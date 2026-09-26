@@ -10,9 +10,12 @@ docs/decisions/0002-specialist-kit.md.
 """
 from __future__ import annotations
 
+from agentkit.checks import CheckContext, CheckRegistry, default_registry, run_checks
 from agentkit.errors import (AgentKitError, BudgetExceeded, ManifestError, ModelError,
                              PolicyViolation, ToolError)
 from agentkit.events import Event, EventSink, JsonlSink, MemorySink, MultiSink, NullSink
+from agentkit.evidence import (artifact_for, canonical_json, evidence_hash, platform_evidence,
+                               sha256_file)
 from agentkit.journal import Checkpoint, Journal
 from agentkit.ledger import Ledger
 from agentkit.llm import ModelAdapter, ModelRef, ScriptedAdapter
@@ -26,12 +29,13 @@ from agentkit.types import (AcceptanceCriterion, Artifact, Brief, CheckResult, E
                             Submission, ToolCall, ToolResult, ToolSpec, Usage)
 
 __all__ = [
-    "AcceptanceCriterion", "AgentKitError", "Artifact", "Brief", "BudgetExceeded", "CheckResult",
-    "Checkpoint", "CommandResult", "Estimate", "Event", "EventSink", "FetchResult", "HumanReview",
-    "Journal", "JsonlSink", "Ledger", "Limits", "ManifestError", "MemorySink", "Message",
-    "MilestoneSpec", "MissingInput", "ModelAdapter", "ModelError", "ModelRef", "ModelResponse",
-    "MultiSink", "NullSink", "PolicyGate", "PolicyViolation", "RunOutcome", "Runner",
-    "ScriptedAdapter", "Submission", "Tool", "ToolCall", "ToolContext", "ToolError", "ToolRegistry",
-    "ToolResult", "ToolSpec", "Usage", "builtin_registry", "host_allowed", "redact",
-    "tools_from_defs", "wrap_untrusted",
+    "AcceptanceCriterion", "AgentKitError", "Artifact", "Brief", "BudgetExceeded", "CheckContext",
+    "CheckRegistry", "CheckResult", "Checkpoint", "CommandResult", "Estimate", "Event", "EventSink",
+    "FetchResult", "HumanReview", "Journal", "JsonlSink", "Ledger", "Limits", "ManifestError",
+    "MemorySink", "Message", "MilestoneSpec", "MissingInput", "ModelAdapter", "ModelError",
+    "ModelRef", "ModelResponse", "MultiSink", "NullSink", "PolicyGate", "PolicyViolation",
+    "RunOutcome", "Runner", "ScriptedAdapter", "Submission", "Tool", "ToolCall", "ToolContext",
+    "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage", "artifact_for",
+    "builtin_registry", "canonical_json", "default_registry", "evidence_hash", "host_allowed",
+    "platform_evidence", "redact", "run_checks", "sha256_file", "tools_from_defs", "wrap_untrusted",
 ]
