@@ -13,8 +13,10 @@ Ethereum Sepolia x402/escrow path.
    USDC, and Scan Message on the exact authorization that will be signed.
 3. `PAY` proceeds, `CAP` proceeds only within the configured cap,
    `ASK_HUMAN` pauses for approval, and `REFUSE` or any provider/configuration
-   error stops before the signer. The resource server screens again after
-   receipt, so a client cannot bypass the gate.
+   error stops before the signer. The resource server then deep-scans the
+   payer before accepting the job and screens the payee plus exact
+   authorization again after receipt, so a client cannot bypass either side
+   of the gate.
 4. `app/screening/service.py` persists the resource-side verdict and raw
    provider response with latency. `app/screening/intercepta.py` is the only
    REST transport and logs request path, status, latency and response without
@@ -23,7 +25,7 @@ Ethereum Sepolia x402/escrow path.
    gets its own stored verdict and local policy evaluation.
 
 The provider supports mainnet risk data, not Ethereum Sepolia. Every Sepolia
-payee therefore needs an explicit `Agent.screening_address` or
+payee and payer therefore needs an explicit `Agent.screening_address` or
 `SCREENING_ADDRESS_MAP` entry. A missing mapping is a fail-closed hold.
 
 ## Local smoke test
