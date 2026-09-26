@@ -698,9 +698,12 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .search input::placeholder { color: var(--ink-3); }
 .q-field { position: relative; flex: 1; min-width: 0; display: flex; }
 .q-rotator {
-  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
-  color: var(--ink-3); font-size: var(--fs-base);
+  position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; gap: .3em;
+  color: var(--ink-3); font-size: var(--fs-base); white-space: nowrap;
 }
+.q-prefix { flex-shrink: 0; }
+.q-roll { position: relative; flex: 1; min-width: 0; align-self: stretch; overflow: hidden; }
+@media (max-width: 640px) { .q-prefix { display: none; } }
 .q-rotator[hidden] { display: none; }
 .q-line {
   position: absolute; left: 0; right: 0; top: 50%;
