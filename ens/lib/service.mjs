@@ -176,7 +176,19 @@ export class NamesService {
         throw conflict(`${name} belongs to another agent`, 'NAME_TAKEN');
       }
       const node = this._open(name, { kind: 'agent', parent: this.rootName, agent_public_id: publicId, entries });
-      if (node.status === 'active') return this._view(node, { existing: true });
+      if (node.status === 'active') {
+        const changed = entries.filter((entry) => node.text[entry.key] !== entry.value);
+        if (changed.length) {
+          await this._write(node, 'records', node.resolver, resolverAbi, 'multicall',
+            [setTextCalls(name, changed)]);
+          for (const entry of changed) {
+            node.records[entry.field] = entry.input;
+            node.text[entry.key] = entry.value;
+          }
+          this.store.save();
+        }
+        return this._view(node, { existing: true });
+      }
 
       const parentRegistry = await this._registryOf(this.rootName);
       if (!node.resolver) node.resolver = await this._deployResolver(node, entries);
@@ -438,4 +450,3 @@ export class NamesService {
     return res;
   }
 }
-

@@ -56,6 +56,7 @@ export const ERC8004_REGISTRY_7930 = erc7930Address(SEPOLIA_CHAIN_ID, ADDRESSES.
 export const RECORD_KEYS = Object.freeze({
   context: 'agent-context',          // ENSIP-26: free text / Markdown / JSON
   mcp: 'agent-endpoint[mcp]',        // ENSIP-26: must be a URL
+  payout: 'x402-payto',              // payment recipient used by the resource server
   sow_hash: 'sow-hash',
   escrow: 'escrow',
   mandate: 'mandate',
@@ -74,7 +75,7 @@ export const AGENT_WRITABLE_JOB_KEYS = Object.freeze(['status', 'deliverable']);
 
 // Which logical records each kind of name accepts.
 export const ALLOWED_RECORDS = Object.freeze({
-  agent: ['context', 'mcp', REGISTRATION_RECORD],
+  agent: ['context', 'mcp', 'payout', REGISTRATION_RECORD],
   job: ['sow_hash', 'escrow', 'mandate', 'status', 'deliverable'],
   subjob: ['sow_hash', 'escrow', 'mandate', 'status', 'deliverable'],
 });
