@@ -222,18 +222,14 @@ _KEYWORD_CACHE: dict[str, re.Pattern] = {}
 
 
 def _keyword_re(keyword: str) -> re.Pattern:
+    """A keyword as a pattern for lowercased text: it must start at a word
+    boundary, and any whitespace may separate its words."""
     key = " ".join(keyword.lower().split())
     pattern = _KEYWORD_CACHE.get(key)
     if pattern is None:
         pattern = re.compile(r"(?<!\w)" + r"\s+".join(re.escape(w) for w in key.split(" ")))
         _KEYWORD_CACHE[key] = pattern
     return pattern
-
-
-def keyword_hit(keyword: str, text: str) -> bool:
-    """True when `keyword` starts at a word boundary somewhere in `text`
-    (case-insensitive; see the module docstring)."""
-    return bool(_keyword_re(keyword).search((text or "").lower()))
 
 
 def keyword_problems(keywords: Any, where: str) -> list[str]:
