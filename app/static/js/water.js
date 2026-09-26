@@ -41,7 +41,7 @@
     "uniform sampler2D uImg; uniform sampler2D uMask;\n" +
     "uniform vec2 uScale; uniform vec2 uOffset;   // canvas uv -> image uv (object-fit: cover)\n" +
     "uniform vec2 uCss;                           // element size in CSS px\n" +
-    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint;\n" +
+    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic;\n" +
     "void main(){\n" +
     "  vec2 iuv = uOffset + vUv * uScale;\n" +
     "  vec4 m = texture(uMask, iuv);\n" +
@@ -49,27 +49,31 @@
     "  vec2 p = vUv * uCss / 220.0;              // noise space in CSS px, resolution independent\n" +
     "  float t = uT;\n" +
     "  // water: two slow, drifting layers -> sub-2px surface ripple\n" +
-    "  float a = snoise(vec3(p * vec2(1.6, 2.6) + vec2(t * 0.020, t * 0.034), t * 0.055));\n" +
-    "  float b = snoise(vec3(p * vec2(3.4, 5.2) - vec2(t * 0.028, t * 0.016), t * 0.080 + 7.0));\n" +
+    "  float a = snoise(vec3(p * vec2(1.6, 2.6) + vec2(t * 0.050, t * 0.085), t * 0.14));\n" +
+    "  float b = snoise(vec3(p * vec2(3.4, 5.2) - vec2(t * 0.070, t * 0.040), t * 0.20 + 7.0));\n" +
     "  vec2 dw = vec2(a * 0.65 + b * 0.35, b * 0.55 - a * 0.25) * uWater * w;\n" +
     "  // spray: rising drift with a little turbulence\n" +
-    "  float c = snoise(vec3(p * 3.0 + vec2(0.0, t * 0.09), t * 0.16 + 3.0));\n" +
+    "  float c = snoise(vec3(p * 3.0 + vec2(0.0, t * 0.20), t * 0.36 + 3.0));\n" +
     "  vec2 ds = vec2(c * 0.6, -0.55 - abs(c) * 0.45) * uSpray * s;\n" +
     "  vec2 dpx = dw + ds;                       // CSS px\n" +
     "  vec3 col = texture(uImg, iuv + (dpx / uCss) * uScale).rgb;\n" +
+    "  // soft caustic light bands drifting across the water\n" +
+    "  float k = snoise(vec3(p * vec2(1.1, 1.8) + vec2(t * 0.06, -t * 0.04), t * 0.12 + 17.0));\n" +
+    "  float k2 = snoise(vec3(p * 2.7 - vec2(t * 0.05, t * 0.03), t * 0.18 + 29.0));\n" +
+    "  col *= 1.0 + w * uCaustic * (0.65 * k + 0.35 * k2);\n" +
     "  // faint twinkle on the brightest glints only\n" +
     "  float lum = dot(col, vec3(0.299, 0.587, 0.114));\n" +
     "  float glint = smoothstep(0.80, 0.97, lum) * w;\n" +
-    "  float tw = snoise(vec3(p * 26.0, t * 0.55 + 11.0));\n" +
+    "  float tw = snoise(vec3(p * 26.0, t * 1.10 + 11.0));\n" +
     "  col += glint * pow(max(tw, 0.0), 3.0) * uGlint;\n" +
     "  // spray breathes very slightly\n" +
-    "  col += s * 0.018 * snoise(vec3(p * 2.0, t * 0.25 + 5.0));\n" +
+    "  col += s * 0.035 * snoise(vec3(p * 2.0, t * 0.50 + 5.0));\n" +
     "  outColor = vec4(col, 1.0);\n" +
     "}";
 
   var PRESETS = {
-    hero:   { water: 1.35, spray: 0.0, glint: 0.10 },
-    footer: { water: 0.85, spray: 2.4, glint: 0.06 },
+    hero:   { water: 3.2, spray: 0.0, glint: 0.22, caustic: 0.035 },
+    footer: { water: 2.0, spray: 4.0, glint: 0.14, caustic: 0.028 },
   };
 
   function compile(gl, type, src) {
@@ -137,10 +141,11 @@
       gl.activeTexture(gl.TEXTURE1); texture(gl, ims[1], false);
       var u = function (n) { return gl.getUniformLocation(prog, n); };
       self.u = { img: u("uImg"), mask: u("uMask"), scale: u("uScale"), offset: u("uOffset"), css: u("uCss"),
-                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint") };
+                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic") };
       gl.uniform1i(self.u.img, 0); gl.uniform1i(self.u.mask, 1);
       gl.uniform1f(self.u.water, self.preset.water); gl.uniform1f(self.u.spray, self.preset.spray);
       gl.uniform1f(self.u.glint, self.preset.glint);
+      gl.uniform1f(self.u.caustic, self.preset.caustic || 0);
       self.natural = [ims[0].naturalWidth, ims[0].naturalHeight];
       img.insertAdjacentElement("afterend", canvas);
       self.resize();
