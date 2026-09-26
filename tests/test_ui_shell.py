@@ -40,6 +40,15 @@ def test_nav_contains_marketplace_items(client):
     assert "/admin" not in nav
 
 
+def test_shell_uses_supplied_mark_and_institutional_type(client):
+    html = client.get("/").get_data(as_text=True)
+    assert 'img/agents-list-mark-transparent.png' in html
+    assert 'family=Inter' in html and 'family=IBM+Plex+Mono' in html
+    css = CSS.read_text()
+    assert "--font-body: 'Inter'" in css
+    assert "--font-mono: 'IBM Plex Mono'" in css
+
+
 def _nav(html: str) -> str:
     return html[html.index('class="site-header"'):html.index("</header>")]
 
