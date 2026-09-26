@@ -1,7 +1,8 @@
 """Engagements: scope a job into a SOW, hire (fund) and release milestones.
 
 Money never moves from here directly. ``hire`` and ``request_release``
-screen the payee, then create an approval bound to the exact action
+screen the payee and, when the identity boundary has bound a buyer wallet,
+screen that payer too; they then create an approval bound to the exact action
 (docs/decisions/0001-custody-chain.md §1, §3); the approval service runs the
 executors below once a verified human approves. Every release needs its own
 fresh approval.
@@ -154,7 +155,8 @@ def _as_dict(verdict) -> dict:
     return dict(vars(verdict))
 
 
-def screen(hop: str, *, chain_address: str, amount_micro: int, engagement, agent) -> dict:
+def screen(hop: str, *, chain_address: str, amount_micro: int, engagement, agent=None,
+           typed_data=None) -> dict:
     """Server-side screening. The verdict always comes from the screener,
     never from the request; any failure is a fail-closed REFUSE."""
     try:
@@ -164,7 +166,9 @@ def screen(hop: str, *, chain_address: str, amount_micro: int, engagement, agent
     else:
         try:
             v = _as_dict(_screen(hop, chain_address=chain_address, amount_micro=amount_micro,
-                                 engagement_id=engagement.id, agent_id=agent.public_id))
+                                 engagement_id=engagement.id,
+                                 agent_id=agent.public_id if agent else None,
+                                 typed_data=typed_data))
         except Exception as exc:
             log.warning("screening failed (%s): %s", hop, str(exc)[:200])
             v = _fail_closed(hop, "SCREENING_ERROR", "screening failed")
@@ -183,7 +187,8 @@ def _record_screening(v: dict, hop: str, chain_address: str, engagement, agent) 
     subject, signals = v.get("subject") or {}, v.get("signals") or {}
     expires = v.get("expires_at")
     db.session.add(Screening(
-        id=v["id"], hop=v.get("hop") or hop, engagement_id=engagement.id, agent_id=agent.id,
+        id=v["id"], hop=v.get("hop") or hop, engagement_id=engagement.id,
+        agent_id=agent.id if agent else None,
         chain_address=(subject.get("chain_address") or chain_address).lower(),
         screened_address=subject.get("screened_address"), network=subject.get("network"),
         verdict=v["verdict"], cap_micro=v.get("cap_micro"), reasons=v.get("reasons") or [],
@@ -200,6 +205,28 @@ def screening_json(v: dict | None) -> dict | None:
         return None
     return {k: v.get(k) for k in ("id", "hop", "verdict", "cap_micro", "reasons",
                                   "fail_closed", "provider", "expires_at")}
+
+
+def screen_buyer_payer(engagement, amount_micro: int) -> dict | None:
+    """Screen a human payer once the identity boundary binds its wallet.
+
+    World-owned identity code is responsible for setting ``buyer_address``
+    after validating the owner/payer association. Until that binding exists,
+    this does not trust a browser cookie as an identity. Once present, the
+    provider result is mandatory and fail-closed like every other payment hop.
+    """
+    address = (getattr(engagement, "buyer_address", None) or "").strip()
+    if not address:
+        return None
+    return screen("payer.check", chain_address=address, amount_micro=amount_micro,
+                  engagement=engagement, agent=None)
+
+
+def screen_agent_payer(engagement, agent, amount_micro: int, *, typed_data=None) -> dict:
+    """Screen an agent wallet before it accepts or allocates a sub-hire."""
+    return screen("payer.check", chain_address=payee_address(agent) or "",
+                  amount_micro=amount_micro, engagement=engagement, agent=agent,
+                  typed_data=typed_data)
 
 
 # ── approvals (§3) ────────────────────────────────────────────────────────
@@ -328,13 +355,27 @@ def hire(eng, *, flow: str, confirm_micro: int):
         _refuse(eng, verdict, terminal=False,
                 message=f"risk screening caps payments to this agent at "
                         f"{format_usdc(_cap_of(verdict))}; scope a smaller job")
+    payer_verdict = screen_buyer_payer(eng, eng.total_micro)
+    if payer_verdict and payer_verdict["verdict"] == "REFUSE":
+        _refuse(eng, payer_verdict, terminal=True,
+                message="payer refused by risk screening")
+    if payer_verdict and payer_verdict["verdict"] == "CAP" and \
+            eng.total_micro > _cap_of(payer_verdict):
+        _refuse(eng, payer_verdict, terminal=False,
+                message=f"risk screening caps this payer at "
+                        f"{format_usdc(_cap_of(payer_verdict))}; scope a smaller job")
+    screening_ack = (verdict["verdict"] == "ASK_HUMAN" or
+                     bool(payer_verdict and payer_verdict["verdict"] == "ASK_HUMAN"))
     approval = _create_approval("engagement.fund", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": eng.total_micro,
         "payee_agent_id": agent.public_id, "payee_address": payee,
         "payee_source": resolved.source,
+        "payee_name": resolved.ens_name,
         "milestones": [{"idx": m.idx, "amount_micro": m.amount_micro, "title_hash": title_hash(m.title)}
                        for m in eng.milestones],
-        "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
+        "screening_id": verdict["id"],
+        "payer_screening_id": payer_verdict["id"] if payer_verdict else None,
+        "screening_ack": screening_ack,
     }, flow=flow, engagement=eng, screening_id=verdict["id"])
     eng.status = "awaiting_approval"
     db.session.commit()
@@ -378,12 +419,24 @@ def request_release(eng, idx, *, flow: str):
                      engagement=eng, agent=agent)
     if verdict["verdict"] == "REFUSE":
         _refuse(eng, verdict, terminal=False)
-    amount = min(remaining, _cap_of(verdict)) if verdict["verdict"] == "CAP" else remaining
+    payer_verdict = screen_buyer_payer(eng, remaining)
+    if payer_verdict and payer_verdict["verdict"] == "REFUSE":
+        _refuse(eng, payer_verdict, terminal=False,
+                message="payer refused by risk screening")
+    amount = remaining
+    if verdict["verdict"] == "CAP":
+        amount = min(amount, _cap_of(verdict))
+    if payer_verdict and payer_verdict["verdict"] == "CAP":
+        amount = min(amount, _cap_of(payer_verdict))
+    screening_ack = (verdict["verdict"] == "ASK_HUMAN" or
+                     bool(payer_verdict and payer_verdict["verdict"] == "ASK_HUMAN"))
     approval = _create_approval("milestone.release", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": amount,
         "payee_agent_id": agent.public_id, "payee_address": payee,
-        "payee_source": resolved.source, "milestone_idx": m.idx,
-        "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
+        "payee_source": resolved.source, "payee_name": resolved.ens_name, "milestone_idx": m.idx,
+        "screening_id": verdict["id"],
+        "payer_screening_id": payer_verdict["id"] if payer_verdict else None,
+        "screening_ack": screening_ack,
     }, flow=flow, engagement=eng, milestone=m, screening_id=verdict["id"])
     db.session.commit()
     return _start(approval)
@@ -404,9 +457,17 @@ def _load_target(action: dict):
         return None, "engagement not found"
     if action.get("sow_hash") != eng.sow_hash:
         return None, "statement of work changed since approval"
-    payee = payee_address(eng.agent)
+    try:
+        resolved = resolve_payee(eng.agent)
+    except EngagementError as exc:
+        return None, f"payee resolution failed since approval: {exc.code}"
+    payee = resolved.address
     if payee is None or action.get("payee_address") != payee:
         return None, "payee address changed since approval"
+    if "payee_source" in action and action.get("payee_source") != resolved.source:
+        return None, "payee source changed since approval"
+    if "payee_name" in action and action.get("payee_name") != resolved.ens_name:
+        return None, "ENS name changed since approval"
     if action.get("payee_agent_id") != eng.agent.public_id:
         return None, "payee agent does not match"
     return _Target(eng, payee), None
@@ -492,6 +553,30 @@ def _fund_still_hireable(approval, action: dict) -> None:
         assert_hireable(eng.agent)
     except NotHireable as exc:
         raise ApprovalError(exc.code, exc.message) from None
+    _assert_payee_binding(eng, action)
+
+
+def _assert_payee_binding(eng, action: dict) -> None:
+    """Re-resolve ENS/profile payee state before an approved payment."""
+    from app.approvals.errors import ApprovalError
+    try:
+        resolved = resolve_payee(eng.agent)
+    except EngagementError as exc:
+        raise ApprovalError(exc.code, exc.message) from None
+    if resolved.address is None or action.get("payee_address") != resolved.address:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee address changed since approval")
+    if "payee_source" in action and action.get("payee_source") != resolved.source:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee source changed since approval")
+    if "payee_name" in action and action.get("payee_name") != resolved.ens_name:
+        raise ApprovalError("PAYEE_MISMATCH", "the ENS name changed since approval")
+
+
+@before_consume("milestone.release")
+def _release_payee_still_bound(approval, action: dict) -> None:
+    from app.models import Engagement
+    eng = db.session.get(Engagement, action.get("engagement_id") or "")
+    if eng is not None:
+        _assert_payee_binding(eng, action)
 
 
 @on_terminal("engagement.fund")

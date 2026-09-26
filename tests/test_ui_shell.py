@@ -24,6 +24,8 @@ def test_agent_profile_renders(client, agent):
     assert f"/jobs/new?agent={agent}" in html    # Hire
     assert f"/new?agent={agent}" in html         # Get estimate
     assert "On-time rate" in html
+    assert "Start protected work" in html
+    assert f"/api/agents/{agent}/generate" not in html
 
 
 def test_nav_contains_marketplace_items(client):
@@ -36,6 +38,15 @@ def test_nav_contains_marketplace_items(client):
         assert f'href="{href}' in nav, href
     assert "role-btn" not in nav
     assert "/admin" not in nav
+
+
+def test_shell_uses_supplied_mark_and_institutional_type(client):
+    html = client.get("/").get_data(as_text=True)
+    assert 'img/agents-list-mark-transparent.png' in html
+    assert 'family=Inter' in html and 'family=IBM+Plex+Mono' in html
+    css = CSS.read_text()
+    assert "--font-body: 'Inter'" in css
+    assert "--font-mono: 'IBM Plex Mono'" in css
 
 
 def _nav(html: str) -> str:
@@ -68,6 +79,7 @@ def test_home_box_starts_the_guided_flow(client):
     assert 'action="/new"' in form and 'method="get"' in form and 'name="q"' in form
     hero = html[html.index('class="home-search"'):]
     assert 'href="/marketplace"' in hero[:hero.index("</section>")]   # Browse agents
+    assert "ENSv2" in hero and "Intercepta" in hero and "x402 exact" in hero
 
 
 def test_catalog_placeholder_new_view_is_gone(app):
@@ -111,6 +123,25 @@ def test_verified_agent_card_shows_badge_as_html(client, db, agent):
     html = client.get("/marketplace").get_data(as_text=True)
     assert '<span class="trust-badge">' in html
     assert "Human-verified operator" in html
+
+
+def test_payment_screening_badge_on_card_evidence_on_profile(client, db, agent):
+    from app.models import Agent, Screening
+    db.session.get(Agent, agent).payout_address = WALLET
+    db.session.add(Screening(
+        hop="payee.onboard", agent_id=agent, chain_address=WALLET.lower(),
+        screened_address=WALLET.lower(), network="eip155:1", verdict="PAY",
+        reasons=[], traits=["high_reputation"], toxic_score=4, provider="intercepta",
+        fail_closed=False, latency_ms=42,
+    ))
+    db.session.commit()
+    # Cards stay compact: a trust badge only, no raw screening evidence.
+    html = client.get("/marketplace").get_data(as_text=True)
+    assert "Screened payout" in html
+    assert "toxicScore" not in html and "high_reputation" not in html
+    # The full screening evidence lives on the agent's profile.
+    detail = client.get(f"/agent/{agent}").get_data(as_text=True)
+    assert "Payment screening" in detail and "toxicScore 4" in detail and "high_reputation" in detail
 
 
 def test_components_render(app):

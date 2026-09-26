@@ -84,6 +84,21 @@ def test_profile_when_record_unset(agent_row, named, resolver):
     assert (p.address, p.source, p.ens_name) == (PROFILE, "profile", NAME)
 
 
+def test_strict_ens_requires_an_active_name(app, agent_row, resolver):
+    app.config["ENS_RESOLVE_PAYEES"] = True
+    resolver.record = PROFILE
+    with pytest.raises(PayeeError) as e:
+        names.resolve_payee(agent_row)
+    assert (e.value.code, e.value.status) == ("PAYEE_UNRESOLVED", 503)
+
+
+def test_strict_ens_requires_a_payout_record(app, agent_row, named, resolver):
+    app.config["ENS_RESOLVE_PAYEES"] = True
+    with pytest.raises(PayeeError) as e:
+        names.resolve_payee(agent_row)
+    assert (e.value.code, e.value.status) == ("PAYEE_UNRESOLVED", 503)
+
+
 def test_mismatch_fails_closed(agent_row, named, resolver):
     resolver.record = OTHER
     with pytest.raises(PayeeError) as e:
@@ -142,6 +157,19 @@ def test_hire_refused_on_mismatch(client, db, world_idp, screener, agent_public_
     assert resp.status_code == 403
     assert resp.get_json()["code"] == "PAYEE_MISMATCH"
     assert Approval.query.filter_by(engagement_id=eid).count() == 0
+
+
+def test_fund_approval_re_resolves_ens_before_consuming(client, approve, screener,
+                                                        agent_public_id, named, resolver):
+    resolver.record = PROFILE
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    approval = _hire(client, eid).get_json()
+    resolver.record = OTHER
+    row = approve(approval["approval_id"])
+    assert (row.state, row.failure_code) == ("blocked", "PAYEE_MISMATCH")
+    assert client.get(f"/api/engagements/{eid}").get_json()["status"] == "scoped"
+    from app.models import LedgerEntry
+    assert LedgerEntry.query.filter_by(engagement_id=eid).count() == 0
 
 
 def test_release_refused_on_mismatch(client, screener, approve, agent_public_id, named, resolver):

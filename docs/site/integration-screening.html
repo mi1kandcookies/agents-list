@@ -35,37 +35,35 @@
       <h1>Integration notes: Payment screening</h1>
       <p class="lede">Working notes on the Intercepta payment-screening integration: where it is called, what the docs told us, and what live use shows.</p>
 
-      <p class="note">Sections marked <span class="todo">TODO</span> need observations from live use with a real API key.</p>
+      <p class="note">The provider is called from the payer before signing, then by the resource server to screen the payer and payee before settlement. Approval-backed fund and release actions use the payer wallet bound by the identity boundary. Credentials stay outside the repository.</p>
       <section>
         <h2 id="files">Which files call the API</h2>
         <ul>
           <li><code>app/screening/intercepta.py</code>: the only HTTP client (Quick Scan and Deep Scan Address, Scan Token, Scan Message).</li>
           <li><code>app/screening/service.py</code>: decides which calls each hop needs, maps Sepolia addresses to mainnet and stores the verdict.</li>
           <li><code>app/screening/policy.py</code>: turns provider responses into <code>PAY</code> / <code>CAP</code> / <code>ASK_HUMAN</code> / <code>REFUSE</code>.</li>
-          <li><code>scripts/screening_smoke.py</code>: manual live check, only when <code>INTERCEPTA_API_KEY</code> is set.</li>
+          <li><code>app/screening/presign.py</code>: payer-side gate used by the x402 signer hook.</li>
+          <li><code>scripts/intercepta_x402_smoke.py</code>: 402 → three live scans → sign → retry demonstration.</li>
         </ul>
         <p>Tests use fixtures shaped like the provider's OpenAPI reference and never reach the network.</p>
       </section>
       <section>
         <h2 id="learned">What we learned from the docs</h2>
         <ul>
-          <li><strong>Mainnet-only data.</strong> Risk data covers mainnet, while our payments settle on Sepolia. Each Sepolia payee is screened as a mapped mainnet address (<code>agents.screening_address</code>, else <code>SCREENING_ADDRESS_MAP</code>). An unmapped payee is refused.</li>
+          <li><strong>Mainnet-only data.</strong> Risk data covers mainnet, while our payments settle on Sepolia. Each Sepolia payer and payee is screened as a mapped mainnet address (<code>agents.screening_address</code>, else <code>SCREENING_ADDRESS_MAP</code>). An unmapped address is refused.</li>
           <li><strong><code>riskGroup</code> values.</strong> Scan Message returns <code>Low</code>, <code>Medium</code> or <code>High</code>. We map <code>High</code> to <code>ASK_HUMAN</code> and <code>Medium</code> to <code>CAP</code>; drainer or malicious detectors refuse.</li>
           <li><strong>No score threshold is published.</strong> Traits drive our decisions; the toxic-score thresholds (refuse ≥ 80, ask ≥ 60, cap ≥ 30) are our own and configurable.</li>
           <li><strong>Fail closed.</strong> No key, timeout (4 s by default), non-2xx status or an unexpected body all mean <code>REFUSE</code>.</li>
         </ul>
       </section>
       <section>
-        <h2 id="time">Time to first success</h2>
-        <p><span class="todo">TODO</span> Time from getting a key to the first live verdict with <code>scripts/screening_smoke.py</code>.</p>
-      </section>
-      <section>
         <h2 id="live">Live observations</h2>
         <ul>
-          <li><span class="todo">TODO</span> Typical latency per endpoint (Quick Scan, Deep Scan, Scan Token, Scan Message): …</li>
-          <li><span class="todo">TODO</span> Do real responses match the documented schema? Any fields missing or renamed: …</li>
-          <li><span class="todo">TODO</span> Scores and traits seen for known-clean and known-bad mainnet addresses: …</li>
-          <li><span class="todo">TODO</span> Rate limits or errors hit: …</li>
+          <li>On 2026-09-26, live Quick Scan returned HTTP 200 with <code>toxicScore: 0</code> and an empty <code>traits</code> list.</li>
+          <li>Live Token Risks returned HTTP 200 with <code>action: info</code>, <code>trust: whitelist</code>, <code>riskLevel: neutral</code> and no detectors.</li>
+          <li>Live Scan Message returned HTTP 200 with <code>riskGroup: Low</code> and empty detector/address lists.</li>
+          <li>A live Deep Scan exceeded the four-second timeout; the client translated it to <code>TIMEOUT</code> and fail-closed <code>REFUSE</code>.</li>
+          <li>The client records method, endpoint, status, latency and a bounded response body, while never logging the API key.</li>
         </ul>
       </section>
       <section>
@@ -73,12 +71,12 @@
         <ul>
           <li>No testnet coverage, so a mapping layer is needed for any Sepolia product.</li>
           <li>No published guidance on how to turn a toxic score into a decision.</li>
-          <li><span class="todo">TODO</span> Others from live use: …</li>
+          <li>The live credential enables risk decisions, but an on-chain paid retry still needs separately funded demo wallets and a configured mandate.</li>
         </ul>
       </section>
       <section>
         <h2 id="top">Top improvement</h2>
-        <p><span class="todo">TODO</span> The one change that would help the most. A candidate: Sepolia (or testnet) risk data, or a documented test-address set with known verdicts.</p>
+        <p>The largest integration improvement would be documented test addresses or testnet risk data. Until then, explicit mainnet screening-address mappings keep Sepolia settlement from being mistaken for provider-supported testnet risk data.</p>
       </section>
     </main>
   </div>

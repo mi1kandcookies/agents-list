@@ -70,6 +70,25 @@ def test_header_round_trip(req, payer):
     assert x402_v2.decode_header(urlsafe) == payload
 
 
+def test_before_sign_hook_runs_before_the_signer(req, payer, monkeypatch):
+    order = []
+    original = x402_v2.GuardedSigner.sign_typed_data
+
+    def hook(typed):
+        order.append("screening")
+        assert typed["message"]["to"] == PAYEE
+        assert int(typed["message"]["value"]) == AMOUNT
+
+    def wrapped(self, full_message, **kwargs):
+        order.append("signer")
+        return original(self, full_message, **kwargs)
+
+    monkeypatch.setattr(x402_v2.GuardedSigner, "sign_typed_data", wrapped)
+    x402_v2.sign_payment(payer, req, expected=_expect(), domain=DOMAIN,
+                         before_sign=hook)
+    assert order == ["screening", "signer"]
+
+
 @pytest.mark.parametrize("value", ["", "not base64!", base64.b64encode(b"[1]").decode(),
                                    base64.b64encode(b"{nope").decode(), "A" * 9000])
 def test_decode_rejects_garbage(value):
@@ -146,6 +165,7 @@ def test_sign_verify_round_trip(req, payer):
                                domain=DOMAIN, now=NOW + 5)
     assert v.payer == payer.address.lower() and v.pay_to == PAYEE and v.amount_micro == AMOUNT
     assert v.permit["v"] in (27, 28) and v.nonce == payload["payload"]["authorization"]["nonce"]
+    assert "0x" + v.typed_data["message"]["nonce"].hex() == v.nonce
 
 
 def _signed(payer, req):

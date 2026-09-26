@@ -33,11 +33,15 @@ and post(url, json=, headers=, timeout=); tests pass a fake. No Flask imports.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 from typing import Any, Optional
 from urllib.parse import quote
 
 import requests
+
+log = logging.getLogger("agents_list.intercepta")
 
 DEFAULT_BASE_URL = "https://api.web3antivirus.io"
 DEFAULT_TIMEOUT_SECONDS = 4.0
@@ -131,7 +135,8 @@ class InterceptaClient:
     def scan_message(self, *, owner: str, typed_data: dict,
                      chain_id: str = MAINNET_CHAIN_ID, website: Optional[str] = None) -> dict:
         """Scan an EIP-712 payload; the API takes it as a JSON *string*."""
-        body = {"from": owner, "message": json.dumps(typed_data, separators=(",", ":")),
+        body = {"from": owner, "message": json.dumps(typed_data, separators=(",", ":"),
+                                                     default=_json_default),
                 "chainId": str(chain_id)}
         if website:
             body["website"] = website
@@ -146,23 +151,30 @@ class InterceptaClient:
             raise InterceptaError("MISSING_KEY", "INTERCEPTA_API_KEY is not set")
         url = self.base_url + path
         headers = {"X-API-KEY": self.api_key, "Accept": "application/json"}
+        started = time.monotonic()
         try:
             if method == "GET":
                 resp = self.http.get(url, headers=headers, timeout=self.timeout, **kwargs)
             else:
                 resp = self.http.post(url, headers=headers, timeout=self.timeout, **kwargs)
         except requests.Timeout as exc:
+            log.info("intercepta_call method=%s path=%s status=timeout latency_ms=%d response=%s",
+                     method, path, _latency_ms(started), type(exc).__name__)
             raise InterceptaError("TIMEOUT", f"no answer within {self.timeout:g}s") from exc
         except requests.RequestException as exc:
+            log.info("intercepta_call method=%s path=%s status=unreachable latency_ms=%d response=%s",
+                     method, path, _latency_ms(started), type(exc).__name__)
             raise InterceptaError("UNREACHABLE", type(exc).__name__) from exc
+        body = _safe_body(resp)
+        log.info("intercepta_call method=%s path=%s status=%d latency_ms=%d response=%s",
+                 method, path, resp.status_code, _latency_ms(started), _feedback_body(body))
         if not 200 <= resp.status_code < 300:
             raise InterceptaError("HTTP_ERROR", f"HTTP {resp.status_code}",
-                                  status=resp.status_code, body=_safe_body(resp))
-        try:
-            return resp.json()
-        except ValueError as exc:
+                                  status=resp.status_code, body=body)
+        if isinstance(body, str):
             raise InterceptaError("BAD_RESPONSE", "response is not JSON",
-                                  body=_safe_body(resp)) from exc
+                                  body=body)
+        return body
 
 
 def _safe_body(resp) -> Any:
@@ -171,3 +183,23 @@ def _safe_body(resp) -> Any:
         return resp.json()
     except ValueError:
         return (getattr(resp, "text", "") or "")[:500]
+
+
+def _latency_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
+
+
+def _feedback_body(body: Any) -> str:
+    """Compact response feedback for logs; never includes request headers."""
+    try:
+        text = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        text = str(body)
+    return text[:2000]
+
+
+def _json_default(value: Any):
+    """Encode eth-account's bytes32 fields without changing signer data."""
+    if isinstance(value, bytes):
+        return "0x" + value.hex()
+    raise TypeError(f"object of type {type(value).__name__} is not JSON serializable")

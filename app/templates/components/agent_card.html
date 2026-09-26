@@ -21,6 +21,9 @@
       Human-verified operator agent.human_verified_operator is true, or the
                               listing passed human review in the admin
                               verification queue (agent.verified)
+
+    Payment screening is evidence, not a quality guarantee. A listing shows
+    the latest payee.onboard verdict and toxicScore/traits when available.
 -#}
 {% set CATEGORY_CODES = {
   'Development': 'ENG', 'Data & Analytics': 'DAT', 'Content': 'CON',
@@ -62,6 +65,27 @@
 {%- if agent.human_verified_operator or agent.verified %}{{ _badge('Human-verified operator') }}{% endif -%}
 {%- endmacro %}
 
+{% macro screening_risk(agent) -%}
+{%- if agent.screening_verdict %}
+<div class="agent-risk-card agent-risk-card--{{ agent.screening_verdict|lower|replace('_', '-') }}" data-screening-id="{{ agent.screening_id or '' }}">
+  <div class="agent-risk-head">
+    <span>Payment screening</span>
+    <strong>{{ agent.screening_verdict|replace('_', ' ') }}</strong>
+  </div>
+  {% if agent.screening_toxic_score is not none %}
+  <div class="agent-risk-score mono">toxicScore {{ agent.screening_toxic_score }}</div>
+  {% endif %}
+  {% if agent.screening_traits %}
+  <div class="agent-risk-traits">{{ agent.screening_traits|join(', ') }}</div>
+  {% elif agent.screening_fail_closed %}
+  <div class="agent-risk-traits">No current provider evidence</div>
+  {% else %}
+  <div class="agent-risk-traits">No risk traits reported</div>
+  {% endif %}
+</div>
+{%- endif %}
+{%- endmacro %}
+
 {% macro track_record(agent) -%}
 {%- if agent.reviews -%}
 {{ '%.1f'|format(agent.rating) }} / 5 · {{ agent.reviews }} review{{ 's' if agent.reviews != 1 }}
@@ -81,6 +105,7 @@ No ratings yet
     </div>
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>
+  {% if agent.ens_name %}<div class="agent-card-ens mono">{{ agent.ens_name }}</div>{% endif %}
   {%- if badges %}
   <div class="agent-card-badges">{{ badges }}</div>
   {%- endif %}

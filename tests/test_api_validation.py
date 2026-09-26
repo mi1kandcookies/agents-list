@@ -42,6 +42,17 @@ def test_order_completion_is_closed(client, db, agent):
     assert db.session.get(Order, "ORD-TEST0001").status == "in_escrow"
 
 
+def test_unprotected_generation_is_closed(client, agent, monkeypatch):
+    """The old LLM preview cannot bypass the protected task path."""
+    def should_not_run(*args, **kwargs):
+        raise AssertionError("legacy generation must not invoke the LLM")
+
+    monkeypatch.setattr("app.llm.generate", should_not_run)
+    resp = client.post(f"/api/agents/{agent}/generate", json={"prompt": "do work"})
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_GENERATION_DISABLED"
+
+
 def test_agent_register_requires_valid_wallet(client):
     payload = {"wallet": "0x123", "name": "ab", "endpointURL": "foo"}
     resp = client.post("/api/agents/register", json=payload)
@@ -49,10 +60,12 @@ def test_agent_register_requires_valid_wallet(client):
     assert resp.get_json()["field"] == "wallet"
 
 
-def test_checkout_requires_buyer_wallet(client, agent):
+def test_legacy_checkout_is_closed(client, db, agent):
+    from app.models import Order
     resp = client.post(f"/checkout/{agent}", json={"task": "x", "amount": 5})
-    assert resp.status_code == 400
-    assert resp.get_json()["field"] == "buyer"
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_CHECKOUT_DISABLED"
+    assert Order.query.count() == 0
 
 
 def test_rating_bounds(client, agent):

@@ -111,6 +111,17 @@ def test_client_requests_match_the_documented_endpoints(http):
         assert r["headers"]["X-API-KEY"] == KEY and r["timeout"] == 2.5
 
 
+def test_payer_check_uses_deep_scan_and_token_screening(screener, http):
+    http.route("GET", DEEP_SCAN_PATH.format(address=MAINNET_PAYEE),
+               body=fixture("quick_scan_clean"))
+    verdict = screener.screen("payer.check", chain_address=SEPOLIA_PAYEE, amount_micro=1)
+    assert verdict["verdict"] == "PAY"
+    assert [request["url"] for request in http.requests] == [
+        f"{BASE}/api/public/v2/extension/account/{MAINNET_PAYEE}/toxic-score",
+        f"{BASE}/api/public/v2/extension/token-intelligence/token/{MAINNET_USDC}/risks",
+    ]
+
+
 @pytest.mark.parametrize("route, code", [
     ({"exc": requests.Timeout()}, "TIMEOUT"),
     ({"exc": requests.ConnectionError()}, "UNREACHABLE"),
@@ -318,7 +329,17 @@ def test_token_block_refuses_and_token_scan_is_cached(screener, http):
     assert release(screener)["verdict"] == "REFUSE"
     assert release(screener, hop="engagement.fund")["verdict"] == "REFUSE"
     assert len(http.calls_to("/risks")) == 1
-    assert len(http.calls_to("/quick-scan")) == 2
+    assert len(http.calls_to("/quick-scan")) == 1
+
+
+def test_successful_address_scan_is_cached_but_each_hop_persists(screener, http, db):
+    from app.models import Screening
+
+    first = release(screener, hop="engagement.fund")
+    second = release(screener, hop="milestone.release")
+    assert first["verdict"] == second["verdict"] == "PAY"
+    assert len(http.calls_to("/quick-scan")) == 1
+    assert Screening.query.count() == 2
 
 
 def test_token_errors_are_not_cached(screener, http):

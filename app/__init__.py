@@ -6,7 +6,7 @@ Agent's List Flask application factory.
     app = create_app("testing")   # explicit config name
 
 Blueprints:
-    catalog  /, /marketplace, /agent/<id>, /checkout/<id>, /order/<id>, jobs pages
+    catalog  /, /marketplace, /agent/<id>, /order/<id>, jobs pages
     seller   /seller/*
     admin    /admin/*
     api      /api/* (JSON)

@@ -1,5 +1,6 @@
-/* Agent's List docs. Same "Ledger Indigo" tokens as the app
-   (app/static/css/main.css); no build step, no web fonts required. */
+/* Agent's List docs. Same "Ledger Indigo" tokens and institutional type
+   system as the app (app/static/css/main.css); no build step required. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
 :root {
   --c-bg: #FAFAF9;
   --c-surface: #FFFFFF;

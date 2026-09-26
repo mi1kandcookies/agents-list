@@ -10,10 +10,11 @@ root human's consumed ``engagement.fund`` approval. The request can only
 narrow that authority: the category must be one of the mandate's, the budget
 at most what it has left, and the new hop within the root's ``max_depth``.
 
-The payee comes from ``resolve_payee`` (the agent's ENS payout record when
-it has one, else its profile; a mismatch is 403 PAYEE_MISMATCH, a failed
-lookup 503 PAYEE_UNRESOLVED) and is then screened server-side (hop
-``subhire.hop``; anything a client sends as a verdict is ignored):
+The parent agent's wallet is screened first (hop ``payer.check``). The payee
+comes from ``resolve_payee`` (the agent's ENS payout record when it has one,
+else its profile; a mismatch is 403 PAYEE_MISMATCH, a failed lookup 503
+PAYEE_UNRESOLVED) and is then screened server-side (hop ``subhire.hop``;
+anything a client sends as a verdict is ignored):
 
     PAY        allocate the budget now                               → 201 child
     CAP        allocate min(budget, cap) now, recording the cap      → 201 child
@@ -37,13 +38,14 @@ import time
 from datetime import datetime, timezone
 
 from app.approvals.actions import format_usdc
-from app.approvals.executors import ExecutionResult, after_consume, executor, on_terminal
+from app.approvals.executors import (ExecutionResult, after_consume, before_consume, executor,
+                                     on_terminal)
 from app.engagements import ledger
 from app.engagements.ledger import unix
 from app.engagements.service import (
     ACTIVE, EngagementError, _cap_of, _create_approval, _failed, _lock_engagement, _refuse,
     _start, engagement_json, get_escrow, payee_address, resolve_agent, resolve_payee, screen,
-    screening_json,
+    screen_agent_payer, screening_json,
 )
 from app.engagements.sow import SowError, build_sow, normalize_milestones, sow_hash, sow_json
 from app.extensions import db
@@ -127,19 +129,31 @@ def subhire(engagement_id: str, token: str, *, agent_ref, outcome, budget_micro:
     if payee is None:
         raise EngagementError("agent has no payout address", "PAYEE_ADDRESS_MISSING", 409)
 
+    payer_verdict = screen_agent_payer(parent, parent.agent, budget_micro)
+    if payer_verdict["verdict"] == "REFUSE":
+        _refuse(parent, payer_verdict, terminal=False,
+                message="payer refused by risk screening")
+
     verdict = screen(HOP, chain_address=payee, amount_micro=budget_micro, engagement=parent,
                      agent=agent)
     if verdict["verdict"] == "REFUSE":
         _refuse(parent, verdict, terminal=False, message="sub-hire refused by risk screening")
     db.session.commit()   # keep the verdict on record whatever happens next
-    capped = verdict["verdict"] == "CAP" and budget_micro > _cap_of(verdict)
-    amount = _cap_of(verdict) if capped else budget_micro
+    amount = budget_micro
+    if verdict["verdict"] == "CAP":
+        amount = min(amount, _cap_of(verdict))
+    if payer_verdict["verdict"] == "CAP":
+        amount = min(amount, _cap_of(payer_verdict))
+    capped = amount < budget_micro
     extra = {"requested_micro": budget_micro, "allocated_micro": amount, "capped": capped,
-             "cap_micro": _cap_of(verdict) if verdict["verdict"] == "CAP" else None,
-             "payee_source": resolved.source, "screening": screening_json(verdict)}
+             "cap_micro": min((_cap_of(v) for v in (verdict, payer_verdict)
+                               if v["verdict"] == "CAP"), default=None),
+             "payee_source": resolved.source, "screening": screening_json(verdict),
+             "payer_screening": screening_json(payer_verdict),
+             "payer_screening_id": payer_verdict["id"]}
 
     child = _new_child(parent, parent_row, root_row, agent, outcome, amount, cat)
-    if verdict["verdict"] == "ASK_HUMAN":
+    if verdict["verdict"] == "ASK_HUMAN" or payer_verdict["verdict"] == "ASK_HUMAN":
         return 202, _ask_root_human(child, parent_row, resolved, verdict, flow, extra)
 
     try:
@@ -168,6 +182,7 @@ def _new_child(parent, parent_row, root_row, agent, outcome, amount: int, catego
         raise EngagementError(str(exc), exc.code, 400, exc.field) from None
     child = Engagement(
         agent_id=agent.id, buyer_human_id=root_row.human_id,
+        buyer_address=parent.buyer_address,
         parent_engagement_id=parent.id, depth=parent_row.depth + 1,
         outcome=sow["outcome"], category=category, sow_json=sow_json(sow), sow_hash=sow_hash(sow),
         total_micro=amount, status="scoped", deadline_at=parent.deadline_at if deadline else None,
@@ -187,8 +202,10 @@ def _ask_root_human(child, parent_row, payee, verdict: dict, flow: str, extra: d
         approval = _create_approval(KIND, {
             "engagement_id": child.id, "sow_hash": child.sow_hash, "amount_micro": child.total_micro,
             "payee_agent_id": child.agent.public_id, "payee_address": payee.address,
-            "payee_source": payee.source, "parent_mandate_id": parent_row.id,
-            "screening_id": verdict["id"], "screening_ack": True,
+            "payee_source": payee.source, "payee_name": payee.ens_name,
+            "parent_mandate_id": parent_row.id,
+            "screening_id": verdict["id"],
+            "payer_screening_id": extra.get("payer_screening_id"), "screening_ack": True,
         }, flow=flow, engagement=child, screening_id=verdict["id"])
     except EngagementError:
         # Blocked before reaching the human (ban, weekly cap): drop the child.
@@ -244,11 +261,16 @@ def execute_subhire(approval, action: dict) -> ExecutionResult:
     if child.status != "awaiting_approval" or child.mandate_id or ledger.entries(child.id):
         return _failed(f"sub-engagement is {child.status}")
     problem = None
-    payee = payee_address(child.agent)
+    resolved = resolve_payee(child.agent)
+    payee = resolved.address
     if action.get("sow_hash") != child.sow_hash:
         problem = "statement of work changed since approval"
     elif payee is None or action.get("payee_address") != payee:
         problem = "payee address changed since approval"
+    elif action.get("payee_source") != resolved.source:
+        problem = "payee source changed since approval"
+    elif action.get("payee_name") != resolved.ens_name:
+        problem = "ENS name changed since approval"
     elif action.get("payee_agent_id") != child.agent.public_id:
         problem = "payee agent does not match"
     elif action.get("amount_micro") != child.total_micro:
@@ -270,6 +292,25 @@ def execute_subhire(approval, action: dict) -> ExecutionResult:
     return ExecutionResult(ok=True, summary=f"Allocated {format_usdc(child.total_micro)} "
                                             f"to sub-hire {child.id}",
                            ledger_ids=[entry.id], redirect=f"/jobs/{child.id}")
+
+
+@before_consume(KIND)
+def _subhire_payee_still_bound(approval, action: dict) -> None:
+    """Re-resolve the child's ENS/profile payee before allocating authority."""
+    from app.approvals.errors import ApprovalError
+    child = db.session.get(_models()[0], action.get("engagement_id") or "")
+    if child is None:
+        return
+    try:
+        resolved = resolve_payee(child.agent)
+    except EngagementError as exc:
+        raise ApprovalError(exc.code, exc.message) from None
+    if resolved.address is None or action.get("payee_address") != resolved.address:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee address changed since approval")
+    if action.get("payee_source") != resolved.source:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee source changed since approval")
+    if action.get("payee_name") != resolved.ens_name:
+        raise ApprovalError("PAYEE_MISMATCH", "the ENS name changed since approval")
 
 
 @after_consume(KIND)

@@ -23,7 +23,8 @@ async function provision(service) {
   const root = await service.setupRoot();
   const agent = await service.createAgent({
     agent_public_id: 'AGT-0000-0001-X', label: 'test-agent',
-    records: { context: 'Writes tests', mcp: 'https://agent.example/mcp', erc8004_agent_id: '42' },
+    records: { context: 'Writes tests', mcp: 'https://agent.example/mcp',
+      payout: HIRED, erc8004_agent_id: '42' },
   });
   const job = await service.createJob({
     parent: agent.name, label: 'eng-aaaa', expiry: NOW + 86400,
@@ -83,6 +84,7 @@ test('agent, job, sub-job, revoke', async () => {
   assert.deepEqual(agent.text, {
     'agent-context': 'Writes tests',
     'agent-endpoint[mcp]': 'https://agent.example/mcp',
+    'x402-payto': HIRED,
     'agent-registration[0x0001000003aa36a7148004a818bfb912233c491871b3d84c89a494bd9e][42]': '1',
   });
   assert.equal(agent.records.erc8004_agent_id, '42');
@@ -128,6 +130,23 @@ test('agent, job, sub-job, revoke', async () => {
   const after = await service.tree();
   assert.equal(after.tree.children[0].children[0].children[0].status, 'revoked');
   assert.equal((await service.revoke({ name: job.name })).existing, true);
+});
+
+test('an active agent name can add a changed payout record', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const first = await service.createAgent({
+    agent_public_id: 'AGT-0000-0001-X', label: 'test-agent', records: { context: 'Writes tests' },
+  });
+  const second = await service.createAgent({
+    agent_public_id: 'AGT-0000-0001-X', label: 'test-agent',
+    records: { context: 'Writes tests', payout: HIRED },
+  });
+  assert.equal(second.existing, true);
+  assert.equal(second.text['x402-payto'], HIRED);
+  const writes = calls(exec, 'multicall');
+  assert.equal(writes.length, 1);
+  assert.notEqual(first.resolver, undefined);
 });
 
 test('dry-run hashes are deterministic', async () => {

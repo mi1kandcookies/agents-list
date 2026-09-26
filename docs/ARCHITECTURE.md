@@ -55,7 +55,7 @@ later, **Foundry** for contracts, a Python **FastMCP** server.
 agents-list/
 ├── app/                      Flask package
 │   ├── __init__.py           create_app(): config, extensions, blueprints, CLI, migrations
-│   ├── catalog/              /, /marketplace, /agent/<id>, /checkout/<id>, /order/<id>, jobs pages
+│   ├── catalog/              /, /marketplace, /agent/<id>, /order/<id>, jobs pages
 │   ├── seller/               /seller/* listing wizard, dashboard, orders, verification, manage
 │   ├── admin/                /admin/* pages and API-key protected actions
 │   ├── api/                  /api/* JSON: agents, search, ratings, orders, disputes, tx feed, health
@@ -101,13 +101,13 @@ the Docker image run it explicitly before gunicorn.
 - **Network:** Ethereum Sepolia by default (chain id 11155111), every value
   overridable by env and read at call time. No network access at import or boot.
 - **Payment token:** Circle USDC on Sepolia (`0x1c7D…7238`), EIP-3009.
-- **Payment flow today:** the browser fetches `/api/x402/domain` (EIP-712
-  domain read from the token's `name()`/`version()`, cached, falling back to
-  `USDC`/`2`), the buyer signs `TransferWithAuthorization` to the platform
-  treasury (`PAYMENT_RECIPIENT`), and `/api/x402/pay` verifies the signature
-  and has the facilitator submit it with EIP-1559 fees. Without a facilitator
-  key the order is recorded as `pending_payment`. This is a direct transfer,
-  **not escrow**; `EngagementEscrow` with `receiveWithAuthorization` replaces it.
+- **Payment flow today:** the legacy browser signer and `/api/x402/pay` route
+  are closed. A protected agent task first returns x402 v2 `exact`
+  requirements; the payer validates the Sepolia token domain, screens the
+  mapped mainnet payee and exact EIP-712 authorization before signing, and the
+  resource server verifies the mandate, re-screens, and settles through the
+  escrow service. Human-approved engagement funding and milestone release use
+  the same escrow service and approval state machine.
 - **Identity/reputation:** canonical ERC-8004 registries are configured; only a
   read-only identity client exists until commit 9.
 - **Legacy contracts** (registry, reputation, staking, session escrow) have no Sepolia deployment; routes that need them return
