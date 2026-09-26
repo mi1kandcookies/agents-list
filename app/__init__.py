@@ -158,26 +158,32 @@ def _register_error_handlers(app: Flask) -> None:
 def _register_cli(app: Flask) -> None:
     @app.cli.command("seed")
     def seed_command():
-        """Load sample agents for local development."""
+        """Load the demo agents for local development (same as `flask seed-demo`,
+        plus simulated operator stamps where dev stamps are allowed)."""
+        from app.demo_seed import seed_demo_agents
         from app.models import Agent
-        from app.sample_data import seed_sample_agents
-        added = seed_sample_agents(db, Agent)
-        print(f"Added {added} sample agents.")
+        from app.seller.stamp import seed_stamps_refusal
+        refusal = seed_stamps_refusal(app)
+        result = seed_demo_agents(db, Agent, dev_stamp=refusal is None)
+        print(f"Demo agents: {result['added']} added, {result['updated']} refreshed.")
+        if refusal:
+            print(f"Not dev-stamped ({refusal}); an operator must stamp each agent.")
 
     @app.cli.command("seed-stamps")
     def seed_stamps_command():
-        """DEVELOPMENT ONLY: mark the sample agents operator-stamped (simulated,
+        """DEVELOPMENT ONLY: mark the demo agents operator-stamped (simulated,
         no World ID approval) so there are hireable listings to try."""
         import sys
-        from app.seller.stamp import seed_sample_stamps, seed_stamps_refusal
+        from app.seller.stamp import seed_demo_stamps, seed_stamps_refusal
         refusal = seed_stamps_refusal(app)
         if refusal:
             print(f"Refusing: {refusal}", file=sys.stderr)
             sys.exit(1)
-        names = seed_sample_stamps()
-        print(f"SIMULATED dev stamps written for {len(names)} sample agents: {', '.join(names) or '-'}")
+        names = seed_demo_stamps()
+        print(f"SIMULATED dev stamps written for {len(names)} demo agents: {', '.join(names) or '-'}")
 
     app.cli.add_command(__import__("app.demo_seed", fromlist=["seed_demo"]).seed_demo)
+    app.cli.add_command(__import__("app.demo_reset", fromlist=["reset_demo"]).reset_demo)
 
 
 def _init_database(app: Flask) -> None:

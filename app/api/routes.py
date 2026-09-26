@@ -37,7 +37,8 @@ def api_buyer_jobs(wallet):
 
 @bp.route("/agents")
 def api_agents():
-    """Paginated, filterable agent list."""
+    """Paginated, filterable agent list. ``hireable=1`` keeps only agents
+    with a valid operator stamp (what the job flow and MCP offer for hire)."""
     from app.models import Agent as AgentModel
     category = request.args.get("category", "")
     use_case = request.args.get("use_case", "")
@@ -57,8 +58,18 @@ def api_agents():
         q = q.filter(AgentModel.verified.is_(True))
     elif verified == "false":
         q = q.filter(AgentModel.verified.is_(False))
-    total = q.count()
-    rows = q.order_by(AgentModel.id).offset((page - 1) * per_page).limit(per_page).all()
+    q = q.order_by(AgentModel.id)
+    if request.args.get("hireable", "").lower() in ("1", "true", "yes"):
+        # Only agents that can be hired right now (valid operator stamp),
+        # as on the home and marketplace pages. The stamp check is not a
+        # column, so filter in Python and paginate the result.
+        from app.seller.stamp import stamp_status
+        hireable = [a for a in q.all() if stamp_status(a).ok]
+        total = len(hireable)
+        rows = hireable[(page - 1) * per_page:page * per_page]
+    else:
+        total = q.count()
+        rows = q.offset((page - 1) * per_page).limit(per_page).all()
     return jsonify({"agents": [{**a.to_dict(), "agent_id": a.public_id} for a in rows],
                     "total": total,
                     "page": page, "per_page": per_page})

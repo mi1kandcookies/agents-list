@@ -13,7 +13,8 @@ reviews             : Buyer ratings and feedback per agent
 Custody-chain tables (docs/decisions/0001-custody-chain.md §11) live in
 sibling modules and are re-exported at the bottom of this file.
 
-Sample data for local development is loaded explicitly with `flask seed`.
+Demo listings for local development are loaded explicitly with `flask seed`
+(app/demo_seed.py).
 """
 from __future__ import annotations
 import json

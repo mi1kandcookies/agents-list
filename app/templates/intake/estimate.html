@@ -57,6 +57,11 @@
                 data-engagement-id="{{ eng.id }}" data-total="{{ total_cents / 100 }}">Approve with World ID</button>
       </div>
       <p class="flow-error" id="e-9" role="alert" hidden></p>
+      {% elif not_hireable %}
+      <p class="flow-error" role="alert">This agent can't be hired right now. {{ not_hireable }}</p>
+      <div class="flow-nav">
+        <a class="fbtn fbtn-primary" href="{{ url_for('intake.new_job') }}">Pick another agent</a>
+      </div>
       {% endif %}
     </div>
   </div>
@@ -64,5 +69,5 @@
 {% endblock %}
 
 {% block scripts %}
-{% if can_approve %}<script src="{{ url_for('static', filename='js/flow.js') }}?v=3"></script>{% endif %}
+{% if can_approve %}<script src="{{ url_for('static', filename='js/flow.js') }}?v=4"></script>{% endif %}
 {% endblock %}

@@ -287,10 +287,10 @@ def test_manifest_page_renders_hashes(client, stamped, agent):
 
 
 # ── dev seed ──────────────────────────────────────────────────────────────
-def test_seed_stamps_marks_sample_agents(app, db):
+def test_seed_stamps_marks_demo_agents(app, db):
+    from app.demo_seed import seed_demo_agents
     from app.models import Agent
-    from app.sample_data import seed_sample_agents
-    seed_sample_agents(db, Agent)
+    seed_demo_agents(db, Agent, address_map="")
     result = app.test_cli_runner().invoke(args=["seed-stamps"])
     assert result.exit_code == 0 and "SIMULATED" in result.output
     rows = Agent.query.all()

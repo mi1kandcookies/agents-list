@@ -21,9 +21,9 @@ def test_route_inventory_is_not_empty(app):
 @pytest.mark.parametrize("seed", [False, True], ids=["empty-db", "sample-db"])
 def test_parameterless_get_routes_do_not_500(app, client, db, seed):
     if seed:
+        from app.demo_seed import seed_demo_agents
         from app.models import Agent
-        from app.sample_data import seed_sample_agents
-        seed_sample_agents(db, Agent)
+        seed_demo_agents(db, Agent, address_map="", dev_stamp=True)
     client.set_cookie("buyer_wallet", WALLET)
     failures = {}
     for url in _get_routes(app):
