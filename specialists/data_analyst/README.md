@@ -36,9 +36,11 @@ All deliverables live under `deliverables/<milestone-id>/`.
 - Checks never read the agent's numbers as truth: they re-profile, re-run
   and recompute from `inputs/`, so a hand-edited `profile.json`, result CSV,
   figure or reconciliation fails.
-- `profile.json` holds no personal data: columns passed as `mask_columns`
-  (the intake's `sensitive_columns`) and columns holding e-mail addresses
-  keep their counts but no values.
+- In `profile.json`, columns passed as `mask_columns` (the intake's
+  `sensitive_columns`) and columns holding e-mail addresses keep their
+  counts but show no values. Other columns show their min, max and most
+  common values as they are, so personal data the customer did not flag
+  (and that is not an e-mail address) is not masked.
 - CSV money written as `$1,200.00` or `(35.00)` loads as REAL (with a
   warning) rather than as text that SQLite would sum as 1; reference totals
   may be formatted the same way.
