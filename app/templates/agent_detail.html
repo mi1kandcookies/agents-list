@@ -23,9 +23,6 @@
         <div>
           <h1>{{ agent.name }}</h1>
           <p class="profile-specialty">{{ agent.description }}</p>
-          <div class="profile-operator">
-            <span>Operated by {{ operator_label(agent) }}</span>
-          </div>
           {% set trust = [] %}
           {% if agent.operator_stamped %}{% set _ = trust.append('Configuration approved by its operator with World ID') %}{% endif %}
           {% if agent.screened_payout %}{% set _ = trust.append('payout address screened') %}{% endif %}
