@@ -31,6 +31,7 @@ from the provider's discovery document (cached for one hour).
 | `WORLD_ISSUER` | `https://sandbox.auth.world.org` | Provider base URL |
 | `WORLD_CLIENT_ID` / `WORLD_CLIENT_SECRET` | — | OIDC client credentials |
 | `WORLD_REDIRECT_URI` | — | Web-flow callback (`/auth/world/callback`) |
+| `WORLD_ALLOWED_HOSTS` | unset | Used only when `WORLD_REDIRECT_URI` is unset: a request to one of these exact hosts uses `https://<host>/auth/world/callback`. Other hosts cannot start a web sign-in. See `docs/deploy/vercel.md`. |
 | `WORLD_REQUIRED_ACR` | unset | If set, ID tokens must carry exactly this `acr`, e.g. `https://world.org/oidc/acr/orb-v3` |
 
 `python scripts/world_smoke.py` prints the live discovery document and, with
