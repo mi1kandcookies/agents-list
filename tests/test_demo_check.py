@@ -56,6 +56,8 @@ def setup(app, db, client, world_idp, fake_screener, monkeypatch):
     from app.models import Agent
     app.config["MANDATE_SIGNING_KEY"] = tokens.generate_pem()
     app.extensions["screener"] = fake_screener
+    app.config["MCP_API_TOKEN"] = "demo-check-token"
+    monkeypatch.setenv("MCP_API_TOKEN", "demo-check-token")
     seed_demo_agents(db, Agent, address_map="", dev_stamp=True)
     mod = _load()
     monkeypatch.setattr(mod.time, "sleep", lambda s: None)
@@ -85,9 +87,25 @@ def test_full_walkthrough_passes(setup, capsys):
     assert outcomes["second hire on a funded engagement is refused"] == "PASS"
     assert outcomes["release approved and executed"] == "PASS"
     assert outcomes["denied, no money moved"] == "PASS"
-    assert outcomes["sub-hire"] == "SKIP"  # no sub-hire endpoint yet
+    assert outcomes["sub-hire without a mandate is refused"] == "PASS"
+    assert outcomes["sub-hire over the mandate budget is refused"] == "PASS"
+    assert outcomes["sub-hire within the mandate"] == "PASS"
     out = capsys.readouterr().out
     assert "User code" in out and "APPROVE" in out
+
+
+def test_ask_human_subhire_waits_for_the_root_human(setup, fake_screener):
+    """Screening asks for a human on the sub-hire hop only; the test's
+    stand-in approves it on the phone."""
+    mod, api = setup
+    from app.models import Agent
+    first = Agent.query.order_by(Agent.id).first()
+    for row in Agent.query.filter(Agent.id != first.id).all():
+        fake_screener.set(row.payout_address, "ASK_HUMAN")
+    args = type("Args", (), {"agent": first.public_id, "budget": "2.00", "skip_expire": True})()
+    res = mod.run(api, args)
+    outcomes = {step: result for step, result, _ in res.rows}
+    assert outcomes["sub-hire approved by the root human"] == "PASS", res.rows
 
 
 def test_expiry_path_waits_for_the_provider(setup, world_idp, monkeypatch):
