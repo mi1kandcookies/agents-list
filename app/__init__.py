@@ -2,7 +2,8 @@
 Agent's List Flask application factory.
 
     from app import create_app
-    app = create_app()            # config from FLASK_ENV (default: development)
+    app = create_app()            # config from FLASK_ENV (default: development,
+                                  # production on Vercel)
     app = create_app("testing")   # explicit config name
 
 Blueprints:
@@ -50,7 +51,8 @@ def _load_dotenv(path: Path) -> None:
 # Load .env before app.config is imported: config classes read os.environ at import.
 _load_dotenv(_ROOT / ".env")
 
-from app.config import config as _config_map, validate_runtime_config  # noqa: E402
+from app.config import (config as _config_map, default_config_name,  # noqa: E402
+                        validate_runtime_config)
 from app.extensions import cors, db, limiter, migrate  # noqa: E402
 
 log = logging.getLogger("agents_list")
@@ -66,13 +68,15 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     )
 
     app = Flask(__name__, instance_path=str(_ROOT / "instance"))
-    name = config_name or os.environ.get("FLASK_ENV", "development")
+    name = config_name or default_config_name()
     config_cls = _config_map.get(name, _config_map["default"])
     app.config.from_object(config_cls)
     app.config.update(overrides)
     if hasattr(config_cls, "init_app"):
         config_cls.init_app(app)
     validate_runtime_config(app)
+    if app.config.get("TRUST_PROXY"):
+        _trust_proxy(app)
 
     db.init_app(app)
     migrate.init_app(app, db, directory=MIGRATIONS_DIR)
@@ -128,6 +132,15 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     _register_cli(app)
     _init_database(app)
     return app
+
+
+def _trust_proxy(app: Flask) -> None:
+    """Take the client IP, scheme and host from one proxy's X-Forwarded-*
+    headers, so url_for(_external=True), request.scheme, the same-origin
+    check and the rate limiter see what the browser used. Vercel overwrites
+    X-Forwarded-For and sets X-Forwarded-Proto/-Host itself."""
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
 def _register_request_logging(app: Flask) -> None:

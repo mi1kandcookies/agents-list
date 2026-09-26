@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "rm -rf public && mkdir -p public && cp -R app/static public/static",
+  "functions": {
+    "wsgi.py": {
+      "maxDuration": 120,
+      "excludeFiles": "{public/**,**/__pycache__/**,**/*.pyc}"
+    }
+  }
+}
