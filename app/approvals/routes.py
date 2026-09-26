@@ -61,7 +61,34 @@ def status(approval_id):
         failure=service.failure_text(approval.failure_code),
         replays=service.replay_attempts(approval),
         start_error=request.args.get("error"),
+        **_page_context(approval),
     )
+
+
+def _page_context(approval) -> dict:
+    """Display-only extras for the status page: who is paid, how much, the
+    bound screening verdict, and the ledger movement the approval caused."""
+    from app.engagements.ledger import entry_json
+    from app.extensions import db
+    from app.models import Agent, LedgerEntry, Screening
+    action = approval.action
+    agent = db.session.get(Agent, approval.agent_id) if approval.agent_id else None
+    if agent is None and action.get("payee_agent_id"):
+        agent = Agent.query.filter_by(public_id=action["payee_agent_id"]).first()
+    screening = None
+    if approval.screening_id:
+        from app.screening.service import verdict_from_row
+        row = db.session.get(Screening, approval.screening_id)
+        screening = verdict_from_row(row) if row else None
+    entries = [entry_json(e) for e in LedgerEntry.query.filter_by(approval_id=approval.id)
+               .order_by(LedgerEntry.created_at).all()]
+    return {
+        "agent": agent,
+        "amount_micro": action.get("amount_micro"),
+        "screening": screening,
+        "ledger": entries,
+        "job_url": f"/jobs/{approval.engagement_id}" if approval.engagement_id else None,
+    }
 
 
 @bp.get("/approvals/<approval_id>/start")
