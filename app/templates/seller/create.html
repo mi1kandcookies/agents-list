@@ -84,6 +84,18 @@
               <span class="fl-hint">Underlying model powering this agent</span>
             </div>
           </div>
+          <div class="fl-group" id="ens-label-group" style="margin-top:24px;">
+            <label class="fl-label" for="create-ens-label">Agent name (ENS) <span style="color:var(--red);">*</span></label>
+            <div class="ens-label-row">
+              <input class="fl-input" type="text" id="create-ens-label" name="ens_label" placeholder="codereview-pro" maxlength="40" autocomplete="off" spellcheck="false">
+              <span class="ens-root">.{{ ens_root }}</span>
+            </div>
+            <div class="ens-preview" id="ens-preview" aria-live="polite">
+              <span class="ens-preview-name" id="ens-preview-name">your-agent.{{ ens_root }}</span>
+              <span class="ens-check" id="ens-check"></span>
+            </div>
+            <span class="fl-hint">Lowercase letters, digits and hyphens. Created on Sepolia after you stamp the manifest.</span>
+          </div>
         </div>
 
         <!-- Section: Description -->
@@ -270,6 +282,7 @@
         <div class="card card-sm" style="background:var(--card-2);">
           <div class="font-bold mb-12">Agent Summary</div>
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Name</span><span id="review-name">Your Agent Name</span></div>
+          <div class="flex-between mb-8 text-sm"><span class="text-muted">Agent name</span><span class="font-mono" id="review-ens" style="font-size:.72rem;">-</span></div>
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Category</span><span id="review-category">Development</span></div>
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Billing</span><span id="review-billing">Per Token</span></div>
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Price Range</span><span id="review-range">$0.002 - $0.010</span></div>
@@ -514,6 +527,7 @@
       min_output_tokens: byId('create-min-output'),
       max_output_tokens: byId('create-max-output'),
       model:             byId('create-model'),
+      ens_label:         byId('create-ens-label'),
       wallet:            walletAddr,
       seller:            walletAddr,
     };
@@ -599,6 +613,82 @@
     document.addEventListener('click', e => {
       if (!trigger.contains(e.target) && !panel.contains(e.target)) close();
     });
+  })();
+</script>
+<style>
+.ens-label-row { display: flex; align-items: baseline; gap: 6px; }
+.ens-label-row .fl-input { flex: 1; min-width: 0; font-family: var(--font-num); }
+.ens-root { font-family: var(--font-num); font-size: .875rem; color: var(--text-3); white-space: nowrap; }
+.ens-preview { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 10px; font-size: .8125rem; }
+.ens-preview-name { font-family: var(--font-num); color: var(--ink); overflow-wrap: anywhere; }
+.ens-check { font-size: var(--fs-xs); color: var(--text-3); }
+.ens-check.ok { color: var(--success); }
+.ens-check.bad { color: var(--danger); }
+</style>
+<script>
+  /* ── Agent name (ENS): prefilled from the agent name, checked live ──── */
+  (function () {
+    const nameEl = document.getElementById('create-name');
+    const input = document.getElementById('create-ens-label');
+    const preview = document.getElementById('ens-preview-name');
+    const check = document.getElementById('ens-check');
+    const review = document.getElementById('review-ens');
+    const root = {{ ens_root|tojson }};
+    // Same rule as app/names/service.slug.
+    const slug = (t) => (t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '').slice(0, 40).replace(/^-+|-+$/g, '');
+    let touched = false, timer = null, seq = 0, result = null;
+
+    function render() {
+      const label = input.value.trim().toLowerCase();
+      preview.textContent = (label || 'your-agent') + '.' + root;
+      if (review) review.textContent = label ? label + '.' + root : '-';
+    }
+    function schedule() {
+      render();
+      result = null;
+      check.className = 'ens-check';
+      check.textContent = input.value.trim() ? 'Checking…' : '';
+      clearTimeout(timer);
+      if (!input.value.trim()) return;
+      timer = setTimeout(async () => {
+        const mine = ++seq;
+        try {
+          const res = await fetch('/api/names/available?' + new URLSearchParams({ label: input.value }),
+                                  { credentials: 'same-origin' });
+          const body = await res.json();
+          if (mine !== seq) return;
+          result = body;
+          check.className = 'ens-check ' + (body.available ? 'ok' : 'bad');
+          check.textContent = body.available ? 'Available' : (body.error || 'Not available');
+        } catch (e) {
+          if (mine === seq) { check.className = 'ens-check'; check.textContent = ''; }
+        }
+      }, 250);
+    }
+    nameEl.addEventListener('input', () => {
+      if (!touched) { input.value = slug(nameEl.value); schedule(); }
+    });
+    input.addEventListener('input', () => { touched = input.value.trim() !== ''; schedule(); });
+    input.addEventListener('blur', () => { input.value = input.value.trim().toLowerCase(); render(); });
+
+    // Step 1 cannot continue until the name is known to be free.
+    document.getElementById('step-next').addEventListener('click', (e) => {
+      const step1 = document.getElementById('step-1');
+      if (!step1 || step1.style.display === 'none') return;
+      if (!input.value.trim()) {
+        showToast('Choose an agent name.', 'warning');
+      } else if (!result) {
+        showToast('Checking the agent name. Try again in a moment.', 'warning');
+      } else if (!result.available) {
+        showToast('Agent name: ' + (result.error || 'not available'), 'error');
+      } else {
+        return;
+      }
+      input.focus();
+      e.stopImmediatePropagation();
+    }, true);
+    render();
   })();
 </script>
 {% endblock %}
