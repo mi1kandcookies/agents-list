@@ -1,0 +1,18 @@
+{
+  "name": "m2-comps-fy2024",
+  "milestone": "m2-spreads-comps",
+  "fixture": "workspace",
+  "brief": {
+    "engagement_id": "eval-fr-m2",
+    "specialist": "financial-research",
+    "objective": "Build XBRL-tied spreads for FY2023-FY2024 and FY2024 trading comps for Coldharbor and two peers.",
+    "intake": {
+      "companies": ["9900003", "9900001", "9900002"],
+      "research_question": "Where does Coldharbor trade against peers on EV/Revenue and EV/EBITDA, and how do its margins compare?",
+      "sec_user_agent": "supplied by the eval runner",
+      "fiscal_years": [2023, 2024],
+      "market_data": "inputs/market_data.csv"
+    }
+  },
+  "notes": "Expected FY2024 values: Coldharbor total debt 543,000,000 (noncurrent 498m + current portion 45m), EV 1,442,710,000 (includes 12,000,000 minority interest), EV/Revenue 2.0543, revenue growth 4.54% against the FY2023 figure in the FY2024 10-K (671.8m). Every period carries its latest 10-K figure, so Coldharbor's FY2022 revenue is the restated 684.9m (690.4m as first reported); a strong run mentions the restatement in the Exceptions section. xbrl_tieout, comps_tie_to_xbrl and comps_recompute must pass."
+}

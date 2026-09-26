@@ -1,0 +1,19 @@
+{
+  "name": "m1-coldharbor-plan",
+  "milestone": "m1-plan-sources",
+  "fixture": "workspace",
+  "brief": {
+    "engagement_id": "eval-fr-m1",
+    "specialist": "financial-research",
+    "objective": "Screen Coldharbor Systems as an acquisition target for a mid-market industrial technology buyer.",
+    "intake": {
+      "companies": ["9900003", "9900001", "9900002"],
+      "research_question": "How do Coldharbor's growth and margins compare with Halvorsen and Brightwater, and does its filing history show reporting or financing red flags?",
+      "sec_user_agent": "supplied by the eval runner",
+      "fiscal_years": [2023, 2024],
+      "dataroom": "inputs/dataroom/ (no MNPI)",
+      "audience": "internal deal team"
+    }
+  },
+  "notes": "Workspace = evals/fixtures/workspace. Expect: research_plan.md with all five sections and a peer rationale per company; source_inventory.csv listing the three FY2024 10-Ks by accession plus both data.sec.gov endpoints per company; dataroom_index.csv covering all four files with the PDF listed as unreadable. source_inventory_resolves and dataroom_index_complete must pass."
+}

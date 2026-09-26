@@ -1,0 +1,306 @@
+# specialists/financial_research/agent.yaml - manifest v1 for the
+# financial-research specialist (see agentkit/manifest.py).
+schema_version: 1
+slug: financial-research
+name: Financial Research & Diligence Analyst
+version: 0.1.0
+summary: >-
+  Public-company research, XBRL-tied financial spreads, trading comps, filing
+  red flags and a cited diligence memo built from SEC EDGAR data and your data
+  room. Every figure is computed in code and ties back to a reported XBRL fact.
+
+listing:
+  category: Finance
+  description: >-
+    A research analyst for deal teams, corporate development and small funds.
+    It scopes the question and peer set, indexes your data room, pulls filings
+    and XBRL financials from SEC EDGAR, builds normalized spreads and a trading
+    comps table where each input traces to a tag, period and accession number,
+    scans filing histories for red flags (auditor changes, restatements, late
+    filings, debt triggers) and writes an IC-style memo in which every number
+    is cited and re-verified. Analysis for professional users; not investment
+    advice.
+  tags: [finance, due-diligence, equity-research, comps, sec-edgar, xbrl]
+  capabilities:
+    - research plan, peer set and source inventory
+    - data-room index with hashes and unreadable-file list
+    - XBRL-tied income statement, balance sheet and cash-flow spreads
+    - trading comps with EV bridge (EV/Revenue, EV/EBITDA, P/E, margins, growth)
+    - filing-index red-flag scan and checklist
+    - cited diligence memo and management question list
+  # typical_low/high: the engagement range, billed per milestone through the
+  # SOW. task_price_usdc: the flat x402 price of one agent-to-agent task that
+  # the operator stamps (a placeholder until the operator sets it).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 500, typical_high: 6000,
+            task_price_usdc: 5.0}
+
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: research
+
+prompts:
+  system: prompts/system.md
+  include:
+    - playbook/research-method.md
+    - playbook/xbrl-spreads.md
+    - playbook/red-flags.md
+    - playbook/memo-style.md
+
+tools:
+  # kit tools
+  - read_document
+  - read_file
+  - write_file
+  - edit_file
+  - list_files
+  - search_files
+  - record_source
+  - record_claim
+  - ask_client
+  - post_progress
+  - submit_milestone
+  # domain tools (tools.py)
+  - sec_company_lookup
+  - edgar_submissions
+  - edgar_companyfacts
+  - edgar_filing_text
+  - xbrl_facts
+  - build_spreads
+  - compute_comps
+  - filing_red_flags
+  - index_dataroom
+
+shell: {allow: [], timeout_seconds: 600}
+# SEC EDGAR only. Market prices and licensed data come from the client as files.
+egress: {mode: allowlist, allow: [data.sec.gov, www.sec.gov]}
+limits: {max_steps: 150, max_tokens: 5000000, max_usd: 60, max_wall_minutes: 240}
+
+human_gate:
+  required: false
+  reviewer_role: client's deal lead or senior analyst
+  disclaimer: >-
+    Not investment advice. This work product is research and analysis for
+    professional users. It is not a recommendation to buy, sell or hold any
+    security, not a valuation or fairness opinion, and not an offer or
+    solicitation. Investment decisions and any recommendation belong to the
+    client and its licensed professionals. If this material is distributed to
+    investors, limited partners or the public, or used by a broker-dealer or
+    registered adviser, an appropriately licensed person must review it first.
+  checklist:
+    - Peer set and key questions match the mandate
+    - Spot-check a sample of spreads rows against the cited filings
+    - Every red flag marked found has been read in the source filing
+    - Memo conclusions are the reviewer's own; no rating or price target was added by the agent
+    - Material non-public information stays within the engagement
+
+intake:
+  - field: companies
+    question: >-
+      Which companies are in scope? List the target and any peers you already
+      have in mind, as tickers or SEC CIK numbers.
+    required: true
+  - field: research_question
+    question: >-
+      What decision will this research support, and what are the two or three
+      questions it must answer (e.g. peer valuation range, margin gap to peers,
+      filing history red flags)?
+    required: true
+  - field: sec_user_agent
+    question: >-
+      SEC EDGAR requires automated requests to identify the requester. What
+      organization name and contact email should we declare in the User-Agent
+      header?
+    required: true
+  - field: fiscal_years
+    question: >-
+      Which fiscal years should the spreads cover? Default is the last three
+      completed fiscal years.
+    required: false
+  - field: market_data
+    question: >-
+      For valuation multiples, upload inputs/market_data.csv with columns
+      cik, ticker, price, price_as_of (plus shares_outstanding,
+      minority_interest and preferred if relevant) from your licensed price
+      source. Without it we deliver spreads and operating metrics only.
+    required: false
+  - field: dataroom
+    question: >-
+      Is there a data room? If so, upload an export to inputs/dataroom/ and
+      tell us whether it contains material non-public information.
+    required: false
+  - field: audience
+    question: >-
+      Who will read the memo: the internal deal team only, or investors, LPs
+      or the public? External distribution needs review by an appropriately
+      licensed person before it goes out.
+    required: false
+
+# Each milestone's high estimate fits one run: 4 hours x $8 is under both
+# max_usd and max_wall_minutes above.
+estimate: {usd_per_hour: 8.0}
+
+milestones:
+  - id: m1-plan-sources
+    title: Research plan, peer set and source inventory
+    description: >-
+      Scope the key questions, propose a peer set with inclusion rationale,
+      inventory every source (EDGAR filings by accession, SEC data endpoints,
+      data-room files by hash) and index the data room, listing unreadable
+      files explicitly.
+    deliverables:
+      - deliverables/m1-plan-sources/research_plan.md
+      - deliverables/m1-plan-sources/source_inventory.csv
+      - deliverables/m1-plan-sources/dataroom_index.csv
+    hours: [1, 3]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m1-plan-sources/research_plan.md
+            - deliverables/m1-plan-sources/source_inventory.csv
+            - deliverables/m1-plan-sources/dataroom_index.csv
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-plan-sources/research_plan.md
+          sections: [Objective, Key questions, Peer set, Sources, Plan and timeline]
+      - check: csv_columns
+        params:
+          path: deliverables/m1-plan-sources/source_inventory.csv
+          columns: [source_id, kind, company, cik, form, accession, filed, uri, sha256]
+      - check: no_placeholders
+        params: {paths: [deliverables/m1-plan-sources/research_plan.md]}
+      - check: source_inventory_resolves
+        description: Every source resolves to a filed accession, a cached SEC endpoint or a hashed input file
+        params: {path: deliverables/m1-plan-sources/source_inventory.csv}
+      - check: dataroom_index_complete
+        description: The index covers 100% of data-room files with matching hashes
+        params: {path: deliverables/m1-plan-sources/dataroom_index.csv, root: inputs/dataroom}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/research-plan.yaml
+          paths: [deliverables/m1-plan-sources/research_plan.md]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Client's deal lead approves the peer set and key questions
+
+  - id: m2-spreads-comps
+    title: XBRL-tied spreads and trading comps
+    description: >-
+      Normalized annual spreads for the target and peers from SEC XBRL
+      companyfacts (one row per company, metric and year with tag, period and
+      accession), a trading comps table with the EV bridge and multiples, and
+      notes on definitions and exceptions.
+    deliverables:
+      - deliverables/m2-spreads-comps/facts.csv
+      - deliverables/m2-spreads-comps/comps.csv
+      - deliverables/m2-spreads-comps/spreads_notes.md
+    hours: [2, 4]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m2-spreads-comps/facts.csv
+            - deliverables/m2-spreads-comps/comps.csv
+            - deliverables/m2-spreads-comps/spreads_notes.md
+      - check: csv_columns
+        params:
+          path: deliverables/m2-spreads-comps/facts.csv
+          columns: [company, cik, metric, taxonomy, tag, unit, fiscal_year, period_start,
+                    period_end, form, accession, filed, value, note]
+      - check: csv_columns
+        params:
+          path: deliverables/m2-spreads-comps/comps.csv
+          columns: [company, cik, ticker, fiscal_year, price, price_as_of, revenue,
+                    enterprise_value, ev_revenue, ev_ebitda, pe]
+      - check: xbrl_tieout
+        description: At least 98% of spreads rows match an XBRL fact exactly; every other row carries a written explanation
+        params: {path: deliverables/m2-spreads-comps/facts.csv, min_match_ratio: 0.98}
+      - check: comps_tie_to_xbrl
+        description: Every sourced figure in comps.csv ties to an XBRL fact (tag, period, value) or to the client's market data; nothing the SEC reports is left blank
+        params:
+          comps: deliverables/m2-spreads-comps/comps.csv
+          spreads: deliverables/m2-spreads-comps/facts.csv
+          market_data: inputs/market_data.csv
+      - check: comps_recompute
+        description: EV bridge, multiples, margins and growth recompute from their inputs
+        params: {comps: deliverables/m2-spreads-comps/comps.csv}
+      - check: markdown_sections
+        params:
+          path: deliverables/m2-spreads-comps/spreads_notes.md
+          sections: [Method, Definitions, Peer medians, Exceptions]
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/spreads-notes.yaml
+          paths: [deliverables/m2-spreads-comps/spreads_notes.md]
+          threshold: 0.75
+
+  - id: m3-diligence-memo
+    title: Diligence memo, red-flag checklist and question list
+    description: >-
+      IC-style memo (business, financial profile, peer comparison, bull and
+      bear cases, risks, red flags) in which every figure is cited to the
+      comps workbook or a verified source quote; a red-flag checklist per
+      company; and a prioritized question list for management calls tied to
+      memo sections and source gaps.
+    deliverables:
+      - deliverables/m3-diligence-memo/memo.md
+      - deliverables/m3-diligence-memo/red_flags.md
+      - deliverables/m3-diligence-memo/questions.md
+    hours: [2, 4]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/red_flags.md
+            - deliverables/m3-diligence-memo/questions.md
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-diligence-memo/memo.md
+          sections: [Summary, Business overview, Financial profile, Peer comparison,
+                     Bull case, Bear case, Key risks, Red flags, Open questions, Sources]
+      - check: disclaimer_present
+        description: The human_gate disclaimer, verbatim
+        params: {paths: [deliverables/m3-diligence-memo/memo.md]}
+      - check: no_placeholders
+        params:
+          paths:
+            - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/red_flags.md
+            - deliverables/m3-diligence-memo/questions.md
+      - check: memo_figures_match
+        description: Every figure is cited; figure tags match comps.csv at the precision shown and [C#] quotes contain the figures
+        params:
+          path: deliverables/m3-diligence-memo/memo.md
+          comps: deliverables/m2-spreads-comps/comps.csv
+      - check: no_recommendation_language
+        description: No ratings, price targets or advice to trade
+        params:
+          paths:
+            - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/red_flags.md
+            - deliverables/m3-diligence-memo/questions.md
+      - check: red_flag_checklist
+        description: RF01-RF10 answered per company; filing-index events in the last three years are not missed
+        params:
+          path: deliverables/m3-diligence-memo/red_flags.md
+          comps: deliverables/m2-spreads-comps/comps.csv
+          lookback_years: 3
+      - check: ledger_verified
+        description: Every recorded claim quotes its source snapshot verbatim
+      - check: citations_resolve
+        params:
+          paths:
+            - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/red_flags.md
+            - deliverables/m3-diligence-memo/questions.md
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/memo.yaml
+          paths:
+            - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/questions.md
+          threshold: 0.8

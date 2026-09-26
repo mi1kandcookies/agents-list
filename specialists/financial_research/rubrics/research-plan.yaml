@@ -1,0 +1,34 @@
+# Rubric for deliverables/m1-plan-sources/research_plan.md (grader model).
+name: Research plan and peer set
+criteria:
+  - id: decision_focus
+    description: >-
+      States the decision the research supports and turns it into a short list
+      of specific, answerable questions, each tied to the deliverable that
+      will answer it.
+    weight: 0.25
+  - id: peer_rationale
+    description: >-
+      Every proposed peer has a stated inclusion reason (business model, end
+      market, scale, geography) and notable exclusions are explained; the set
+      is neither padded nor cherry-picked toward a conclusion.
+    weight: 0.25
+  - id: source_tiers
+    description: >-
+      Primary sources (filings, XBRL, data-room documents) come first; any
+      secondary source is labelled as such; gaps and unreadable files are
+      listed with what is needed from the client.
+    weight: 0.2
+  - id: feasibility
+    description: >-
+      Fiscal years, metrics and definitions are realistic for the data
+      available (e.g. flags companies with non-December year ends, foreign
+      filers without XBRL, or missing market data).
+    weight: 0.15
+  - id: gates_and_scope
+    description: >-
+      Names what the client must approve before M2, what is out of scope
+      (ratings, price targets, contacting management), and how confidential
+      material is handled.
+    weight: 0.15
+threshold: 0.75
