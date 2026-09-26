@@ -2,12 +2,20 @@
 demo_seed.py - `flask --app wsgi seed-demo`: specialist agents for a demo.
 
 Loads ten realistic listings for a business and engineering audience. Each
-has a category, a one-line specialty, a price range, what it does and does
+has a category, a one-line specialty, token prices, what it does and does
 not do, the tools and models it uses, short example deliverables and an FAQ.
+
+Token prices: each listing charges its model's public list price per 1M
+input and output tokens (``MODEL_LIST_PRICES``) times a fixed operator margin
+(``margin`` in the spec), rounded to the cent. Stored as USDC micro-units per
+1M tokens in ``input_price_per_1m`` / ``output_price_per_1m``. The older
+per-minute ``price`` range is kept for the stamped manifest and the paid-task
+API, which still quote it; the UI shows token prices only.
 
 Where each field goes (no schema change):
     listing columns    name, specialty (description), about, category, price
-                       range, model, tags, capabilities (= does)
+                       range, token prices, model, icon, tags, capabilities
+                       (= does)
     manifest_json      the canonical operator manifest (app/seller/stamp.py):
                        model, tools, skills (= does), price range, payout
     this module        doesn't-list, example outputs and FAQ, via
@@ -60,6 +68,7 @@ DEMO_AGENTS: list[dict] = [
                   "finding with a Foundry test and ranks it by impact and likelihood."),
         "price": (0.18, 0.40, 0.25),
         "model": ("Anthropic", "claude-opus"),
+        "margin": 1.4,
         "tags": ["solidity", "audit", "foundry", "defi", "smart-contracts"],
         "does": ["Line-by-line review of contracts in scope",
                  "Foundry proof-of-concept test for each finding",
@@ -94,6 +103,7 @@ DEMO_AGENTS: list[dict] = [
                   "experiments with an expected impact and a success metric."),
         "price": (0.06, 0.15, 0.09),
         "model": ("OpenAI", "gpt-4.1"),
+        "margin": 1.5,
         "tags": ["growth", "funnel", "cohorts", "experiments", "analytics"],
         "does": ["Funnel and cohort breakdowns from CSV or warehouse exports",
                  "Drop-off analysis by channel, plan and device",
@@ -126,6 +136,7 @@ DEMO_AGENTS: list[dict] = [
                   "run and change the pipeline without the agent."),
         "price": (0.08, 0.20, 0.12),
         "model": ("Google", "gemini-2.5-pro"),
+        "margin": 1.6,
         "tags": ["etl", "dbt", "sql", "warehouse", "data-quality"],
         "does": ["Source profiling and a written data contract",
                  "Incremental ingestion jobs",
@@ -158,6 +169,7 @@ DEMO_AGENTS: list[dict] = [
                   "and carries a high, medium or low confidence rating."),
         "price": (0.04, 0.12, 0.07),
         "model": ("Anthropic", "claude-sonnet"),
+        "margin": 1.5,
         "tags": ["research", "market-sizing", "competitors", "citations"],
         "does": ["Bottom-up market sizing with stated assumptions",
                  "Competitor matrix: segment, pricing, positioning",
@@ -190,6 +202,7 @@ DEMO_AGENTS: list[dict] = [
                   "action, plus two alternative headlines for testing."),
         "price": (0.03, 0.08, 0.05),
         "model": ("Anthropic", "claude-sonnet"),
+        "margin": 1.25,
         "tags": ["copywriting", "landing-page", "conversion", "growth"],
         "does": ["Page structure and full copy",
                  "Two headline variants for testing",
@@ -222,6 +235,7 @@ DEMO_AGENTS: list[dict] = [
                   "evidence checklist for your auditor."),
         "price": (0.07, 0.18, 0.10),
         "model": ("OpenAI", "gpt-4.1"),
+        "margin": 1.75, "icon": "clipboard-check",
         "tags": ["soc2", "compliance", "policies", "security"],
         "does": ["Gap assessment against the trust services criteria",
                  "Policy drafts (access, change management, incident response)",
@@ -254,6 +268,7 @@ DEMO_AGENTS: list[dict] = [
                   "metrics, runway and specific asks."),
         "price": (0.03, 0.09, 0.05),
         "model": ("Anthropic", "claude-haiku"),
+        "margin": 1.5,
         "tags": ["investor-update", "finance", "startups", "reporting"],
         "does": ["Draft update in your usual format",
                  "Metric table with period-over-period change",
@@ -286,6 +301,7 @@ DEMO_AGENTS: list[dict] = [
                   "against recorded fixtures so CI never calls the live API."),
         "price": (0.10, 0.24, 0.14),
         "model": ("Anthropic", "claude-sonnet"),
+        "margin": 1.75, "icon": "plug",
         "tags": ["api", "integration", "webhooks", "python", "typescript"],
         "does": ["Typed API client with retries and rate-limit handling",
                  "Webhook endpoint with signature verification",
@@ -318,6 +334,7 @@ DEMO_AGENTS: list[dict] = [
                   "clear logs. Manual approval gates stay where your team wants them."),
         "price": (0.05, 0.14, 0.08),
         "model": ("Mistral", "mistral-large"),
+        "margin": 1.5,
         "tags": ["automation", "runbooks", "ops", "scripts", "ci"],
         "does": ["Automation plan ranked by time saved",
                  "Idempotent scripts with dry-run flags",
@@ -350,6 +367,7 @@ DEMO_AGENTS: list[dict] = [
                   "source text. It plans tests only and never executes arbitrary code."),
         "price": (0.05, 0.05, 0.05),
         "model": ("OpenAI", "gpt-4.1-mini"),
+        "margin": 1.5, "icon": "flask-conical",
         "tags": ["qa", "api", "testing", "test-plan", "contracts"],
         "does": ["Endpoint inventory from an API specification",
                  "Success, validation and authorization test cases",
@@ -375,35 +393,51 @@ DEMO_AGENTS: list[dict] = [
 ]
 
 
-# ── addresses ────────────────────────────────────────────────────────────────
+# ── token prices ─────────────────────────────────────────────────────────────
 
-# Typical turnaround per category (low, high) in hours; demo listings only.
-_TURNAROUND_HOURS = {
-    "Security": (36, 96), "Marketing": (18, 60), "Data & Analytics": (24, 84),
-    "Research": (12, 48), "Content": (6, 30), "Finance": (12, 40),
-    "Development": (24, 90), "Automation": (18, 64),
+# Public list prices in USD per 1M tokens (input, output), by the model family
+# named in each spec. Anthropic: Opus 5, Sonnet 5 and Haiku 4.5 rates; the
+# other providers' published standard rates. Review these when providers
+# change their price lists.
+MODEL_LIST_PRICES: dict[str, tuple[float, float]] = {
+    "claude-opus": (5.00, 25.00),
+    "claude-sonnet": (2.00, 10.00),
+    "claude-haiku": (1.00, 5.00),
+    "gpt-4.1": (2.00, 8.00),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "mistral-large": (0.50, 1.50),
 }
 
 
-def _fmt_turnaround(hours: float) -> str:
-    if hours < 20:
-        return f"{round(hours)} hours"
-    days = hours / 24
-    return f"{days:.1f} days".replace(".0 days", " days") if days < 10 else f"{round(days)} days"
+def token_prices(spec: dict) -> tuple[int, int]:
+    """(input, output) price in USDC micro-units per 1M tokens: the model's
+    list price times the listing's operator margin, rounded to the cent."""
+    list_in, list_out = MODEL_LIST_PRICES[spec["model"][1]]
 
+    def micro(usd: float) -> int:
+        return round(usd * spec["margin"] * 100) * 10_000
+
+    return micro(list_in), micro(list_out)
+
+
+# ── track record ─────────────────────────────────────────────────────────────
 
 def demo_track_record(slug: str, category: str) -> dict:
     """Deterministic sample track record for a demo listing (same slug, same
-    numbers on every run). Demo listings are flagged in the UI as such."""
+    numbers on every run)."""
     import random
     rng = random.Random(f"agents-list demo track:{slug}")
-    lo, hi = _TURNAROUND_HOURS.get(category, (12, 72))
+    jobs = rng.randint(26, 164)
+    rng.random()  # was the turnaround draw; kept so the other numbers stay put
     return {
-        "jobs": rng.randint(26, 164),
-        "turnaround": _fmt_turnaround(rng.uniform(lo, hi)),
+        "jobs": jobs,
         "on_time": round(rng.uniform(0.88, 0.99), 2),
         "repeat": round(rng.uniform(0.22, 0.61), 2),
     }
+
+
+# ── addresses ────────────────────────────────────────────────────────────────
 
 
 def placeholder_payout_address(slug: str) -> str:
@@ -477,7 +511,7 @@ def seed_demo_agents(db, Agent, *, address_map: str | None = None,
             skipped += 1  # same name, someone else's listing: leave it alone
             continue
         if row is None:
-            row = Agent(name=spec["name"], category=spec["category"], billing="per_minute")
+            row = Agent(name=spec["name"], category=spec["category"], billing="per_token")
             db.session.add(row)
             added += 1
         else:
@@ -488,8 +522,10 @@ def seed_demo_agents(db, Agent, *, address_map: str | None = None,
         row.long_description = spec["about"]
         row.category = spec["category"]
         row.use_case = spec["use_case"]
-        row.billing = "per_minute"
+        row.billing = "per_token"
         row.min_price, row.max_price, row.current_price = low, high, current
+        row.input_price_per_1m, row.output_price_per_1m = token_prices(spec)
+        row.icon = spec.get("icon")
         row.model_provider, row.model_name = spec["model"]
         row.seller = DEMO_OPERATOR
         row.deployer_wallet = payout
@@ -499,7 +535,7 @@ def seed_demo_agents(db, Agent, *, address_map: str | None = None,
         # Ratings and reviews are owned by the review seeding; never reset them here.
         track = demo_track_record(spec["slug"], spec["category"])
         row.tasks_completed = max(track["jobs"], row.reviews or 0)
-        row.avg_completion_time = track["turnaround"]
+        row.avg_completion_time = " - "   # turnaround depends on the job; not shown
         row.on_time_rate = track["on_time"]
         row.repeat_hire_rate = track["repeat"]
         row.demo_listing = True

@@ -1,5 +1,5 @@
 {#- agent_card and helpers: the catalog card plus the small pieces the agent
-    profile reuses (price, operator, trust badges, monogram).
+    profile reuses (price, operator, trust badges, icon).
 
     Usage:
       {% from "components/agent_card.html" import agent_card %}
@@ -7,8 +7,9 @@
         {% for a in agents %}{{ agent_card(a) }}{% endfor %}
       </div>
 
-      {% from "components/agent_card.html" import trust_badges, price, operator_label, monogram %}
-      {{ price(agent) }}           typical price, mono, with unit
+      {% from "components/agent_card.html" import trust_badges, price, operator_label, agent_icon %}
+      {{ price(agent) }}           input and output token prices per 1M tokens
+      {{ agent_icon(agent) }}      the listing's line icon in a soft tile
       {{ operator_label(agent) }}  operator name or shortened wallet
       {{ trust_badges(agent) }}    only the badges the data supports
 
@@ -25,13 +26,10 @@
     Payment screening is evidence, not a quality guarantee. A listing shows
     the latest payee.onboard verdict and toxicScore/traits when available.
 -#}
-{% set CATEGORY_CODES = {
-  'Development': 'ENG', 'Data & Analytics': 'DAT', 'Content': 'CON',
-  'Finance': 'FIN', 'Research': 'RES', 'Security': 'SEC', 'Automation': 'OPS',
-} %}
-
-{% macro monogram(agent) -%}
-<span class="agent-avatar" aria-hidden="true">{{ CATEGORY_CODES.get(agent.category, 'AGT') }}</span>
+{#- agent_icon(agent): icon picked by app/common/agent_icons.py (per-agent
+    override, else category, else a generic agent icon). -#}
+{% macro agent_icon(agent) -%}
+<span class="agent-avatar" aria-hidden="true">{{ agent_icon_svg(agent) }}</span>
 {%- endmacro %}
 
 {% macro operator_label(agent) -%}
@@ -41,16 +39,15 @@
 {%- elif s -%}{{ s }}{%- else -%}Unknown operator{%- endif -%}
 {%- endmacro %}
 
-{#- price(agent): the rate with its unit, e.g. "$0.10 per min" or
-    "$1.25 per 1M input tokens". Rates keep their cents. -#}
+{#- price(agent): token prices, e.g. "$3 input, $15 output per 1M tokens".
+    Prices are USDC micro-units per 1M tokens (see Agent.input_price_per_1m). -#}
 {% macro price(agent, with_unit=True) -%}
-{%- if agent.billing == 'per_minute' -%}
-<span class="amount">${{ '%.2f'|format(agent.current_price or 0) }}</span>{% if with_unit %} <span class="meta">per min</span>{% endif %}
-{%- elif agent.input_price_per_1m -%}
-<span class="amount">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }}</span>{% if with_unit %} <span class="meta">per 1M input tokens</span>{% endif %}
+{%- set pin = agent.input_price_per_1m|token_price -%}
+{%- set pout = agent.output_price_per_1m|token_price -%}
+{%- if pin or pout -%}
+<span class="price-pair"><span class="amount">{{ pin or '$0' }}</span> <span class="meta">input,</span></span> <span class="price-pair"><span class="amount">{{ pout or '$0' }}</span> <span class="meta">output</span></span>{% if with_unit %} <span class="meta price-per">per 1M tokens</span>{% endif %}
 {%- else -%}
-{%- set p = agent.current_price or 0 -%}
-<span class="amount">${{ ('%.6f' if p < 0.0001 else '%.4f')|format(p) }}</span>{% if with_unit %} <span class="meta">per token</span>{% endif %}
+<span class="meta">Token prices on request</span>
 {%- endif -%}
 {%- endmacro %}
 
@@ -100,10 +97,10 @@ No ratings yet
 {% macro agent_card(agent) -%}
 <article class="agent-card">
   <div class="agent-card-top">
-    {{ monogram(agent) }}
+    {{ agent_icon(agent) }}
     <div class="agent-card-title">
       <h3 class="agent-card-name"><a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a></h3>
-      <div class="agent-card-operator">{% if agent.demo_listing %}<span class="demo-tag" title="Sample listing with illustrative track record">Demo listing</span> {% endif %}by {{ operator_label(agent) }} in {{ agent.category }}</div>
+      <div class="agent-card-operator">by {{ operator_label(agent) }} in {{ agent.category }}</div>
     </div>
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>
