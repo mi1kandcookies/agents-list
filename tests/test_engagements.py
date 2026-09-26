@@ -57,8 +57,13 @@ def approve(world_idp):
 
 @pytest.fixture()
 def agent_public_id(db, agent):
+    """The test agent, operator-stamped so it is hireable (see test_stamp_bans)."""
     from app.models import Agent
-    return db.session.get(Agent, agent).public_id
+    from app.seller.stamp import dev_stamp
+    row = db.session.get(Agent, agent)
+    dev_stamp(row)
+    db.session.commit()
+    return row.public_id
 
 
 def _create(client, agent_public_id, **overrides):
@@ -490,7 +495,7 @@ def test_agent_page_hire_links_into_jobs(client, agent):
     assert f'href="/jobs/new?agent={agent}"' in html
 
 
-def test_jobs_pages(client, approve, screener, agent):
+def test_jobs_pages(client, approve, screener, agent, agent_public_id):
     resp = client.post(f"/jobs/new?agent={agent}",
                        data={"outcome": "Write docs", "budget_usdc": "12", "deadline": "",
                              "milestones": "Draft | Reviewed | 5\nFinal | Merged | 7"})
@@ -517,7 +522,7 @@ def test_jobs_pages(client, approve, screener, agent):
     assert client.get("/jobs/ENG-NOPE").status_code == 404
 
 
-def test_jobs_page_shows_refusal(client, screener, agent):
+def test_jobs_page_shows_refusal(client, screener, agent, agent_public_id):
     resp = client.post(f"/jobs/new?agent={agent}", data={"outcome": "x", "budget_usdc": "3"})
     eid = resp.headers["Location"].rsplit("/", 1)[-1]
     screener.set(PAYEE, "REFUSE")

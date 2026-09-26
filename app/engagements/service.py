@@ -298,6 +298,8 @@ def hire(eng, *, flow: str, confirm_micro: int):
                               f"{format_usdc(eng.total_micro)}", "AMOUNT_MISMATCH", 400,
                               "confirm_amount_usdc")
     agent = eng.agent
+    from app.seller.stamp import assert_hireable
+    assert_hireable(agent)  # operator stamp valid, operator not banned, payee not refused
     payee = payee_address(agent)
     if payee is None:
         raise EngagementError("agent has no payout address", "PAYEE_ADDRESS_MISSING", 409)
