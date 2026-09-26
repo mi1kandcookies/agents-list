@@ -241,6 +241,13 @@ def jobs_new():
     agent = db.session.get(Agent, request.values.get("agent", type=int) or 0)
     if agent is None or agent.verification_tier == "suspended":
         return redirect(url_for("catalog.marketplace"))
+    from app.seller.stamp import stamp_status
+    stamp = stamp_status(agent)
+    if not stamp.ok:
+        # Hiring needs a valid operator stamp; say why instead of a form that
+        # would fail at approval.
+        return render_template("jobs/new.html", agent=agent, form=None, error=None,
+                               not_hireable=stamp.reason), 409 if request.method == "POST" else 200
     form = {"outcome": "", "budget_usdc": "", "deadline": "", "milestones": "",
             "source_filename": "", "source_sha256": ""}
     error = None

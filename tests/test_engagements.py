@@ -632,7 +632,7 @@ def test_cross_site_browser_still_needs_token(client, screener, agent_public_id,
 
 
 # ── pages ─────────────────────────────────────────────────────────────────
-def test_agent_page_hire_links_into_jobs(client, agent):
+def test_agent_page_hire_links_into_jobs(client, agent, agent_public_id):
     html = client.get(f"/agent/{agent}").get_data(as_text=True)
     assert f'href="/jobs/new?agent={agent}"' in html
 

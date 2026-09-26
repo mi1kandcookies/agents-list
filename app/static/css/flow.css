@@ -230,6 +230,14 @@
 .agents-empty { padding: 16px; border: 1px dashed var(--border-strong); border-radius: 10px; color: var(--ink-2); }
 .agents-empty p { margin: 0 0 4px; }
 
+/* ── Matchmaker answer (step 7) ──────────────────────────────────────────── */
+.match-agent { padding: 14px 16px; }
+.match-agent::before { content: none; }
+.match-reasons { margin: 0; }
+.match-retry { margin-top: 10px; }
+#match-basis { margin-top: 12px; }
+.flow-nav .fbtn-push { margin-left: auto; }
+
 /* ── Contract terms ──────────────────────────────────────────────────────── */
 .terms { margin: 0; border: 1px solid var(--border); border-radius: 10px; }
 .term {
