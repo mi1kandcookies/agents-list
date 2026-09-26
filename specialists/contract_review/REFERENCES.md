@@ -7,7 +7,7 @@ are original, and the companies in the fixtures are fictional.
 
 | Source | License | Idea used |
 |---|---|---|
-| anthropics/claude-for-legal | Apache-2.0 | Playbook as configuration built from an intake interview, with a refusal to review against an empty playbook; separate customer-side and vendor-side positions; liability split into cap amount, cap base, indirect damages and carve-outs; "a redline is a negotiation artifact, not a rewrite"; review flags on subjective calls; spreadsheet formula-injection defence. |
+| anthropics/claude-for-legal | Apache-2.0 | Playbook as configuration built from an intake interview, with a refusal to review against an empty playbook; separate customer-side and vendor-side positions; liability split into cap amount, cap base, indirect damages and carve-outs; treating a redline as a negotiating tool rather than a redraft; review flags on subjective calls; spreadsheet formula-injection defence. |
 | anthropics/knowledge-work-plugins (legal plugin) | Apache-2.0 | A clause-family taxonomy with per-family things to look for; read the whole contract before flagging because clauses interact; a clearly labelled baseline when no playbook exists. |
 | dealfluence/adeu | MIT | Redline ops as search/replace plus comment, failing closed on ambiguous matches; comment-only ops; a defined-terms and cross-reference report re-checked after edits. |
 | JSv4/Python-Redlines (engine JSv4/Docxodus) | MIT | Treating "reject all equals the original, accept all equals the proposal" as the verification of a tracked-changes document. Our comparison is our own stdlib code; no binary is used. |

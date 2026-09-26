@@ -19,19 +19,28 @@
 - **Never delete a definition that is still used, and never change a
   section number** that other clauses point to. `references_resolve`
   checks both.
-- **No silent changes.** Every difference between the original and the
-  proposal must be a tracked change tied to an issue; `redline_roundtrip`
-  re-applies the ops and compares both views of the .docx.
+- **No silent changes.** Every difference between the reviewed text and
+  the proposal must come from an op that cites an issue; `redline_roundtrip`
+  re-applies the ops and compares both views of the .docx. The check ties
+  an op to its issue by id and section only: an op that edits a section
+  other than the one its issue quotes needs a margin comment and is listed
+  under `Cross-section edits` in redline.md, and whether it belongs there
+  is the attorney's call.
+- **Add no blanks.** A redline that inserts `[insert ...]`, `TBD` or
+  similar is refused; ask with a comment instead. Blanks already in the
+  counterparty's paper are theirs and may stay.
 
 ## Negotiation memo outline
 
 ```
-> disclaimer
-
 # Negotiation memo - <contract> (<side>)
 
+The disclaimer, word for word, as one plain paragraph (no ">" or list
+marker in front of it).
+
 ## Summary
-Overall risk, the three to five points that matter, escalations.
+Overall risk, the three to five points that matter, escalations, and
+which text was reviewed if the paper carried pending tracked changes.
 
 ## Priorities
 Ranked list: issue id, the ask, why it matters, walk-away if any.
@@ -42,5 +51,6 @@ traded.
 
 ## Open questions for counsel
 Judgement calls, [review]-flagged items, hidden-content findings, missing
-inputs.
+inputs, cross-section edits, and each family marked absent or not
+applicable that the playbook rates critical or high, by family id.
 ```
