@@ -16,8 +16,8 @@ counterparties, and never trades or distributes work product.
 | id | deliverables | automated acceptance |
 |---|---|---|
 | `m1-plan-sources` | `research_plan.md`, `source_inventory.csv`, `dataroom_index.csv` | sections, columns, `source_inventory_resolves`, `dataroom_index_complete`; rubric; client approves the peer set |
-| `m2-spreads-comps` | `facts.csv` (long-form spreads), `comps.csv`, `spreads_notes.md` | `xbrl_tieout` (>= 98% exact, rest explained), `comps_tie_to_xbrl`, `comps_recompute`; rubric |
-| `m3-diligence-memo` | `memo.md`, `red_flags.md`, `questions.md` | `memo_figures_match`, `no_recommendation_language`, `red_flag_checklist`, disclaimer, `ledger_verified`, `citations_resolve`; rubric |
+| `m2-spreads-comps` | `facts.csv` (long-form spreads), `comps.csv`, `spreads_notes.md` | `xbrl_tieout` (>= 98% exact, rest explained), `comps_tie_to_xbrl` (nothing the SEC reports left blank, every company in scope covered), `comps_recompute`; rubric |
+| `m3-diligence-memo` | `memo.md`, `red_flags.md`, `questions.md` | `memo_figures_match` (figure tags match comps; `[C#]` quotes contain the figures), `no_recommendation_language`, `red_flag_checklist` (three-year window), disclaimer, `ledger_verified`, `citations_resolve` (memo, checklist, questions); rubric |
 
 All deliverables live under `deliverables/<milestone-id>/`.
 
@@ -27,27 +27,36 @@ All deliverables live under `deliverables/<milestone-id>/`.
   `sec_user_agent` (organization and contact email; SEC fair access requires a
   declared User-Agent, and the tools refuse to call EDGAR without one).
 - Optional: `fiscal_years`, `inputs/market_data.csv` (`cik, ticker, price,
-  price_as_of, minority_interest, preferred` from the client's licensed price
-  source; needed for multiples), `inputs/dataroom/` (data-room export),
-  `audience`.
-- Offline SEC snapshots can be supplied under `inputs/edgar/submissions/` and
-  `inputs/edgar/companyfacts/` (`CIK##########.json`); the tests and evals run
-  this way.
+  price_as_of`, optionally `shares_outstanding, minority_interest, preferred`,
+  from the client's licensed price source; needed for multiples, and without
+  it M2 delivers operating comps with the valuation columns blank),
+  `inputs/dataroom/` (data-room export), `audience`.
+- Offline SEC snapshots can be supplied under `inputs/edgar/submissions/`
+  (including older index pages), `inputs/edgar/companyfacts/`
+  (`CIK##########.json`) and `inputs/edgar/company_tickers.json`; the tests
+  and evals run this way.
+- Companies the client names by CIK are passed to the coverage checks
+  (`propose_milestones` sets `ciks` on `comps_tie_to_xbrl` and
+  `red_flag_checklist`); tickers and names are resolved with
+  `sec_company_lookup` during M1.
 
 ## Tools (`tools.py`)
 
-`edgar_submissions`, `edgar_companyfacts`, `edgar_filing_text` (network via
-the kit's egress-checked fetch, cached under `.agentkit/edgar/`),
-`xbrl_facts`, `build_spreads`, `compute_comps`, `filing_red_flags`,
-`index_dataroom`. Comps definitions are in `playbook/xbrl-spreads.md`.
+`sec_company_lookup`, `edgar_submissions`, `edgar_companyfacts`,
+`edgar_filing_text` (network via the kit's egress-checked fetch, cached under
+`.agentkit/edgar/`), `xbrl_facts`, `build_spreads`, `compute_comps`,
+`filing_red_flags`, `index_dataroom`. Fiscal years, the latest-reported
+basis, the debt hierarchy and the comps definitions are in
+`playbook/xbrl-spreads.md`.
 
 ## Checks (`checks.py`)
 
 `xbrl_tieout`, `comps_tie_to_xbrl`, `comps_recompute`, `memo_figures_match`,
 `no_recommendation_language`, `red_flag_checklist`,
 `source_inventory_resolves`, `dataroom_index_complete`. They read the SEC JSON
-cache (or `inputs/edgar/`), the market data file and the data-room files
-directly, and their arithmetic is written independently of the tools.
+cache (or `inputs/edgar/`), the market data file, the claim ledger and the
+data-room files directly, and their fiscal-year, debt and multiple
+arithmetic is written independently of the tools.
 
 ## Human gate
 
@@ -65,12 +74,18 @@ in `agent.yaml` say so.
 - No shell. 150 steps, 5M tokens, $60 and 4 hours per milestone run.
 - XBRL coverage: US GAAP (`us-gaap`) filers with 10-K data. Foreign private
   issuers (IFRS, 20-F) and companies with non-standard tags need notes or
-  ledger-quoted figures. Fiscal year = calendar year of the period end, so
-  retailers with January year ends shift by one label; say so in the notes.
-- Market cap uses weighted-average diluted shares for the fiscal year, an
-  approximation of the current count.
-- Only the filing index's `recent` block (about the last 1,000 filings) is
-  scanned for red flags.
+  ledger-quoted figures. Fiscal years follow each 10-K's own year (52/53-week
+  and January year-ends keep the filer's labels), and every value is the
+  latest 10-K figure for its period, so restatements flow through.
+- Market cap uses the client's `shares_outstanding` when given, else
+  weighted-average diluted shares for the fiscal year (an approximation).
+- The red-flag window is three years back from the latest filing. SEC's
+  index JSON holds only recent filings; `edgar_submissions(since=...)` loads
+  the older pages, and the check fails a window the loaded index does not
+  cover.
+- The data-room index marks readable only what `read_document` can read
+  (text, Markdown, CSV, JSON, HTML, Word); PDFs, spreadsheets and decks are
+  listed with a note asking for an export.
 
 ## Kit integration (`agent.py`)
 

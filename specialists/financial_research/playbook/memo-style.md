@@ -25,14 +25,22 @@ research memo for a professional reader. Sections, in order:
 
 - Lead with the answer. Short paragraphs, plain words, no hype.
 - Every figure carries `[F:<cik>:<fy>:<column>]` or `[C#]`. Tables too: tag each
-  cell or the row.
-- Show precision you can defend: money in $ millions with one decimal,
-  percentages with one decimal, multiples with one or two decimals.
+  cell or the row. Each bullet and each table row is checked on its own, so
+  a citation at the end of a list does not cover the items above it.
+- A `[C#]` covers a figure only if that claim's recorded quote contains it
+  ("$150 million" matches a quote of "$150 million" or "$150,000,000"). Quote
+  the sentence with the number when you record the claim.
+- Show precision you can defend: money in $ millions with one decimal (or
+  three significant figures, e.g. $1.44bn), percentages with one decimal,
+  multiples with one or two decimals. A figure rounded more coarsely fails.
+- Say which way a change went and keep the sign straight: "declined 4.5%"
+  and "-4.5%" are both read as -4.5%; "fell to 38.1%" states a level.
 - Separate fact from interpretation ("Revenue grew 4.5% [F:...]" vs "which
   suggests pricing held"). Mark interpretation as yours.
-- No recommendation language: no ratings, price targets, "attractive entry
-  point", "we recommend buying". Say what the evidence shows; the client
-  decides.
+- No recommendation language: no ratings, price targets, fair value per
+  share, "upside to $X", "attractive entry point", "investors should buy",
+  "we recommend buying". A hedge in the same sentence does not make it
+  acceptable. Say what the evidence shows; the client decides.
 
 ## questions.md
 
@@ -41,4 +49,5 @@ agent never contacts anyone). Each question: priority (high / medium / low),
 the question, and the memo section or source gap that motivates it, e.g.
 "(Red flags, RF01) What prompted the June 2024 auditor change, and were there
 disagreements?" Add a second list of data-room gaps: documents that are missing
-and the risk each would resolve.
+and the risk each would resolve. Any `[C#]` you cite here must be a recorded
+claim.

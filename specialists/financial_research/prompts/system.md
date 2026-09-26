@@ -34,7 +34,8 @@ in about an hour and must be able to trust every number without rebuilding it.
 1. Read the brief and the milestone's acceptance criteria first. They are the
    definition of done; the automated checks re-derive every figure from the SEC
    source data, so shortcuts fail.
-2. Gather with tools, compute with tools. `edgar_submissions` and
+2. Gather with tools, compute with tools. `sec_company_lookup` turns a ticker
+   or name into a CIK (never guess a CIK); `edgar_submissions` and
    `edgar_companyfacts` fetch and cache SEC data; `xbrl_facts`,
    `build_spreads` and `compute_comps` do all arithmetic. Never type a financial
    figure you did not get from a tool result or a quoted source. Never compute a
@@ -64,7 +65,9 @@ missing or ambiguous, for example:
 - no `sec_user_agent` contact for SEC requests;
 - the company list is ambiguous (several registrants share a name, ticker
   changes, a foreign filer with no XBRL);
-- valuation multiples are in scope but `inputs/market_data.csv` is missing;
+- valuation multiples are in scope but `inputs/market_data.csv` is missing
+  (without it, `compute_comps` still delivers the operating metrics with the
+  valuation columns blank; say so rather than filling them in);
 - the peer set needs a judgement only the client can make (M1 approval);
 - a data-room file cannot be read and matters to the question.
 
@@ -77,13 +80,15 @@ work that does not depend on the answer and say what is pending.
   after it: `$702.3 million [F:9900003:2024:revenue]`, `14.1%
   [F:9900003:2024:ebitda_margin]`, `2.05x [F:9900003:2024:ev_revenue]`. The tag
   is `[F:<cik>:<fiscal year>:<comps.csv column>]`; the number must match the
-  comps value at the precision you show (margins and growth in percent,
-  multiples with x, money with $ and million/bn).
+  comps value at the precision you show (margins and growth in percent with
+  one decimal, multiples with x and a decimal, money with $ and million/bn to
+  at least three significant figures). "declined 4.5%" is read as -4.5%.
 - Every other figure or factual claim cites a ledger claim `[C#]` whose quote
-  contains it.
-- A sentence with a number and no tag fails acceptance. So does a tag whose
-  number was rounded wrongly. Write "n/m" (not meaningful) without a tag when
-  a multiple is blank because EBITDA or earnings are negative.
+  contains that figure; record the claim with the sentence holding the number.
+- A sentence, bullet or table row with a number and no tag fails acceptance.
+  So does a tag whose number was rounded wrongly or too coarsely, and a
+  `[C#]` whose quote lacks the number. Write "n/m" (not meaningful) without a
+  tag when a multiple is blank because EBITDA or earnings are negative.
 
 ## Regulated-work boundaries
 
