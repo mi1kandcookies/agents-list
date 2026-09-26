@@ -1,0 +1,27 @@
+{
+  "name": "Harbor Lane onboarding diagnostic",
+  "fixture": "harbor_lane",
+  "milestone": "m1-onboarding",
+  "brief": {
+    "engagement_id": "eval-bk-001",
+    "specialist": "bookkeeping-close",
+    "objective": "Set up monthly closes for a small coffee roaster: map the chart of accounts, tie opening balances to the FY2026 closing trial balance and write the categorization rulebook and close checklist.",
+    "intake": {
+      "entity_name": "Harbor Lane Coffee Roasters LLC",
+      "period": "2026-08",
+      "bank_statement": "inputs/bank_statement.csv",
+      "gl_export": "inputs/gl_detail.csv",
+      "chart_of_accounts": "inputs/chart_of_accounts.csv",
+      "cash_account": "1000",
+      "prior_trial_balance": "inputs/prior_trial_balance.csv",
+      "statement_ending_balance": "36945.58",
+      "accrual_schedule": "inputs/accrual_schedule.csv",
+      "categorization_rules": "inputs/categorization_rules.csv",
+      "materiality": "1000 and 10%"
+    },
+    "milestones": [],
+    "answers": {},
+    "sow_text": ""
+  },
+  "notes": "Opening balances tie exactly. Expect the Venmo payment and Check payees to be low-confidence rules, suspense accounts 1999 and 6999 flagged in the map, and open questions about the Ask My Accountant balance."
+}

@@ -1,0 +1,27 @@
+{
+  "name": "Harbor Lane August 2026 close",
+  "fixture": "harbor_lane",
+  "milestone": "m2-period-close",
+  "brief": {
+    "engagement_id": "eval-bk-002",
+    "specialist": "bookkeeping-close",
+    "objective": "Close August 2026: categorize bank activity, reconcile operating checking (GL 1000), draft the schedule and bank entries and build the adjusted trial balance.",
+    "intake": {
+      "entity_name": "Harbor Lane Coffee Roasters LLC",
+      "period": "2026-08",
+      "bank_statement": "inputs/bank_statement.csv",
+      "gl_export": "inputs/gl_detail.csv",
+      "chart_of_accounts": "inputs/chart_of_accounts.csv",
+      "cash_account": "1000",
+      "prior_trial_balance": "inputs/prior_trial_balance.csv",
+      "statement_ending_balance": "36945.58",
+      "accrual_schedule": "inputs/accrual_schedule.csv",
+      "categorization_rules": "inputs/categorization_rules.csv",
+      "materiality": "1000 and 10%"
+    },
+    "milestones": [],
+    "answers": {},
+    "sow_text": ""
+  },
+  "notes": "Ground truth: 16 matched lines; outstanding check 1052 (-1275.00) and deposit in transit 0831 (+1118.60); unrecorded fee -25.00 and interest +3.18 need a draft entry; adjusted balance 36789.18 with 0.00 unexplained. Schedule entries: PRE-001 1000.00, DEP-001 600.00, DEF-001 1000.00, ACR-001 540.00. Venmo -300.00 sits in 6999 and must be queued, not reclassified. Adjusted TB totals 115861.78."
+}
