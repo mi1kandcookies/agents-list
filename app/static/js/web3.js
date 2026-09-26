@@ -83,7 +83,7 @@
     const btn = document.getElementById('wallet-btn');
     if (!btn) return;
     if (window.AgentsList.connected) {
-      btn.innerHTML = `<span style="font-family:var(--font-mono)">${short(window.AgentsList.address)}</span>`;
+      btn.innerHTML = `<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums">${short(window.AgentsList.address)}</span>`;
       btn.setAttribute('data-connected', 'true');
     } else {
       btn.innerHTML = '<span>Connect Wallet</span>';

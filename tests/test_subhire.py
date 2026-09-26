@@ -397,7 +397,7 @@ def test_chain_page_renders_the_tree(client, root, agents, screener, human):
     assert "HUM-" + tokens.hum_hash(human.world_sub)[:12] in html
     assert human.world_sub not in html and token not in html
     assert "Root mandate" in html and tokens.decode(token)["jti"] in html
-    assert "10.00 USDC spent / 25.00 USDC" in html
+    assert "10 of 25 USDC spent" in html
     assert f'href="/jobs/{b["engagement_id"]}"' in html
     assert f'href="/jobs/{pending["child_engagement_id"]}"' in html
     assert 'data-verdict="PAY"' in html and 'data-verdict="ASK_HUMAN"' in html

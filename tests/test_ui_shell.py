@@ -43,10 +43,12 @@ def test_nav_contains_marketplace_items(client):
 def test_shell_uses_supplied_mark_and_institutional_type(client):
     html = client.get("/").get_data(as_text=True)
     assert 'img/agents-list-mark-transparent.png' in html
-    assert 'family=Inter' in html and 'family=IBM+Plex+Mono' in html
+    assert 'family=Inter' in html and 'IBM+Plex+Mono' not in html
     css = CSS.read_text()
     assert "--font-body: 'Inter'" in css
-    assert "--font-mono: 'IBM Plex Mono'" in css
+    # Numbers use Inter's tabular lining figures, not a monospace face.
+    assert "Plex" not in css and "--font-num:  \"Num Hyphen\", var(--font-body)" in css
+    assert 'font-variant-numeric: tabular-nums lining-nums' in css
 
 
 def _nav(html: str) -> str:

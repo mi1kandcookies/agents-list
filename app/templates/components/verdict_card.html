@@ -19,7 +19,7 @@
     <span class="verdict-card__badge">{{ labels[kind] }}</span>
     <span class="verdict-card__hop">{{ v.hop }}</span>
     {% if kind == "CAP" and v.cap_micro is not none %}
-      <span class="verdict-card__cap">max {{ "%.2f"|format(v.cap_micro / 1000000) }} USDC</span>
+      <span class="verdict-card__cap">max {{ v.cap_micro|usdc }}</span>
     {% endif %}
   </header>
 
@@ -49,7 +49,7 @@
       <span class="verdict-card__payee" data-payee-source="{{ v.payee_source }}">Payee from {{ "ENS record" if v.payee_source == "ens" else "agent profile" }}</span>
     {% endif %}
     <span>{{ v.latency_ms }} ms</span>
-    <span>{{ v.provider }} · {{ v.id }}</span>
+    <span>{{ v.id }} from {{ v.provider }}</span>
   </footer>
 </section>
 {%- endmacro %}

@@ -6,11 +6,11 @@
   <aside class="admin-sidebar">
     <div class="sidebar-section">
       <div class="sidebar-label">Protocol</div>
-      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
-      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
-      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
-      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
-      <a href="/admin/humans" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
+      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+      <a href="/admin/humans" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
     </div>
   </aside>
 
@@ -26,7 +26,7 @@
         <h1 style="font-size:1.75rem; margin-bottom:6px;">Human Review Panel</h1>
         <div class="flex-center gap-8">
           <span class="badge {{ 'badge-testing' if entry.status == 'testing' else 'badge-review' }}">{{ entry.status.replace('_', ' ').title() }}</span>
-          <span class="text-xs text-muted font-mono">{{ entry.id }} · {{ entry.tier.title() }} Audit · Submitted {{ entry.submitted }}</span>
+          <span class="text-xs text-muted font-mono">{{ entry.tier.title() }} Audit {{ entry.id }}, submitted {{ entry.submitted }}</span>
         </div>
       </div>
     </div>
@@ -48,9 +48,9 @@
             <div class="flex-between text-sm py-8" style="border-bottom:1px solid var(--border);">
               <span class="text-muted">Automated Scores</span>
               <div class="flex-center gap-6">
-                {% if entry.safety_score %}<span style="font-family:var(--font-mono); font-size:.75rem;">S:{{ entry.safety_score }}</span>{% endif %}
-                {% if entry.performance_score %}<span style="font-family:var(--font-mono); font-size:.75rem;">P:{{ entry.performance_score }}</span>{% endif %}
-                {% if entry.reliability_score %}<span style="font-family:var(--font-mono); font-size:.75rem;">R:{{ entry.reliability_score }}</span>{% endif %}
+                {% if entry.safety_score %}<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.75rem;">S:{{ entry.safety_score }}</span>{% endif %}
+                {% if entry.performance_score %}<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.75rem;">P:{{ entry.performance_score }}</span>{% endif %}
+                {% if entry.reliability_score %}<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.75rem;">R:{{ entry.reliability_score }}</span>{% endif %}
               </div>
             </div>
           </div>
@@ -90,14 +90,14 @@
         <div class="card" style="border-color:rgba(79,116,255,.15);">
           <h3 style="margin-bottom:16px;">Final Decision</h3>
           <div class="escrow-notice mb-20">
-            <span class="icon" style="font-family:var(--font-mono);font-size:.625rem;font-weight:700;color:var(--amber);">NOTE</span>
+            <span class="icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.625rem;font-weight:700;color:var(--amber);">NOTE</span>
             <p>This decision will update the listing status immediately. Approved agents receive the verification badge and become discoverable.</p>
           </div>
           <div class="flex-center gap-12">
             <button class="btn btn-danger" style="flex:1;" id="reject-btn" onclick="submitDecision('reject')">✕ Reject</button>
             <button class="btn btn-success" style="flex:1;" id="approve-btn" onclick="submitDecision('approve')">✓ Approve &amp; Verify</button>
           </div>
-          <div id="decision-status" style="margin-top:12px; font-family:var(--font-mono); font-size:.75rem; color:var(--text-3); text-align:center;"></div>
+          <div id="decision-status" style="margin-top:12px; font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.75rem; color:var(--text-3); text-align:center;"></div>
         </div>
       </div>
 
@@ -137,7 +137,7 @@
 
         <div class="card">
           <h4 style="margin-bottom:12px;">Checklist Progress</h4>
-          <div id="checklist-progress" style="font-family:var(--font-mono); font-size:1.25rem; font-weight:700; color:var(--text);">0 / 8</div>
+          <div id="checklist-progress" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:1.25rem; font-weight:700; color:var(--text);">0 / 8</div>
           <div class="text-xs text-muted mt-4">items checked</div>
           <div class="cost-bar-wrap mt-12">
             <div class="cost-bar-fill" id="checklist-bar" style="width:0%; background:var(--green);"></div>

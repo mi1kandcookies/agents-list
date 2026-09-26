@@ -19,6 +19,7 @@ import re
 from datetime import datetime, timezone
 
 from app.common import agent_ids
+from app.common.money import format_usdc  # noqa: F401  (re-exported for callers)
 
 VERSION = 1
 
@@ -153,13 +154,6 @@ def build_action(kind: str, **fields) -> dict:
         action[name] = value
     canonical(action)  # fail fast on anything the checks above missed
     return action
-
-
-def format_usdc(micro: int) -> str:
-    """25000000 → '25.00 USDC'; keeps up to six decimals, never uses floats."""
-    whole, frac = divmod(micro, 1_000_000)
-    digits = f"{frac:06d}".rstrip("0")
-    return f"{whole:,}.{digits.ljust(2, '0')} USDC"
 
 
 def describe(action: dict) -> list[tuple[str, str]]:

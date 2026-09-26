@@ -49,7 +49,7 @@
       {{ mono_stat(None, 'On-time rate') }}
       {{ mono_stat(turnaround if turnaround not in ('', '-', '—') else None, 'Avg turnaround') }}
       {{ mono_stat(None, 'Repeat hires') }}
-      {{ mono_stat('%.1f'|format(agent.rating) if agent.reviews else None, 'Rating' ~ (' · ' ~ agent.reviews ~ ' reviews' if agent.reviews else ''), unit='/ 5' if agent.reviews else None) }}
+      {{ mono_stat('%.1f'|format(agent.rating) if agent.reviews else None, ('Rating from ' ~ agent.reviews ~ ' review' ~ ('s' if agent.reviews != 1 else '')) if agent.reviews else 'Rating', unit='out of 5' if agent.reviews else None) }}
     </div>
     {{ screening_risk(agent) }}
   </div>
@@ -72,11 +72,11 @@
       <section>
         <h2>Pricing</h2>
         <dl class="kv">
-          <dt>Current rate</dt><dd class="mono">{{ money(agent.current_price, agent.billing) }} / {{ unit }}</dd>
-          <dt>Typical range</dt><dd class="mono">{{ money(agent.min_price, agent.billing) }} – {{ money(agent.max_price, agent.billing) }} / {{ unit }}</dd>
+          <dt>Current rate</dt><dd class="mono">{{ money(agent.current_price, agent.billing) }} per {{ unit }}</dd>
+          <dt>Typical range</dt><dd class="mono">{{ money(agent.min_price, agent.billing) }} to {{ money(agent.max_price, agent.billing) }} per {{ unit }}</dd>
           {% if agent.input_price_per_1m %}
-          <dt>Input tokens</dt><dd class="mono">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }} / 1M</dd>
-          <dt>Output tokens</dt><dd class="mono">${{ '%.2f'|format(agent.output_price_per_1m / 1000000) }} / 1M</dd>
+          <dt>Input tokens</dt><dd class="mono">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }} per 1M</dd>
+          <dt>Output tokens</dt><dd class="mono">${{ '%.2f'|format(agent.output_price_per_1m / 1000000) }} per 1M</dd>
           {% endif %}
           <dt>Billing</dt><dd>{{ 'Per minute of work' if agent.billing == 'per_minute' else 'Per token processed' }}</dd>
         </dl>
@@ -108,8 +108,8 @@
         <h2>Tools and models</h2>
         <dl class="kv">
           <dt>Model</dt>
-          <dd>{% if agent.model_provider %}<span class="mono">{{ agent.model_provider }} · {{ agent.model_name }}</span>{% else %}Not disclosed{% endif %}</dd>
-          <dt>Category</dt><dd>{{ agent.category }}{% if agent.use_case %} · {{ agent.use_case }}{% endif %}</dd>
+          <dd>{% if agent.model_provider %}{{ agent.model_name }} <span class="text-muted">from {{ agent.model_provider }}</span>{% else %}Not disclosed{% endif %}</dd>
+          <dt>Category</dt><dd>{{ agent.category }}{% if agent.use_case %}, {{ agent.use_case }}{% endif %}</dd>
         </dl>
       </section>
 
@@ -124,7 +124,7 @@
         <div class="review">
           <div class="review-head">
             <strong>{{ review.user }}</strong>
-            <span class="mono text-xs text-muted">{{ review.rating }} / 5 · {{ review.date }}</span>
+            <span class="review-meta mono text-xs text-muted"><span>{{ review.rating }} out of 5</span><span>{{ review.date }}</span></span>
           </div>
           <p>{{ review.comment }}</p>
         </div>
@@ -172,9 +172,9 @@
 
     <aside class="hire-panel">
       <div class="hire-card">
-        <div class="hire-price">{{ money(agent.current_price, agent.billing) }} <small>/ {{ unit }}</small></div>
+        <div class="hire-price">{{ money(agent.current_price, agent.billing) }} <small>per {{ unit }}</small></div>
         <dl class="hire-rows">
-          <div><dt>Typical range</dt><dd>{{ money(agent.min_price, agent.billing) }} – {{ money(agent.max_price, agent.billing) }}</dd></div>
+          <div><dt>Typical range</dt><dd>{{ money(agent.min_price, agent.billing) }} to {{ money(agent.max_price, agent.billing) }}</dd></div>
           <div><dt>Paid in</dt><dd>USDC</dd></div>
           <div><dt>Platform fee</dt><dd>0.1%</dd></div>
         </dl>
@@ -184,7 +184,7 @@
         </div>
         <p class="hire-note">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-          Funds held in escrow · released only when you approve
+          Funds are held in escrow and released only when you approve.
         </p>
       </div>
 
@@ -224,7 +224,7 @@ window._ratingAgentId = {{ agent.id }};
         const when = tx.ts ? new Date(tx.ts * 1000).toLocaleDateString() : '';
         const hash = tx.txHash ? esc(tx.txHash.slice(0, 10)) + '…' : '';
         const link = tx.explorer ? `<a href="${esc(tx.explorer)}" target="_blank" rel="noopener">${hash}</a>` : hash;
-        return `<div class="activity-row"><span>${esc(tx.kind)}</span><span>${Number(tx.amountUSDCDisplay || 0).toFixed(2)} USDC</span><span>${link}</span><span>${esc(when)}</span></div>`;
+        return `<div class="activity-row"><span>${esc(tx.kind)}</span><span>${fmtUSDC(tx.amountUSDCDisplay)}</span><span>${link}</span><span>${esc(when)}</span></div>`;
       }).join('');
     } catch (e) {
       list.innerHTML = '<div class="text-muted text-sm">Could not load payment activity.</div>';

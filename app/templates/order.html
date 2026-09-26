@@ -7,8 +7,8 @@
 
   <div class="flex-between mb-32">
     <div>
-      <div style="font-family:var(--font-mono); font-size:.6875rem; color:var(--text-3); margin-bottom:8px; letter-spacing:.04em;">{{ order.id }}</div>
-      <h1 style="font-size:1.5rem; margin-bottom:8px;">{{ order.task or ('Hire · ' ~ agent.name) }}</h1>
+      <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.6875rem; color:var(--text-3); margin-bottom:8px; letter-spacing:.04em;">{{ order.id }}</div>
+      <h1 style="font-size:1.5rem; margin-bottom:8px;">{{ order.task or ('Hire ' ~ agent.name) }}</h1>
       <div class="flex-center gap-12">
         {% if order.status == 'completed' %}
           <span class="badge badge-approved">Completed</span>
@@ -21,7 +21,7 @@
         {% else %}
           <span class="badge badge-review">{{ order.status|replace('_', ' ')|title }}</span>
         {% endif %}
-        <span style="font-family:var(--font-mono); font-size:.75rem; color:var(--text-3);">{{ order.date }}</span>
+        <span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.75rem; color:var(--text-3);">{{ order.date }}</span>
       </div>
     </div>
     {% if order.status in ['in_progress', 'in_escrow'] %}
@@ -35,7 +35,7 @@
     <div class="flex-col gap-20">
       <div class="card">
         <h3 class="mb-16">Details</h3>
-        <div class="flex-between mb-8 text-sm"><span class="text-muted">Amount</span><span class="font-bold font-mono">${{ "%.2f"|format(order.amount or 0) }} USDC</span></div>
+        <div class="flex-between mb-8 text-sm"><span class="text-muted">Amount</span><span class="font-bold font-mono">{{ order.amount|usdc('dollars') }}</span></div>
         <div class="flex-between mb-8 text-sm"><span class="text-muted">Buyer</span><span class="font-mono" style="font-size:.75rem;">{{ order.buyer }}</span></div>
         <div class="flex-between mb-8 text-sm"><span class="text-muted">Status</span><span>{{ order.status|replace('_', ' ') }}</span></div>
         {% if order.tx_hash %}
@@ -61,7 +61,7 @@
           <div class="agent-avatar" style="width:40px; height:40px; border-radius:8px; font-size:.75rem;">{{ agent.name[:2]|upper }}</div>
           <div>
             <div class="font-bold text-sm">{{ agent.name }}</div>
-            <div style="font-family:var(--font-mono); font-size:.625rem; color:var(--text-3);">{{ agent.seller }}</div>
+            <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.625rem; color:var(--text-3);">{{ agent.seller }}</div>
           </div>
         </a>
       </div>
@@ -79,7 +79,7 @@
         <h4 style="margin-bottom:8px; color:var(--red);">Issue?</h4>
         <p class="text-sm mb-12">If the agent isn't delivering, open a dispute. It goes to the moderation queue.</p>
         <button type="button" class="btn btn-ghost btn-sm w-full" onclick="openModal('dispute-modal')">Open Dispute</button>
-        <div id="dispute-status" style="margin-top:8px; font-family:var(--font-mono); font-size:.625rem; color:var(--text-3);"></div>
+        <div id="dispute-status" style="margin-top:8px; font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.625rem; color:var(--text-3);"></div>
       </div>
       {% endif %}
     </div>

@@ -7,12 +7,12 @@
   <!-- Header -->
   <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:28px;">
     <div>
-      <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.14em; color:var(--text-3); margin-bottom:5px;">Seller · Verification</div>
+      <div style="font-family:var(--font-body);font-weight:600; font-size:.6875rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:5px;">Seller verification</div>
       <h1 style="font-size:1.5rem; margin:0 0 4px; letter-spacing:-.025em;">Agent Verification</h1>
       <p style="font-size:.8125rem; color:var(--text-3); margin:0;">Track verification progress and agent activity</p>
     </div>
     <div style="display:flex; gap:8px;">
-      <a href="/seller/earnings" class="btn btn-ghost btn-sm" style="font-family:var(--font-mono); font-size:.6875rem;">← Dashboard</a>
+      <a href="/seller/earnings" class="btn btn-ghost btn-sm" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.6875rem;">← Dashboard</a>
       <a href="/seller/create"   class="btn btn-gradient btn-sm">+ New Agent</a>
     </div>
   </div>
@@ -24,7 +24,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
       <div class="vrf-stat-value">{{ queue|selectattr('status','equalto','approved')|list|length }}</div>
-      <div class="vrf-stat-sub">of {{ queue|length }} submitted &middot; Active</div>
+      <div class="vrf-stat-sub">active, of {{ queue|length }} submitted</div>
     </div>
     <div class="vrf-stat-card" style="--accent-line:var(--blue);">
       <div class="vrf-stat-icon" style="background:var(--blue-dim); color:var(--blue);">
@@ -62,17 +62,15 @@
           <div class="vrf-agent-avatar">AGT</div>
           <div style="min-width:0;">
             <div style="font-weight:600; font-size:.9375rem; margin-bottom:3px;">{{ item.agent }}</div>
-            <div style="font-family:var(--font-mono); font-size:.5625rem; color:var(--text-3); display:flex; align-items:center; gap:8px;">
+            <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.5625rem; color:var(--text-3); display:flex; align-items:center; gap:12px;">
               <span>{{ item.id }}</span>
-              <span style="opacity:.4;">·</span>
               <span>{{ item.submitted }}</span>
-              <span style="opacity:.4;">·</span>
               <span>{{ item.tier.title() }} Audit</span>
             </div>
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
-          <div style="font-family:var(--font-mono); font-size:.625rem; color:var(--text-3);">{{ '$10' if item.tier == 'basic' else '$50' }} USDC</div>
+          <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.625rem; color:var(--text-3);">{{ '$10' if item.tier == 'basic' else '$50' }} USDC</div>
           <span class="vrf-status-badge {{ meta[0] }}">
             <span class="vrf-status-dot"></span>{{ meta[2] }}
           </span>
@@ -87,7 +85,7 @@
 
           <!-- Scores -->
           <div>
-            <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:14px;">Automated Test Results</div>
+            <div style="font-family:var(--font-body);font-weight:600; font-size:.5rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:14px;">Automated Test Results</div>
             <div>
               {% set scores = [('Safety', item.safety_score), ('Performance', item.performance_score), ('Reliability', item.reliability_score)] %}
               {% for label, score in scores %}
@@ -116,7 +114,7 @@
 
           <!-- Timeline -->
           <div>
-            <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:14px;">Review Timeline</div>
+            <div style="font-family:var(--font-body);font-weight:600; font-size:.5rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:14px;">Review Timeline</div>
             <div class="vrf-timeline">
               <div class="vrf-tl-item">
                 <div class="vrf-tl-dot done">
@@ -173,7 +171,7 @@
         ] %}
         <div style="margin-top:20px; padding-top:18px; border-top:1px solid var(--border);">
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-            <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3);">Execution Pipeline</div>
+            <div style="font-family:var(--font-body);font-weight:600; font-size:.5rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3);">Execution Pipeline</div>
             {% if mock_stages|selectattr(2)|list|length > 0 %}
             <span class="exec-type-badge exec-type-composable">{{ mock_stages|length }} stages</span>
             {% else %}
@@ -186,7 +184,7 @@
               <div style="display:flex; align-items:center; gap:7px; padding:6px 12px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius); font-size:.75rem;">
                 <span style="width:6px; height:6px; border-radius:50%; background:{{ 'var(--green)' if type == 'subagent' else 'var(--blue)' }}; flex-shrink:0;"></span>
                 <span style="font-weight:600;">{{ name }}</span>
-                {% if conditional %}<span style="font-family:var(--font-mono); font-size:.5rem; color:#f59e0b; background:rgba(245,158,11,.1); padding:1px 5px; border-radius:3px;">if</span>{% endif %}
+                {% if conditional %}<span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.5rem; color:#f59e0b; background:rgba(245,158,11,.1); padding:1px 5px; border-radius:3px;">if</span>{% endif %}
               </div>
               {% if not loop.last %}
               <svg width="16" height="12" viewBox="0 0 16 12" fill="none" style="flex-shrink:0; margin:0 2px;"><path d="M0 6h12M9 2l4 4-4 4" stroke="var(--border-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -203,7 +201,7 @@
           <div class="skeleton skel-line" style="height:8px; width:40%; border-radius:4px;"></div>
           <div class="skeleton skel-line" style="height:8px; width:50%; border-radius:4px;"></div>
         </div>
-        <div style="font-family:var(--font-mono); font-size:.6875rem; color:var(--text-3); margin-top:10px;">Test results will appear once processing begins</div>
+        <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.6875rem; color:var(--text-3); margin-top:10px;">Test results will appear once processing begins</div>
         {% endif %}
 
       </div><!-- /vrf-agent-body -->

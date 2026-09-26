@@ -47,7 +47,7 @@
       <ol class="c-ms" data-bind="c-milestones">
         {% for m in milestones or [] %}
         <li>
-          <div class="c-ms-head"><span>{{ m.title }}</span><span class="mono">{{ m.amount_cents|usd }} USDC</span></div>
+          <div class="c-ms-head"><span>{{ m.title }}</span><span class="mono">{{ m.amount_cents|usdc('cents') }}</span></div>
           {% if m.criteria %}
           <ul class="c-ms-criteria">{% for c in m.criteria %}<li>{{ c }}</li>{% endfor %}</ul>
           {% endif %}

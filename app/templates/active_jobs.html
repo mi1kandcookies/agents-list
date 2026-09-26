@@ -19,7 +19,7 @@
         <div style="width:40px; height:40px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; flex-shrink:0;
           {% if order.status == 'in_progress' %}background:rgba(59,130,246,.08); border:1px solid rgba(59,130,246,.2);
           {% else %}background:rgba(245,158,11,.06); border:1px solid rgba(245,158,11,.2);{% endif %}">
-          <span style="font-family:var(--font-mono); font-size:.5625rem; font-weight:700;
+          <span style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:.5625rem; font-weight:700;
             {% if order.status == 'in_progress' %}color:#3b82f6;{% else %}color:#f59e0b;{% endif %}">
             {{ 'RUN' if order.status == 'in_progress' else 'ESC' }}
           </span>
@@ -28,7 +28,7 @@
         <!-- Job details -->
         <div>
           <div style="font-weight:600; font-size:.9375rem; margin-bottom:3px;">{{ order.agent }}</div>
-          <div style="font-size:.8125rem; color:var(--text-3); font-family:var(--font-mono);">{{ order.id }}</div>
+          <div style="font-size:.8125rem; color:var(--text-3); font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;">{{ order.id }}</div>
           {% if order.task %}
           <div style="font-size:.8125rem; color:var(--text-2); margin-top:4px;">{{ order.task }}</div>
           {% endif %}
@@ -36,7 +36,7 @@
 
         <!-- Meta -->
         <div style="text-align:right; flex-shrink:0;">
-          <div style="font-family:var(--font-mono); font-size:1rem; font-weight:700; margin-bottom:3px;">${{ "%.2f"|format(order.amount) }}</div>
+          <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:1rem; font-weight:700; margin-bottom:3px;">${{ order.amount|usdc('dollars', unit=False) }}</div>
           <div style="font-size:.75rem; color:var(--text-3);">{{ order.date }}</div>
         </div>
       </div>
@@ -49,7 +49,7 @@
         <a href="/order/{{ order.id }}" class="btn btn-ghost btn-sm">View →</a>
         <button type="button" class="btn btn-primary btn-sm"
                 data-oid="{{ order.id }}"
-                onclick="(async () => { const b = event.currentTarget; b.disabled = true; b.textContent = 'Settling…'; try { const r = await fetch('/api/orders/' + b.dataset.oid + '/complete', {method:'POST'}); if (r.ok) { if (window.showToast) showToast('Released from escrow · moved to Past Jobs', 'success'); setTimeout(() => location.reload(), 500); } else { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'failed'); } } catch (e) { b.disabled = false; b.textContent = 'Mark Complete'; if (window.showToast) showToast('Complete failed: ' + e.message, 'error'); } })()">
+                onclick="(async () => { const b = event.currentTarget; b.disabled = true; b.textContent = 'Settling…'; try { const r = await fetch('/api/orders/' + b.dataset.oid + '/complete', {method:'POST'}); if (r.ok) { if (window.showToast) showToast('Released from escrow and moved to Past Jobs', 'success'); setTimeout(() => location.reload(), 500); } else { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'failed'); } } catch (e) { b.disabled = false; b.textContent = 'Mark Complete'; if (window.showToast) showToast('Complete failed: ' + e.message, 'error'); } })()">
           Mark Complete
         </button>
       </div>
@@ -60,25 +60,25 @@
   <!-- Summary bar -->
   <div style="display:flex; gap:24px; align-items:center; margin-top:28px; padding:16px 24px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius);">
     <div>
-      <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">Active</div>
-      <div style="font-family:var(--font-mono); font-size:1.125rem; font-weight:700;">{{ orders|length }}</div>
+      <div style="font-family:var(--font-body);font-weight:600; font-size:.5625rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:3px;">Active</div>
+      <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:1.125rem; font-weight:700;">{{ orders|length }}</div>
     </div>
     <div style="width:1px; height:32px; background:var(--border);"></div>
     <div>
-      <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">In Escrow</div>
-      <div style="font-family:var(--font-mono); font-size:1.125rem; font-weight:700;">${{ "%.2f"|format(orders|selectattr('status','equalto','in_escrow')|map(attribute='amount')|sum) }}</div>
+      <div style="font-family:var(--font-body);font-weight:600; font-size:.5625rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:3px;">In Escrow</div>
+      <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:1.125rem; font-weight:700;">${{ orders|selectattr('status','equalto','in_escrow')|map(attribute='amount')|sum|usdc('dollars', unit=False) }}</div>
     </div>
     <div style="width:1px; height:32px; background:var(--border);"></div>
     <div>
-      <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">Running</div>
-      <div style="font-family:var(--font-mono); font-size:1.125rem; font-weight:700;">{{ orders|selectattr('status','equalto','in_progress')|list|length }}</div>
+      <div style="font-family:var(--font-body);font-weight:600; font-size:.5625rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); margin-bottom:3px;">Running</div>
+      <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:1.125rem; font-weight:700;">{{ orders|selectattr('status','equalto','in_progress')|list|length }}</div>
     </div>
     <a href="/marketplace" class="btn btn-ghost btn-sm" style="margin-left:auto;">+ Hire another agent</a>
   </div>
 
   {% else %}
   <div style="text-align:center; padding:80px 0;">
-    <div style="font-family:var(--font-mono); font-size:2rem; color:var(--border); margin-bottom:20px;">[ ]</div>
+    <div style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; font-size:2rem; color:var(--border); margin-bottom:20px;">[ ]</div>
     <h3 style="margin-bottom:10px;">{% if wallet %}No active jobs for this wallet{% else %}Connect a wallet to see your jobs{% endif %}</h3>
     <p style="color:var(--text-2); margin-bottom:28px;">
       {% if wallet %}
