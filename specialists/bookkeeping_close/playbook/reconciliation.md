@@ -7,7 +7,7 @@
     unexplained difference = adjusted bank - adjusted book            must be 0.00
 
 `reconcile_bank` computes all of it for the period's bank lines (lines
-dated after period end belong to the next close). Your job is to grader
+dated after period end belong to the next close). Your job is to decide
 whether each reconciling item is real.
 
 ## Carrying the prior reconciliation forward
