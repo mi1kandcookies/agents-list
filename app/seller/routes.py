@@ -7,6 +7,8 @@ import time
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from app.extensions import db
+from app.identity.session import current_human, login_required
+from app.seller import stamp
 from chain.config import explorer_url
 from app.services import (
     CATEGORIES, PLATFORM_FEE_BPS, USE_CASES, agents_for_seller, api_error, is_valid_wallet,
@@ -236,3 +238,48 @@ def seller_manage_agent(agent_id):
             return jsonify({"agentId": agent_id, "status": "updated"})
         return api_error("unknown action", field="action")
     return render_template("seller/manage.html", agent=row.to_dict(), categories=CATEGORIES)
+
+
+# ── Operator manifest and stamp (app/seller/stamp.py) ──────────────────────
+MANIFEST_FORM_FIELDS = ("model", "tools", "mcp_servers", "skills", "price_min_usdc",
+                        "price_max_usdc", "payout_address")
+
+
+@bp.route("/agents/<int:agent_id>/manifest", methods=["GET", "POST"])
+@login_required
+def seller_manifest(agent_id):
+    """Edit the agent's manifest and stamp it with a fresh World ID approval.
+    Once an agent is stamped, only its operator (same World ID ``sub``) may
+    edit it."""
+    from app.models import Agent as AgentModel
+    row = db.session.get(AgentModel, agent_id)
+    if row is None:
+        return render_template("404.html"), 404
+    operator = row.manifest_stamp_sub
+    if operator and operator != stamp.DEV_STAMP_SUB and operator != current_human().world_sub:
+        return render_template("seller/manifest.html", agent=row, forbidden=True), 403
+
+    error = error_field = None
+    if request.method == "POST":
+        data = {k: request.form.get(k, "") for k in MANIFEST_FORM_FIELDS}
+        try:
+            manifest = stamp.build_manifest(row, **data)
+        except stamp.ManifestError as exc:
+            error, error_field = str(exc), exc.field
+        else:
+            stamp.save_manifest(row, manifest)
+            db.session.commit()
+            if request.form.get("action") == "stamp":
+                approval = stamp.request_stamp(row, flow="web")
+                return redirect(url_for("approvals.start", approval_id=approval.id))
+            return redirect(url_for("seller.seller_manifest", agent_id=row.id, saved=1))
+
+    current = stamp.current_manifest(row) or stamp.default_manifest(row)
+    stamped = stamp.stamped_manifest(row)
+    return render_template(
+        "seller/manifest.html", agent=row, forbidden=False, manifest=current,
+        form=request.form if error else None, error=error, error_field=error_field,
+        current_hash=stamp.manifest_hash(current), status=stamp.stamp_status(row),
+        stamped=stamped, changes=stamp.diff(stamped, current) if stamped else [],
+        screening=stamp.onboarding_screening(row), saved=request.args.get("saved") == "1",
+    ), 400 if error else 200

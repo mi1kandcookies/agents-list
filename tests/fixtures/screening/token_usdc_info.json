@@ -1,0 +1,33 @@
+{
+  "apiVersion": "2.3.1",
+  "saleTax": {
+    "currentValue": 0,
+    "minValue": 0,
+    "maxValue": 0
+  },
+  "buyTax": {
+    "currentValue": 0,
+    "minValue": 0,
+    "maxValue": 0
+  },
+  "riskScore": 0,
+  "riskLevel": "neutral",
+  "category": "info",
+  "trust": "whitelist",
+  "action": "info",
+  "detectors": [
+    {
+      "code": "HIGH_REPUTATION_TOKEN",
+      "description": "Token has a high reputation"
+    },
+    {
+      "code": "PROXY_PATTERN",
+      "description": "Contract uses an upgradeable proxy"
+    }
+  ],
+  "token": {
+    "chainId": "1",
+    "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "symbol": "USDC"
+  }
+}

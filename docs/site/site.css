@@ -1,0 +1,75 @@
+/* Agent's List docs. Same "Ledger Indigo" tokens as the app
+   (app/static/css/main.css); no build step, no web fonts required. */
+:root {
+  --c-bg: #FAFAF9;
+  --c-surface: #FFFFFF;
+  --c-border: #E7E5E4;
+  --c-ink: #1C1917;
+  --c-ink-2: #57534E;
+  --c-ink-3: #78716C;
+  --c-accent: #4F46E5;
+  --c-accent-hover: #4338CA;
+  --c-warning: #D97706;
+  --accent-soft: color-mix(in srgb, var(--c-accent) 8%, var(--c-surface));
+  --accent-line: color-mix(in srgb, var(--c-accent) 30%, var(--c-surface));
+  --surface-2: color-mix(in srgb, var(--c-ink) 3%, var(--c-surface));
+  --warning-soft: color-mix(in srgb, var(--c-warning) 10%, var(--c-surface));
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 10px;
+  --shell: 1120px;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--c-bg); color: var(--c-ink); font: 16px/1.6 var(--font-body); }
+a { color: var(--c-accent); text-decoration: none; }
+a:hover { color: var(--c-accent-hover); text-decoration: underline; }
+code, pre { font-family: var(--font-mono); font-size: 0.875em; }
+code { background: var(--surface-2); border: 1px solid var(--c-border); border-radius: 6px; padding: 0 4px; overflow-wrap: anywhere; }
+pre { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; border: 0; padding: 0; }
+.shell { max-width: var(--shell); margin: 0 auto; padding: 0 16px; }
+
+.topbar { background: var(--c-surface); border-bottom: 1px solid var(--c-border); }
+.topbar-inner { display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--c-ink); }
+.brand:hover { text-decoration: none; color: var(--c-ink); }
+.brand-mark { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--c-accent); color: #fff; font-size: 14px; }
+.brand-sub { font-weight: 500; color: var(--c-ink-3); }
+.topbar-link { font-size: 0.875rem; }
+
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 40px; padding-top: 32px; padding-bottom: 48px; }
+.sidebar ul { list-style: none; margin: 0; padding: 0; position: sticky; top: 16px; }
+.sidebar li a { display: block; padding: 6px 10px; border-radius: 8px; color: var(--c-ink-2); font-size: 0.9375rem; }
+.sidebar li a:hover { background: var(--surface-2); text-decoration: none; color: var(--c-ink); }
+.sidebar li a[aria-current="page"] { background: var(--accent-soft); color: var(--c-accent); font-weight: 600; }
+.sidebar .nav-group { margin: 16px 10px 4px; font-size: 0.75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--c-ink-3); }
+
+.content { min-width: 0; }
+.content h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+.lede { font-size: 1.125rem; color: var(--c-ink-2); margin: 0 0 28px; }
+.content h2 { font-size: 1.25rem; margin: 32px 0 10px; }
+.content section + section { border-top: 1px solid var(--c-border); }
+table { width: 100%; border-collapse: collapse; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); font-size: 0.9375rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--c-border); }
+th { background: var(--surface-2); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.five { padding-left: 20px; }
+.five li { margin: 6px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.card { display: flex; flex-direction: column; gap: 4px; padding: 16px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); color: var(--c-ink); }
+.card:hover { border-color: var(--accent-line); text-decoration: none; color: var(--c-ink); }
+.card span { color: var(--c-ink-2); font-size: 0.9375rem; }
+.note { background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--radius); padding: 12px 14px; }
+.todo { display: inline-block; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; color: var(--c-warning); background: var(--warning-soft); border-radius: 4px; padding: 0 6px; }
+.faq dt { font-weight: 600; margin-top: 18px; }
+.faq dd { margin: 4px 0 0; color: var(--c-ink-2); }
+.footer { border-top: 1px solid var(--c-border); padding: 20px 0; color: var(--c-ink-3); font-size: 0.875rem; }
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; gap: 16px; padding-top: 16px; }
+  .sidebar ul { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
+  .sidebar .nav-group { width: 100%; margin: 8px 10px 0; }
+  .content h1 { font-size: 1.625rem; }
+  table { display: block; overflow-x: auto; }
+}

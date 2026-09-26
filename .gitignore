@@ -17,3 +17,9 @@ instance/
 # Local tooling
 .worktrees/
 .pytest_cache/
+
+# Names sidecar state (deployed addresses, commit secret)
+ens/.state/
+
+# Local agent tooling state
+.claude/

@@ -35,9 +35,9 @@ If the caller attaches a valid X-Payment header, the decorator:
 
 Otherwise it returns 402 with a challenge header describing what's expected.
 
-Note: this is the homegrown `x402/eip-3009` format inherited from the prototype.
-Moving to the current x402 spec (`exact` scheme, CAIP-2 network ids) with the
-official SDK is on the roadmap.
+Note: this is the older homegrown `x402/eip-3009` format and settles without
+an approval or mandate; no route uses it. Paid endpoints use the x402 v2
+`exact` scheme in chain/x402_v2.py.
 """
 from __future__ import annotations
 import json

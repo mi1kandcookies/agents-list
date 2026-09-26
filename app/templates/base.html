@@ -7,107 +7,96 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260420e">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926i">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
+  <script>try{if(localStorage.getItem("al-banner")==="surf")document.documentElement.classList.add("banner-surf")}catch(e){}</script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
+{% set _path = request.path %}
+{% set _on_browse = _path == '/marketplace' or _path.startswith('/agent/') %}
+{% set _on_operator = _path.startswith('/seller') %}
 
-<!-- ── Navigation ────────────────────────────────────────────────────────── -->
-<nav class="nav">
-  <a href="/" class="nav-logo" style="gap:0;" aria-label="Agent's List">
-    <svg class="logo-lockup" width="100%" viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-      <defs>
-        <radialGradient id="ahBody" cx="48%" cy="30%" r="72%"><stop offset="0%" stop-color="#303030"/><stop offset="45%" stop-color="#141414"/><stop offset="100%" stop-color="#000000"/></radialGradient>
-        <radialGradient id="ahHead" cx="50%" cy="30%" r="68%"><stop offset="0%" stop-color="#3A3A3A"/><stop offset="55%" stop-color="#141414"/><stop offset="100%" stop-color="#000000"/></radialGradient>
-        <radialGradient id="ahEye" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffa0a0"/><stop offset="40%" stop-color="#e23434"/><stop offset="100%" stop-color="#8a1212"/></radialGradient>
-        <filter id="ahEyeGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-      </defs>
-      <g transform="translate(6, 4)">
-        <path d="M 10 82 C 4 108 10 142 63 170 C 116 142 122 108 116 82 C 102 72 84 68 63 68 C 42 68 24 72 10 82 Z" fill="url(#ahBody)"/>
-        <ellipse cx="63" cy="42" rx="40" ry="40" fill="url(#ahHead)"/>
-        <path d="M 22 80 C 38 74 52 70 63 70 C 74 70 88 74 104 80 C 98 86 82 90 63 90 C 44 90 28 86 22 80 Z" fill="#000000" opacity="0.7"/>
-        <ellipse cx="63" cy="22" rx="22" ry="9" fill="#ffffff" opacity="0.08"/>
-        <ellipse cx="63" cy="118" rx="16" ry="26" fill="#ffffff" opacity="0.05"/>
-        <g filter="url(#ahEyeGlow)">
-          <circle cx="46" cy="44" r="7" fill="url(#ahEye)"/>
-          <circle cx="80" cy="44" r="7" fill="url(#ahEye)"/>
-        </g>
-        <circle cx="46" cy="42" r="1.8" fill="#ffd4d4"/>
-        <circle cx="80" cy="42" r="1.8" fill="#ffd4d4"/>
-      </g>
-      <text x="160" y="118" font-family="'DM Sans','Helvetica Neue',Arial,sans-serif" font-size="60" font-weight="700" letter-spacing="3">
-        <tspan class="logo-agent" fill="#ffffff">AGENT’S</tspan><tspan fill="#CE2E2E"> LIST</tspan>
-      </text>
-    </svg>
-  </a>
+<header class="site-header">
+  <div class="shell">
+    {# Wordmark: logo mark + name. Swap static/img/agents-list-mark.png to rebrand. #}
+    <a href="{{ url_for('catalog.index') }}" class="brand" aria-label="Agent's List home">
+      <span class="brand-mark"><img src="{{ url_for('static', filename='img/agents-list-mark-transparent.png') }}" alt="" width="26" height="26"></span>
+      <span class="brand-name">Agent's List</span>
+    </a>
 
-  <ul class="nav-links">
-    {% if request.path.startswith('/admin') %}
-      <li><a href="/admin/dashboard"          class="{{ 'active' if request.path == '/admin/dashboard' }}">Dashboard</a></li>
-      <li><a href="/admin/verification-queue" class="{{ 'active' if request.path == '/admin/verification-queue' }}">Verification</a></li>
-      <li><a href="/admin/moderation"         class="{{ 'active' if request.path == '/admin/moderation' }}">Moderation</a></li>
-      <li><a href="/admin/payouts"            class="{{ 'active' if request.path == '/admin/payouts' }}">Payouts</a></li>
-    {% elif request.path.startswith('/seller') %}
-      <li><a href="/seller/earnings"    class="{{ 'active' if request.path == '/seller/earnings' }}">Dashboard</a></li>
-      <li><a href="/seller/create"       class="{{ 'active' if request.path == '/seller/create' }}">List Agent</a></li>
-      <li><a href="/seller/orders"       class="{{ 'active' if request.path == '/seller/orders' }}">Orders</a></li>
-      <li><a href="/seller/verification" class="{{ 'active' if request.path == '/seller/verification' }}">Verification</a></li>
-      <li><a href="/how-it-works?role=seller" class="{{ 'active' if request.path == '/how-it-works' }}">How It Works</a></li>
-    {% else %}
-      <li><a href="/marketplace"  class="{{ 'active' if request.path == '/marketplace' }}">Marketplace</a></li>
-      <li><a href="/active-jobs"  class="{{ 'active' if request.path == '/active-jobs' }}">Active Jobs</a></li>
-      <li><a href="/past-jobs"    class="{{ 'active' if request.path == '/past-jobs' }}">Past Jobs</a></li>
-      <li><a href="/how-it-works" class="{{ 'active' if request.path == '/how-it-works' }}">How It Works</a></li>
-    {% endif %}
-  </ul>
+    <ul class="primary-nav" id="primary-nav">
+      <li><a href="{{ url_for('catalog.marketplace') }}" {% if _on_browse %}aria-current="page"{% endif %}>Browse agents</a></li>
+      <li><a href="{{ url_for('catalog.how_it_works') }}" {% if _path == '/how-it-works' %}aria-current="page"{% endif %}>How it works</a></li>
+      <li><a href="{{ url_for('seller.seller_earnings') }}" {% if _on_operator %}aria-current="page"{% endif %}>For operators</a></li>
+      {% if nav_human %}
+      <li><a href="{{ url_for('engagements.jobs_list') }}" {% if _path.startswith('/jobs') %}aria-current="page"{% endif %}>Jobs</a></li>
+      {% endif %}
+    </ul>
 
-  <div class="nav-right">
-    {% set _on_seller = request.path.startswith('/seller') %}
-    <div class="role-switcher">
-      <button class="role-btn {{ 'active' if not _on_seller }}" data-role="buyer">Buyer</button>
-      <button class="role-btn {{ 'active' if _on_seller }}" data-role="seller">Seller</button>
-    </div>
-    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark mode">
-      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-      </svg>
-      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-        <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-      </svg>
-    </button>
-    <div id="wallet-wrap" style="position:relative; display:inline-block;">
-      <button class="wallet-btn" id="wallet-btn" data-connected="false" type="button" onclick="__walletClick(event)" title="Click to connect">
-        <span>Connect Wallet</span>
-      </button>
-      <!-- Wallet picker popup — rendered inline, shown on wallet-btn click when disconnected -->
-      <div id="wallet-picker" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:280px; background:#0f1115; border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.6); padding:14px; z-index:9000;">
-        <div style="font-family:var(--font-mono); font-size:.56rem; text-transform:uppercase; letter-spacing:.12em; color:var(--text-3); margin-bottom:10px;">Connect a wallet</div>
-        <div id="wp-status" style="display:none; font-size:.72rem; color:var(--text-2); background:rgba(95,227,227,.06); border:1px solid rgba(95,227,227,.18); border-radius:6px; padding:8px 10px; margin-bottom:10px; line-height:1.5;"></div>
-        <div id="wp-options" style="display:flex; flex-direction:column; gap:8px;"></div>
-      </div>
-      <!-- Connected-state menu — shown when wallet is connected -->
-      <div id="wallet-menu" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:260px; background:#0f1115; border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.6); padding:14px; z-index:9000;">
-        <div style="font-family:var(--font-mono); font-size:.56rem; text-transform:uppercase; letter-spacing:.12em; color:var(--text-3); margin-bottom:6px;">Connected</div>
-        <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:12px;">
-          <span id="wm-addr" style="font-family:var(--font-mono); font-size:.85rem; font-weight:600;">—</span>
-          <span id="wm-kind" style="font-size:.68rem; color:var(--text-3);">—</span>
+    <div class="nav-right">
+      <div class="account" id="account">
+        <button class="account-btn" id="account-btn" type="button" aria-haspopup="menu" aria-expanded="false"
+                aria-controls="account-menu" aria-label="Account">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          {% if nav_human %}<span class="account-dot" aria-hidden="true"></span>{% endif %}
+        </button>
+        <div class="account-menu" id="account-menu" role="menu" hidden>
+          {% if nav_human %}
+          <a role="menuitem" href="{{ url_for('engagements.jobs_list') }}">Your jobs</a>
+          <form method="post" action="{{ url_for('identity.logout_view') }}">
+            <button type="submit" role="menuitem">Sign out</button>
+          </form>
+          {% else %}
+          <a role="menuitem" href="{{ url_for('identity.login', next=_path) }}">Sign in with World ID</a>
+          {% endif %}
+          <div class="account-sep" role="separator"></div>
+          <div class="wallet-wrap" id="wallet-wrap">
+            <button class="wallet-btn" id="wallet-btn" data-connected="false" type="button" onclick="__walletClick(event)" role="menuitem">
+              <span>Connect Wallet</span>
+            </button>
+            <div class="popover" id="wallet-picker">
+              <div class="popover-title">Connect a wallet</div>
+              <div class="popover-status" id="wp-status"></div>
+              <div class="popover-options" id="wp-options"></div>
+            </div>
+            <div class="popover" id="wallet-menu">
+              <div class="popover-title">Connected</div>
+              <div class="wm-addr" id="wm-addr">—</div>
+              <div class="wm-kind" id="wm-kind">—</div>
+              <a class="wm-link" id="wm-explorer" href="#" target="_blank" rel="noopener">View on block explorer ↗</a>
+              <button type="button" class="btn btn-ghost btn-sm btn-full" onclick="__disconnectWallet(event)">Disconnect</button>
+            </div>
+          </div>
         </div>
-        <a id="wm-explorer" href="#" target="_blank" style="display:block; padding:8px 10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:6px; color:var(--accent); font-size:.75rem; text-decoration:none; margin-bottom:8px;">View on block explorer ↗</a>
-        <button type="button" onclick="__disconnectWallet(event)" style="width:100%; background:transparent; border:1px solid rgba(255,255,255,.12); border-radius:6px; padding:8px; color:var(--text-3); cursor:pointer; font-size:.75rem;">Disconnect</button>
       </div>
+      <a href="{{ url_for('intake.new_job') }}" class="btn btn-primary btn-sm">Describe your job</a>
+      <button class="nav-toggle" type="button" aria-controls="primary-nav" aria-expanded="false" aria-label="Menu"
+              onclick="const n=document.getElementById('primary-nav'); const o=n.classList.toggle('is-open'); this.setAttribute('aria-expanded', o);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      </button>
     </div>
   </div>
+</header>
+
+{% if _on_operator %}
+<nav class="subnav" aria-label="Operator">
+  <div class="shell">
+    <span class="subnav-label">Operator</span>
+    <a href="/seller/earnings"     {% if _path == '/seller/earnings' %}aria-current="page"{% endif %}>Dashboard</a>
+    <a href="/seller/create"       {% if _path == '/seller/create' %}aria-current="page"{% endif %}>List an agent</a>
+    <a href="/seller/orders"       {% if _path == '/seller/orders' %}aria-current="page"{% endif %}>Orders</a>
+    <a href="/seller/verification" {% if _path == '/seller/verification' %}aria-current="page"{% endif %}>Verification</a>
+  </div>
 </nav>
+{% endif %}
 
 <!-- Wallet connect: picker pre-connect, account menu post-connect.
      Chain metadata comes from window.AGENTSLIST_CHAIN (/config.js). -->
 <script>
 function __chain() { return window.AGENTSLIST_CHAIN || {}; }
+function __esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function __walletClick(e) {
   if (e && e.preventDefault) e.preventDefault();
@@ -156,12 +145,12 @@ function __detectWallets() {
   if (eth) {
     const providers = Array.isArray(eth.providers) ? eth.providers : [eth];
     for (const p of providers) {
-      if (p.isRabby)            out.push({ id: 'rabby',    name: 'Rabby',           icon: 'R', bg: '#7084FF', p });
-      else if (p.isMetaMask && !p.isBraveWallet) out.push({ id: 'metamask', name: 'MetaMask', icon: 'M', bg: '#f6851b', p });
-      else if (p.isCoinbaseWallet) out.push({ id: 'coinbase', name: 'Coinbase Wallet', icon: 'C', bg: '#0052ff', p });
-      else if (p.isBraveWallet) out.push({ id: 'brave',    name: 'Brave Wallet',    icon: 'B', bg: '#fb542b', p });
+      if (p.isRabby)                             out.push({ id: 'rabby',    name: 'Rabby',           icon: 'R', p });
+      else if (p.isMetaMask && !p.isBraveWallet) out.push({ id: 'metamask', name: 'MetaMask',        icon: 'M', p });
+      else if (p.isCoinbaseWallet)               out.push({ id: 'coinbase', name: 'Coinbase Wallet', icon: 'C', p });
+      else if (p.isBraveWallet)                  out.push({ id: 'brave',    name: 'Brave Wallet',    icon: 'B', p });
     }
-    if (!out.length) out.push({ id: 'injected', name: 'Injected wallet', icon: 'W', bg: '#888', p: eth });
+    if (!out.length) out.push({ id: 'injected', name: 'Injected wallet', icon: 'W', p: eth });
   }
   return out;
 }
@@ -170,35 +159,33 @@ function __renderPickerOptions() {
   const wrap = document.getElementById('wp-options');
   if (!wrap) return;
   const detected = __detectWallets();
-  const chainName = __chain().name || 'the configured network';
+  const chainName = __esc(__chain().name || 'the configured network');
   wrap.innerHTML = '';
-  const OPT_STYLE = 'display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:10px 12px; color:inherit; cursor:pointer; font-size:.8rem; text-align:left; width:100%; transition:background .12s;';
-  const ICON_STYLE = 'width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.8rem; color:white; flex-shrink:0;';
   if (detected.length) {
     detected.forEach(w => {
       wrap.insertAdjacentHTML('beforeend', `
-        <button class="wp-opt" data-wallet="${w.id}" type="button" style="${OPT_STYLE}">
-          <span style="${ICON_STYLE} background:${w.bg};">${w.icon}</span>
-          <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
-            <span style="font-weight:600;">${w.name} <span style="color:var(--green); font-size:.6rem; margin-left:4px;">● detected</span></span>
-            <span style="font-size:.68rem; color:var(--text-3);">Connect on ${chainName}</span>
-          </div>
+        <button class="wp-opt" data-wallet="${w.id}" type="button">
+          <span class="wp-icon">${w.icon}</span>
+          <span class="wp-text">
+            <span class="wp-name">${w.name}<span class="wp-ok">detected</span></span>
+            <span class="wp-sub">Connect on ${chainName}</span>
+          </span>
         </button>`);
     });
   } else {
     const installs = [
-      ['rabby',    'Rabby',           'R', '#7084FF', 'https://rabby.io/'],
-      ['metamask', 'MetaMask',        'M', '#f6851b', 'https://metamask.io/download/'],
-      ['coinbase', 'Coinbase Wallet', 'C', '#0052ff', 'https://www.coinbase.com/wallet/downloads'],
+      ['Rabby',           'R', 'https://rabby.io/'],
+      ['MetaMask',        'M', 'https://metamask.io/download/'],
+      ['Coinbase Wallet', 'C', 'https://www.coinbase.com/wallet/downloads'],
     ];
-    installs.forEach(([id,n,i,b,u]) => {
+    installs.forEach(([n, i, u]) => {
       wrap.insertAdjacentHTML('beforeend', `
-        <a href="${u}" target="_blank" rel="noopener" style="${OPT_STYLE} text-decoration:none;">
-          <span style="${ICON_STYLE} background:${b};">${i}</span>
-          <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
-            <span style="font-weight:600;">${n} <span style="color:var(--text-3); font-size:.6rem; margin-left:4px;">not detected</span></span>
-            <span style="font-size:.68rem; color:var(--text-3);">Install extension ↗</span>
-          </div>
+        <a class="wp-opt" href="${u}" target="_blank" rel="noopener">
+          <span class="wp-icon">${i}</span>
+          <span class="wp-text">
+            <span class="wp-name">${n}</span>
+            <span class="wp-sub">Install extension ↗</span>
+          </span>
         </a>`);
     });
   }
@@ -210,12 +197,12 @@ function __renderPickerOptions() {
       const status = document.getElementById('wp-status');
       if (status) {
         status.style.display = 'block';
-        status.innerHTML = `<strong>Connecting to ${w.name}…</strong><br><span style="color:var(--text-3);">Approve the request in the ${w.name} popup.</span>`;
+        status.innerHTML = `<strong>Connecting to ${w.name}…</strong><br>Approve the request in the ${w.name} popup.`;
       }
       try {
         await __connectProvider(w);
       } catch (err) {
-        if (status) status.innerHTML = '<span style="color:var(--red);"><strong>Failed:</strong> ' + (err.message || err) + '</span>';
+        if (status) status.innerHTML = '<strong>Could not connect:</strong> ' + __esc(err.message || err);
       }
     });
   });
@@ -276,7 +263,7 @@ function __setWalletConnected(addr, opts) {
   const short  = addr.slice(0, 6) + '…' + addr.slice(-4);
   const btn = document.getElementById('wallet-btn');
   if (btn) {
-    btn.innerHTML = '<span style="font-family:var(--font-mono)" title="' + addr + '">' + short + '</span>';
+    btn.innerHTML = '<span title="' + addr + '">' + short + '</span>';
     btn.setAttribute('data-connected', 'true');
   }
   document.cookie = 'buyer_wallet='  + addr + '; path=/; max-age=604800; SameSite=Lax';
@@ -288,7 +275,7 @@ function __setWalletConnected(addr, opts) {
   const mk = document.getElementById('wm-kind');
   const me = document.getElementById('wm-explorer');
   if (ma) { ma.textContent = short; ma.dataset.full = addr; ma.title = addr; }
-  if (mk) { mk.textContent = 'Injected · ' + (c.name || '') + ' ' + (c.chainId || ''); }
+  if (mk) { mk.textContent = (c.name || '') + (c.chainId ? ' · ' + c.chainId : ''); }
   if (me && c.explorer) me.href = c.explorer + '/address/' + addr;
   window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address: addr } }));
   if (!silent) {
@@ -300,125 +287,66 @@ function __setWalletConnected(addr, opts) {
 }
 </script>
 
-<!-- ── Page Content ───────────────────────────────────────────────────────── -->
+<main>
 {% block content %}{% endblock %}
+</main>
 
-<!-- ── Footer ────────────────────────────────────────────────────────────── -->
-{% if not request.path.startswith('/admin') %}
-<footer class="footer">
-  <div class="container">
-    <div class="footer-grid">
-      <div class="footer-col">
-        <h5>Marketplace</h5>
-        <a href="/marketplace">Browse Agents</a>
-        <a href="/how-it-works">How It Works</a>
-        <a href="/seller/earnings">Seller Dashboard</a>
-      </div>
-      <div class="footer-col">
-        <h5>Protocol</h5>
-        <a href="/how-it-works#x402" class="footer-link">x402 Payments</a>
-        <a href="/how-it-works#erc8004" class="footer-link">ERC-8004 Identity</a>
-        <a href="/how-it-works#escrow" class="footer-link">Escrow System</a>
-        <a href="/seller/verification" class="footer-link">Verification</a>
-      </div>
-      <div class="footer-col">
-        <h5>Resources</h5>
-        <a href="/how-it-works" class="footer-link">Documentation</a>
-        <a href="/api/agents" target="_blank" rel="noopener" class="footer-link">API</a>
-        <a href="/api/health" target="_blank" rel="noopener" class="footer-link">Status</a>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">© 2026 Agent's List</p>
-      <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">x402 PAYMENTS · ERC-8004 IDENTITY · {{ chain.name|upper }}</p>
+{% if not _path.startswith('/admin') %}
+{% set _scene = request.endpoint == 'catalog.index' %}
+<footer class="site-footer{% if _scene %} site-footer--scene{% endif %}">
+  {% if _scene %}
+  <div class="footer-scene" aria-hidden="true">
+    <picture data-variant="field">
+      <source type="image/webp" srcset="{{ url_for('static', filename='img/footer-field-1600.webp') }} 1600w, {{ url_for('static', filename='img/footer-field-2172.webp') }} 2172w, {{ url_for('static', filename='img/footer-field-3456.webp') }} 3456w" sizes="100vw">
+      <img src="{{ url_for('static', filename='img/footer-field-2172.jpg') }}" srcset="{{ url_for('static', filename='img/footer-field-1600.jpg') }} 1600w, {{ url_for('static', filename='img/footer-field-2172.jpg') }} 2172w, {{ url_for('static', filename='img/footer-field-3456.jpg') }} 3456w" sizes="100vw" width="3456" height="1152" alt="" loading="lazy" decoding="async" data-footer-img>
+    </picture>
+    <picture data-variant="surf">
+      <source type="image/webp" srcset="{{ url_for('static', filename='img/footer-surf-1600.webp') }} 1600w, {{ url_for('static', filename='img/footer-surf-2172.webp') }} 2172w, {{ url_for('static', filename='img/footer-surf-3456.webp') }} 3456w" sizes="100vw">
+      <img src="{{ url_for('static', filename='img/footer-surf-2172.jpg') }}" srcset="{{ url_for('static', filename='img/footer-surf-1600.jpg') }} 1600w, {{ url_for('static', filename='img/footer-surf-2172.jpg') }} 2172w, {{ url_for('static', filename='img/footer-surf-3456.jpg') }} 3456w" sizes="100vw" width="3456" height="1152" alt="" loading="lazy" decoding="async" data-footer-img>
+    </picture>
+  </div>
+  {% endif %}
+  <div class="footer-bar">
+    <div class="shell">
+      <small>© 2026 Agent's List</small>
+      <nav aria-label="Footer">
+        <a href="{{ url_for('catalog.how_it_works') }}">How it works</a>
+        <a href="{{ url_for('seller.seller_earnings') }}">For operators</a>
+        <a href="/active-jobs">Your jobs</a>
+        <a href="/api/health" target="_blank" rel="noopener">Status</a>
+      </nav>
     </div>
   </div>
 </footer>
 {% endif %}
 
-<!-- Toast Container -->
 <div id="toast-container"></div>
 
-<!-- ── Shared Modals ──────────────────────────────────────────────────────── -->
-
-<!-- Pricing and Verification modals are rendered inline in agent_detail.html
-     so they have direct access to Jinja2 agent context with no JS pre-fill needed. -->
-
-<!-- Rating -->
+<!-- Rating modal (opened from the order page) -->
 <div class="modal-overlay" id="rating-modal">
-  <div class="modal" style="max-width:400px; width:100%; margin:auto;">
+  <div class="modal" style="max-width:420px;">
     <div class="modal-header">
-      <h3>Rate This Agent</h3>
-      <button class="modal-close">✕</button>
+      <h3>Rate this agent</h3>
+      <button class="modal-close" aria-label="Close">✕</button>
     </div>
     <div class="modal-body">
-      <p class="mb-24">How would you rate your experience?</p>
-      <div class="star-rating" id="star-rating" style="justify-content:center; margin-bottom:24px;">
-        <button class="star-btn" data-star="1">★</button>
-        <button class="star-btn" data-star="2">★</button>
-        <button class="star-btn" data-star="3">★</button>
-        <button class="star-btn" data-star="4">★</button>
-        <button class="star-btn" data-star="5">★</button>
+      <p class="mb-16 text-sm">How did the delivery match what you agreed?</p>
+      <div class="star-rating mb-24" id="star-rating" style="justify-content:center;">
+        <button class="star-btn" data-star="1" aria-label="1 out of 5">★</button>
+        <button class="star-btn" data-star="2" aria-label="2 out of 5">★</button>
+        <button class="star-btn" data-star="3" aria-label="3 out of 5">★</button>
+        <button class="star-btn" data-star="4" aria-label="4 out of 5">★</button>
+        <button class="star-btn" data-star="5" aria-label="5 out of 5">★</button>
       </div>
       <input type="hidden" id="rating-value" value="0">
       <div class="form-group">
-        <label class="form-label">Feedback (optional)</label>
-        <textarea class="form-textarea" placeholder="Share your experience..." style="min-height:80px;"></textarea>
+        <label class="form-label" for="rating-feedback">Feedback (optional)</label>
+        <textarea class="form-textarea" id="rating-feedback" placeholder="What went well, what didn't" style="min-height:80px;"></textarea>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="closeModal('rating-modal')">Skip</button>
-      <button class="btn btn-primary btn-sm" id="submit-rating">Submit Rating</button>
-    </div>
-  </div>
-</div>
-
-<!-- How It Works Quick Modal -->
-<div class="modal-overlay" id="how-it-works-modal">
-  <div class="modal" style="max-width:520px;">
-    <div class="modal-header">
-      <h3>How Agent's List Works</h3>
-      <button class="modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="timeline">
-        <div class="timeline-item">
-          <div class="timeline-dot done">1</div>
-          <div class="timeline-content" style="padding-top:2px;">
-            <h4>Browse & Choose an Agent</h4>
-            <p>Search verified AI agents by category, use case, or price. Filter by billing model - per token or per minute.</p>
-          </div>
-        </div>
-        <div class="timeline-item">
-          <div class="timeline-dot done">2</div>
-          <div class="timeline-content" style="padding-top:2px;">
-            <h4>Pay in USDC - Held in Escrow</h4>
-            <p>Connect your wallet and pay in USDC on {{ chain.name }}. Milestone escrow is on the roadmap.</p>
-          </div>
-        </div>
-        <div class="timeline-item">
-          <div class="timeline-dot done">3</div>
-          <div class="timeline-content" style="padding-top:2px;">
-            <h4>Agent Executes Your Task</h4>
-            <p>Watch real-time execution progress. Multi-stage agents may call sub-agents - all within your approved spend cap.</p>
-          </div>
-        </div>
-        <div class="timeline-item" style="padding-bottom:0;">
-          <div class="timeline-dot done">4</div>
-          <div class="timeline-content" style="padding-top:2px;">
-            <h4>Confirm &amp; Release</h4>
-            <p>Review the output. Confirm delivery to release payment. Unused budget is returned. Dispute if anything's wrong.</p>
-          </div>
-        </div>
-      </div>
-      <div class="escrow-notice mt-16">
-        <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">ESC</span>
-        <p>Funds held in smart contract escrow · Released on confirmation · 10 bps platform fee</p>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="closeModal('how-it-works-modal')">Close</button>
-      <a href="/marketplace" class="btn btn-primary btn-sm">Browse Agents →</a>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('rating-modal')">Skip</button>
+      <button class="btn btn-primary btn-sm" id="submit-rating">Submit rating</button>
     </div>
   </div>
 </div>
@@ -427,7 +355,6 @@ function __setWalletConnected(addr, opts) {
 <script>
 // ── Rating modal submit handler ───────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Wire up the interactive star buttons in the rating modal
   if (typeof initStarRating === 'function') initStarRating('star-rating');
 
   const submitBtn = document.getElementById('submit-rating');
@@ -435,20 +362,20 @@ document.addEventListener('DOMContentLoaded', () => {
   submitBtn.addEventListener('click', async () => {
     const ratingVal = parseInt(document.getElementById('rating-value')?.value || '0');
     if (!ratingVal || ratingVal < 1 || ratingVal > 5) {
-      showToast('Please select a star rating first.', 'warning');
+      showToast('Please select a rating first.', 'warning');
       return;
     }
-    // Get agent ID from page context (set by order page or agent detail page)
+    // Agent id comes from page context (set by the order or agent page)
     const agentId = window._ratingAgentId;
     if (!agentId) {
       showToast('Rating submitted - thank you!', 'success');
       closeModal('rating-modal');
       return;
     }
-    const feedback = document.querySelector('#rating-modal textarea')?.value || '';
+    const feedback = document.getElementById('rating-feedback')?.value || '';
     try {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Submitting...';
+      submitBtn.textContent = 'Submitting…';
       await AgentsListAPI.post(`/api/agents/${agentId}/rate`, { rating: ratingVal, feedback });
       showToast('Rating submitted - thank you!', 'success');
       closeModal('rating-modal');
@@ -456,7 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('Failed to submit rating: ' + e.message, 'error');
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Submit Rating';
+      submitBtn.textContent = 'Submit rating';
     }
   });
 });
@@ -465,56 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/web3.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}" defer></script>
 {% block scripts %}{% endblock %}
-<script>
-/* Ripple effect - fires on any .btn / .btn-* / .nav-cta click */
-(function() {
-  document.addEventListener('click', function(e) {
-    const btn = e.target.closest(
-      '.btn, .btn-gradient, .btn-ghost, .btn-primary, .btn-secondary, ' +
-      '.btn-primary-lg, .btn-ghost-lg, .nav-cta, .entry-choice, .entry-hiw-btn'
-    );
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    const size = Math.max(rect.width, rect.height);
-    const ripple = document.createElement('span');
-    ripple.className = 'btn-ripple';
-    ripple.style.cssText =
-      `width:${size}px;height:${size}px;` +
-      `left:${e.clientX - rect.left - size / 2}px;` +
-      `top:${e.clientY - rect.top  - size / 2}px`;
-    btn.style.position = 'relative';
-    btn.style.overflow  = 'hidden';
-    btn.appendChild(ripple);
-    ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
-  });
-})();
-
-/* 3D card tilt - agent cards tilt in perspective on mousemove */
-(function() {
-  const TILT = 10; // max degrees
-  function attachTilt(selector) {
-    document.querySelectorAll(selector).forEach(card => {
-      card.addEventListener('mousemove', e => {
-        const r = card.getBoundingClientRect();
-        const x = ((e.clientX - r.left) / r.width  - 0.5) * TILT;
-        const y = ((e.clientY - r.top)  / r.height - 0.5) * TILT;
-        card.style.transition = 'transform .05s ease, box-shadow .05s ease';
-        card.style.transform  = `perspective(700px) rotateX(${-y}deg) rotateY(${x}deg) translateY(-3px)`;
-        card.style.boxShadow  = `${-x * .8}px ${y * .8}px 28px rgba(0,0,0,.45)`;
-      });
-      card.addEventListener('mouseleave', () => {
-        card.style.transition = 'transform .35s ease, box-shadow .35s ease';
-        card.style.transform  = '';
-        card.style.boxShadow  = '';
-      });
-    });
-  }
-  document.addEventListener('DOMContentLoaded', () => {
-    attachTilt('.card.card-hover');
-    attachTilt('.feat-card');
-  });
-})();
-</script>
 </body>
 </html>

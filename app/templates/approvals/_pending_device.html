@@ -1,0 +1,30 @@
+<section class="apr-panel" id="approval-pending">
+  {% if start_error %}
+  <p class="apr-alert" role="alert">The identity provider could not be reached. Try again.</p>
+  {% endif %}
+  {% if approval.state == 'created' %}
+    <h2 class="apr-panel-title">Approve on your phone</h2>
+    <p class="apr-muted">You'll get a short code to confirm in World ID on your phone.</p>
+    <div class="apr-actions">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('approvals.start', approval_id=approval.id) }}">Get approval code</a>
+      <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
+    </div>
+  {% else %}
+    {% set link = approval.verification_uri_complete or approval.verification_uri %}
+    <h2 class="apr-panel-title">Approve on your phone</h2>
+    <p class="apr-muted">Open the link on your phone and approve with World ID. Check that it shows this code:</p>
+    <div class="apr-code-row">
+      <div class="apr-code mono" id="approval-user-code">{{ approval.user_code }}</div>
+      <button type="button" class="copy-btn" data-copy="{{ approval.user_code }}" aria-label="Copy code"><span data-copy-label>Copy</span></button>
+    </div>
+    <div class="apr-actions">
+      {% if link and (link.startswith('https://') or link.startswith('http://')) %}
+      <a class="btn btn-primary btn-lg" href="{{ link }}" target="_blank" rel="noopener noreferrer">Open on your phone</a>
+      <button type="button" class="btn btn-secondary" data-copy="{{ link }}"><span data-copy-label>Copy link</span></button>
+      {% endif %}
+      <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
+    </div>
+    {% if link %}<div class="apr-link mono">{{ link }}</div>{% endif %}
+    <p class="apr-live" role="status"><span class="apr-spinner" aria-hidden="true"></span>Waiting for approval · expires in <span class="mono" data-countdown>…</span></p>
+  {% endif %}
+</section>
