@@ -291,6 +291,9 @@ def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, dea
 
 # ── hire → engagement.fund approval ───────────────────────────────────────
 def hire(eng, *, flow: str, confirm_micro: int):
+    if eng.parent_engagement_id is not None:
+        raise EngagementError("a sub-hire is funded from its parent's mandate, not hired directly",
+                              "NOT_HIREABLE", 409)
     if eng.status not in HIREABLE:
         raise EngagementError(f"engagement is {eng.status}", "NOT_HIREABLE", 409)
     if confirm_micro != eng.total_micro:
@@ -433,6 +436,8 @@ def execute_fund(approval, action: dict) -> ExecutionResult:
                 for m in eng.milestones]
     if action.get("milestones") != expected:
         return _failed("milestones changed since approval")
+    if eng.parent_engagement_id is not None:
+        return _failed("a sub-hire is funded from its parent's mandate")
     if eng.status not in HIREABLE or ledger.has_live_fund(eng.id):
         return _failed("engagement is already funded")
     escrow = get_escrow()
