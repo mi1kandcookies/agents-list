@@ -364,12 +364,28 @@ def test_memo_figures_match_rejects_mismatch(built, old, new, reason):
     assert res["passed"] is False and reason in res["details"]
 
 
+def test_memo_figure_tag_may_wrap_to_next_line(built):
+    wrapped = MEMO.replace("of $702.3 million [F:9900003:2024:revenue], up",
+                           "of $702.3 million\n[F:9900003:2024:revenue], up")
+    assert wrapped != MEMO
+    _memo(built, wrapped)
+    assert C.memo_figures_match(built, {})["passed"] is True
+
+
+def test_no_recommendation_language_allows_ordinary_prose(built):
+    _memo(built, MEMO + "\nThe policy rate hold helped rates hold steady; the sell-side "
+                        "consensus is not a buy-side view. Its credit rating is Ba2.\n")
+    res = C.no_recommendation_language(built, {})
+    assert res["passed"] is True, res["details"]
+
+
 def test_no_recommendation_language(built):
     _memo(built)
     assert C.no_recommendation_language(built, {})["passed"] is True
     for bad in ("We rate the shares a Buy.", "Our 12-month price target is $25.",
                 "We recommend buying on weakness.", "We initiate coverage with Outperform.",
-                "At 2.1x revenue the stock looks a compelling buy."):
+                "At 2.1x revenue the stock looks a compelling buy.",
+                "We rate the shares as Overweight.", "Reiterate our Outperform rating."):
         _memo(built, MEMO + "\n" + bad + "\n")
         res = C.no_recommendation_language(built, {})
         assert res["passed"] is False, bad
