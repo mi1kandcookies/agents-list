@@ -41,7 +41,7 @@ class Agent(db.Model):
     featured            = db.Column(db.Boolean, nullable=False, default=False)
     rating              = db.Column(db.Float, nullable=False, default=0.0)
     reviews             = db.Column(db.Integer, nullable=False, default=0)
-    billing             = db.Column(db.String(20), nullable=False)   # per_token | per_minute
+    billing             = db.Column(db.String(20), nullable=False)   # per_token | per_minute | per_milestone
     min_price           = db.Column(db.Float, nullable=False, default=0.001)
     max_price           = db.Column(db.Float, nullable=False, default=0.010)
     current_price       = db.Column(db.Float, nullable=False, default=0.001)
