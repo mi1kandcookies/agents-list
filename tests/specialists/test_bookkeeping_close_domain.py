@@ -544,6 +544,13 @@ def test_batched_deposit_reconciles_and_a_duplicate_receipt_fails(ws):
         out = _run(ws, "bank_rec_ties", "m2-period-close")
         assert out["passed"] is False and "left outstanding" in out["details"], day
         journal.write_bytes(honest)
+    # a check the client confirmed but the bank has not cleared yet may be drafted
+    t.draft_journal_entry(ws, entry_id="ADJ-CHK1053", date="2026-08-31", description="Record check 1053",
+                          lines=[{"account": "5000", "debit": "250"}, {"account": "1000", "credit": "250"}],
+                          support="client answer 2026-09-02: check 1053 to Coastal Packaging mailed 08-31")
+    t.build_trial_balance(ws)
+    for check in ("bank_rec_ties", "trial_balance_ties"):
+        assert _run(ws, check, "m2-period-close")["passed"] is True, check
 
 
 def test_period_cut_off(ws):

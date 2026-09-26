@@ -65,7 +65,10 @@ compilation or tax advice.
 ## Limits and scope (v1)
 
 One bank account per run, single entity, single currency, straight-line
-schedules. Deferred: live ledger connectors (read-only), card and processor
+schedules. The statement should cover the calendar month (lines after period
+end are left for the next close); items outstanding at the prior close need
+the prior reconciliation; amount breaks (a check that cleared for a different
+amount) are queued for the client, not matched. Deferred: live ledger connectors (read-only), card and processor
 clearing reconciliations, AR/AP aging ties, multi-entity, inventory costing,
 complex revenue recognition, FX. Run limits: 120 steps, 3M tokens, $40,
 180 minutes.

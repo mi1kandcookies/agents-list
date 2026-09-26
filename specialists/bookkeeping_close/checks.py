@@ -91,9 +91,8 @@ def bank_rec_ties(workspace: Path, params: dict) -> dict:
     """Recompute the bank reconciliation from the statement, the GL and the
     prior reconciliation's outstanding items; the reported figures must
     match and the unexplained difference must be 0.00. With journal_entries,
-    the drafts must clear every unrecorded bank item, and a drafted cash line
-    may not leave anything newly outstanding (that would duplicate a
-    recorded receipt or payment)."""
+    the drafts must clear every unrecorded bank item without booking a
+    recorded receipt or payment twice."""
     rec = json.loads(eng.resolve(workspace, params["reconciliation"]).read_text(encoding="utf-8"))
     statement = eng.load_statement(workspace, params.get("statement", STATEMENT))
     gl = eng.load_gl(workspace, params.get("gl", GL))
@@ -134,16 +133,22 @@ def bank_rec_ties(workspace: Path, params: dict) -> dict:
                 f"{i['date']} {i['description']} {i['amount']}" for i in after["unrecorded_items"]))
         if eng.money(after["unexplained_difference"]) != 0:
             problems.append(f"after draft entries the difference is {after['unexplained_difference']}")
+        # A draft may leave itself outstanding (a void, or a check the client
+        # confirmed that has not cleared), but not with an amount the bank
+        # already shows, and it may not take a recorded item's bank match:
+        # either way it books a receipt or payment twice.
         drafted = {r["entry_id"] for r in journal}
-        voidable = Counter(eng.fmt(-eng.money(i["amount"])) for i in fresh["outstanding_items"])
+        start, end = eng.parse_date(fresh["period_start"]), eng.parse_date(fresh["period_end"])
+        on_statement = {eng.fmt(b.amount) for b in statement["lines"] if start <= b.date <= end}
         before = Counter((i["entry_id"], i["amount"]) for i in fresh["outstanding_items"])
         added = Counter((i["entry_id"], i["amount"]) for i in after["outstanding_items"]) - before
         for (entry_id, amount) in added.elements():
-            if entry_id in drafted and voidable[amount] > 0:
-                voidable[amount] -= 1                # voids an outstanding item; the reviewer approves it
-                continue
-            problems.append(f"after draft entries {entry_id} {amount} is left outstanding: a drafted cash line "
-                            "must clear a bank-only item, not duplicate a recorded receipt or payment")
+            if entry_id not in drafted:
+                problems.append(f"after draft entries {entry_id} {amount} is left outstanding: a draft took its "
+                                "bank match, so it duplicates a recorded receipt or payment")
+            elif amount in on_statement:
+                problems.append(f"draft {entry_id} {amount} is left outstanding although the statement shows "
+                                "that amount: it duplicates a receipt or payment already in the books")
     if problems:
         return _result(False, "; ".join(problems), 0.0)
     return _result(True, f"account {cash}: adjusted bank = adjusted book = {fresh['adjusted_book_balance']}, "

@@ -43,7 +43,7 @@ $4,150.00 check against a $4,105.00 clearing is two items and a question.
 - **Bank charge / bank credit** (statement only): fees, interest, returned
   items, transfers nobody recorded. Each needs a draft entry that cites the
   statement row; the check re-runs the reconciliation with your drafts and
-  expects no unrecorded items left and nothing newly outstanding. Before
+  expects no unrecorded items left and nothing booked twice. Before
   drafting a deposit, make sure it is not already in the books under other
   amounts: a duplicate receipt fails the check.
 - **Non-zero unexplained difference**: the opening does not carry forward
