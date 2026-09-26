@@ -14,6 +14,8 @@ funding and release:
              transferWithAuthorization to the escrow address; the facilitator
              (FACILITATOR_PRIVATE_KEY) submits it and pays gas.
     release  the escrow key calls USDC transfer(to, amount).
+    settle   (x402) a payer-signed EIP-3009 authorization straight to the
+             payee, submitted by the facilitator (settle_authorization).
 
 Mode is "onchain" only when all three keys are configured and web3 is
 installed; otherwise every call is "simulated": nothing is sent and the
@@ -192,6 +194,28 @@ class EscrowService:
         if self.mode == "onchain" and str(permit.get("to", "")).lower() != self.escrow_address:
             raise EscrowError("WRONG_RECIPIENT", "permit recipient is not the escrow address")
         self._claim(ref, "ALREADY_FUNDED")
+        if self.mode == "simulated":
+            return self._simulated()
+        try:
+            return self._submit_permit(permit)
+        except BaseException:
+            self._unclaim(ref)
+            raise
+
+    def settle_authorization(self, permit, *, pay_to, ref: str | None = None) -> TxResult:
+        """Submit a payer-signed EIP-3009 permit straight to ``pay_to`` via the
+        facilitator (x402 ``exact`` settlement, chain/x402_v2.py). The permit
+        must already name ``pay_to``; it is never rewritten."""
+        if not isinstance(permit, dict):
+            raise EscrowError("INVALID_PERMIT", "permit must be a dict")
+        if not _is_address(pay_to) or str(permit.get("to", "")).lower() != pay_to.lower():
+            raise EscrowError("WRONG_RECIPIENT", "permit recipient is not the payee")
+        try:
+            value = int(permit.get("value", 0))
+        except (TypeError, ValueError):
+            raise EscrowError("INVALID_PERMIT", "permit.value must be an integer") from None
+        _positive_int("permit.value", value)
+        self._claim(ref, "ALREADY_SETTLED")
         if self.mode == "simulated":
             return self._simulated()
         try:
