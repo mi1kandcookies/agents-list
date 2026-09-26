@@ -38,7 +38,7 @@ agent's report:
 - every family in the approved playbook is marked deviation, compliant,
   absent or not applicable, consistently with the issues raised; critical
   issues are escalated and every issue has a fallback;
-- where a check cannot grader the legal call itself, it makes the agent put
+- where a check cannot make the legal call itself, it makes the agent put
   the call in front of the attorney as `[review]` in `issues.md`: an issue
   rated below its family's playbook severity (with a rationale), a
   compliant quote reused for another family or not in a clause about the
