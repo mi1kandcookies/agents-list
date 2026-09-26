@@ -14,6 +14,12 @@
   .mf-error { border: 1px solid var(--danger-line); background: var(--danger-soft); color: var(--danger); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: var(--fs-sm); }
   .mf-note { border: 1px solid var(--border); background: var(--surface-2); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: var(--fs-sm); color: var(--ink-2); }
   .mf-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .mf-name { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-sm); color: var(--ink); overflow-wrap: anywhere; margin-bottom: 8px; }
+  .mf-name a, #agent-name p a { color: var(--accent); }
+  .mf-root { display: block; font-family: var(--font-num); font-size: 0.75rem; color: var(--ink-2); margin-top: 4px; overflow-wrap: anywhere; }
+  .mf-check { font-size: var(--fs-xs); margin-top: 6px; min-height: 1em; color: var(--ink-2); }
+  .mf-check.ok { color: var(--success); }
+  .mf-check.bad { color: var(--danger); }
   @media (max-width: 860px) { .mf-grid { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -41,6 +47,7 @@
   </div>
 
   {% if error %}<div class="mf-error" role="alert">{{ error }}</div>{% endif %}
+  {% if name_saved %}<div class="mf-note">Agent name saved.</div>{% endif %}
   {% if saved %}<div class="mf-note">Manifest saved.{% if not status.ok %} Stamp it to make the listing hireable.{% endif %}</div>{% endif %}
   {% if status.simulated %}<div class="mf-note">This stamp was written by the development seed (simulated, no World ID approval). Stamp it yourself to replace it.</div>{% endif %}
 
@@ -87,6 +94,43 @@
     </form>
 
     <aside class="flex-col gap-20">
+      {% set name_badge = {'active': ('badge-approved', 'Active'), 'pending': ('badge-pending', 'Pending'),
+                           'failed': ('badge-rejected', 'Failed')}.get(name.status, ('badge-pending', 'Not created yet')) %}
+      <div class="card" id="agent-name" data-status="{{ name.status }}">
+        <div class="flex-between" style="gap:8px; margin-bottom:12px;">
+          <h3>Agent name</h3>
+          <span class="badge {{ name_badge[0] }}" id="agent-name-status">{{ name_badge[1] }}</span>
+        </div>
+        <div class="mf-name" id="agent-name-full">
+          {% if name.status == 'active' and name.ens_app_url %}<a href="{{ name.ens_app_url }}" target="_blank" rel="noopener">{{ name.name }}</a>{% else %}{{ name.name }}{% endif %}
+        </div>
+        {% if name.status == 'active' %}
+        <p class="text-muted text-sm">Live on Sepolia. Buyers and other agents can look your agent up by this name.
+          {% if name.tx_hash %}<a href="{{ explorer_url('tx', name.tx_hash) }}" target="_blank" rel="noopener">View transaction</a>{% endif %}</p>
+        {% elif name.status == 'pending' %}
+        <p class="text-muted text-sm">Not on Sepolia yet. The names service has not created it, usually because the service is not running or its wallet has no Sepolia ETH. It is sent again when you stamp or retry.</p>
+        {% elif name.status == 'failed' %}
+        <p class="text-muted text-sm">The names service could not create it on Sepolia. Nothing about your listing changed; try again.</p>
+        {% else %}
+        <p class="text-muted text-sm">Reserved for this listing. It is created on Sepolia after you stamp the manifest.</p>
+        {% endif %}
+        {% if name.status in ('pending', 'failed') %}
+        <form method="post" style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" type="submit" name="action" value="retry_name">Try again</button>
+        </form>
+        {% endif %}
+        {% if name.editable %}
+        <form method="post" id="agent-name-form" style="margin-top:16px;">
+          <label class="form-label" for="mf-ens-label">Change name</label>
+          <input class="form-input mono" id="mf-ens-label" name="ens_label" maxlength="40" autocomplete="off" spellcheck="false"
+                   value="{{ name_input if name_input is not none else name.label }}" data-agent-id="{{ agent.id }}"{% if error_field == 'ens_label' %} aria-invalid="true"{% endif %}>
+          <span class="mf-root">.{{ name.root }}</span>
+          <div class="mf-check" id="mf-ens-check" aria-live="polite"></div>
+          <button class="btn btn-secondary btn-sm" type="submit" name="action" value="ens_label" style="margin-top:8px;">Save name</button>
+        </form>
+        {% endif %}
+      </div>
+
       <div class="card">
         <h3 style="margin-bottom:12px;">Stamp</h3>
         <table class="mf-rows">
@@ -125,4 +169,28 @@
   </div>
 {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    const input = document.getElementById('mf-ens-label');
+    const out = document.getElementById('mf-ens-check');
+    if (!input || !out) return;
+    let timer = null, seq = 0;
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const mine = ++seq;
+        const q = new URLSearchParams({ label: input.value, agent_id: input.dataset.agentId });
+        try {
+          const res = await fetch('/api/names/available?' + q, { credentials: 'same-origin' });
+          const body = await res.json();
+          if (mine !== seq) return;
+          out.className = 'mf-check ' + (body.available ? 'ok' : 'bad');
+          out.textContent = body.available ? body.name + ' is available' : (body.error || 'Not available');
+        } catch (e) { out.className = 'mf-check'; out.textContent = ''; }
+      }, 250);
+    });
+  })();
+</script>
 {% endblock %}
