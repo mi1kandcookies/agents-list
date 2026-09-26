@@ -116,6 +116,44 @@ def test_sow_hash_is_stable_and_binds_every_term():
         assert sow_hash(build_sow(**{**args, **change})) != first
 
 
+SOURCE = {"filename": "competitor-map.pdf", "sha256": "ab" * 32}
+
+
+def test_source_document_is_part_of_the_sow_hash():
+    args = dict(agent_public_id="AGT-SH8W-D5VP-P", outcome="Ship the export", budget_micro=25_000_000)
+    plain = build_sow(**args)
+    assert "source_document" not in plain           # unchanged for jobs typed by hand
+    with_doc = build_sow(**args, source_document=SOURCE)
+    assert with_doc["source_document"] == SOURCE
+    assert sow_hash(with_doc) != sow_hash(plain)
+    other = build_sow(**args, source_document={**SOURCE, "sha256": "cd" * 32})
+    assert sow_hash(other) != sow_hash(with_doc)
+    # a path in the filename is reduced to its basename; the digest is lowercased
+    assert build_sow(**args, source_document={"filename": "C:\\docs\\competitor-map.pdf",
+                                              "sha256": "AB" * 32})["source_document"] == SOURCE
+
+
+def test_engagement_from_uploaded_sow_binds_the_document(client, world_idp, screener, agent_public_id):
+    plain = _engagement(client, agent_public_id)
+    body = _engagement(client, agent_public_id, source_document=SOURCE)
+    assert body["sow"]["source_document"] == SOURCE
+    assert body["sow_hash"] == sow_hash(body["sow"]) != plain["sow_hash"]
+    apr = _hire(client, body["engagement_id"]).get_json()
+    from app.models import Approval
+    action = _db.session.get(Approval, apr["approval_id"]).action
+    assert action["sow_hash"] == body["sow_hash"]   # World ID approves this exact document
+
+
+@pytest.mark.parametrize("source, field", [
+    ({"filename": "a.pdf", "sha256": "xyz"}, "source_document.sha256"),
+    ({"filename": "", "sha256": "ab" * 32}, "source_document.filename"),
+    ("a.pdf", "source_document"),
+])
+def test_source_document_validation(client, screener, agent_public_id, source, field):
+    resp = _create(client, agent_public_id, source_document=source)
+    assert resp.status_code == 400 and resp.get_json()["field"] == field
+
+
 def test_create_engagement_returns_sow_milestones_and_preview(client, screener, agent_public_id):
     body = _engagement(client, agent_public_id)
     assert body["status"] == "scoped" and body["engagement_id"].startswith("ENG-")
@@ -597,6 +635,18 @@ def test_cross_site_browser_still_needs_token(client, screener, agent_public_id,
 def test_agent_page_hire_links_into_jobs(client, agent):
     html = client.get(f"/agent/{agent}").get_data(as_text=True)
     assert f'href="/jobs/new?agent={agent}"' in html
+
+
+def test_job_form_carries_the_uploaded_document(client, screener, agent, agent_public_id):
+    resp = client.post(f"/jobs/new?agent={agent}",
+                       data={"outcome": "Write docs", "budget_usdc": "12",
+                             "source_filename": "docs-sow.docx", "source_sha256": "ef" * 32})
+    assert resp.status_code == 302
+    eid = resp.headers["Location"].rsplit("/", 1)[-1]
+    sow = client.get(f"/api/engagements/{eid}").get_json()["sow"]
+    assert sow["source_document"] == {"filename": "docs-sow.docx", "sha256": "ef" * 32}
+    page = client.get(f"/estimate/{eid}").get_data(as_text=True)
+    assert "Drafted from" in page and "docs-sow.docx" in page
 
 
 def test_jobs_pages(client, approve, screener, agent, agent_public_id):
