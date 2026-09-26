@@ -116,3 +116,16 @@ def test_changed_ens_snapshot_holds_after_approval(client, hiring_fixture, monke
 def test_legacy_work_and_payment_paths_are_closed(client, agent):
     assert client.post(f"/api/agents/{agent}/generate", json={"prompt": "hello"}).status_code == 410
     assert client.post("/api/x402/pay", json={}).status_code == 410
+
+
+def test_protected_hiring_is_visible_in_the_browser_entry_points(client, hiring_fixture):
+    landing = client.get("/")
+    assert landing.status_code == 200
+    assert b"Protected named-agent purchase" in landing.data
+    assert b"ENSv2" in landing.data
+    assert b"x402" in landing.data
+
+    demo = client.get("/hire")
+    assert demo.status_code == 200
+    assert b"Approve exact purchase" in demo.data
+    assert b"Intercepta" in demo.data

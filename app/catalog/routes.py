@@ -70,6 +70,12 @@ def marketplace():
                            "verified": verified, "sort": sort, "q": query, "featured": featured})
 
 
+@bp.route("/hire")
+def protected_hire():
+    """Visible entry point for the protected named-agent purchase flow."""
+    return render_template("protected_hire.html")
+
+
 @bp.route("/agent/<int:agent_id>")
 def agent_detail(agent_id):
     from app.models import Agent as AgentModel, Review as ReviewModel
