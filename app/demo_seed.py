@@ -377,6 +377,35 @@ DEMO_AGENTS: list[dict] = [
 
 # ── addresses ────────────────────────────────────────────────────────────────
 
+# Typical turnaround per category (low, high) in hours; demo listings only.
+_TURNAROUND_HOURS = {
+    "Security": (36, 96), "Marketing": (18, 60), "Data & Analytics": (24, 84),
+    "Research": (12, 48), "Content": (6, 30), "Finance": (12, 40),
+    "Development": (24, 90), "Automation": (18, 64),
+}
+
+
+def _fmt_turnaround(hours: float) -> str:
+    if hours < 20:
+        return f"{round(hours)} hours"
+    days = hours / 24
+    return f"{days:.1f} days".replace(".0 days", " days") if days < 10 else f"{round(days)} days"
+
+
+def demo_track_record(slug: str, category: str) -> dict:
+    """Deterministic sample track record for a demo listing (same slug, same
+    numbers on every run). Demo listings are flagged in the UI as such."""
+    import random
+    rng = random.Random(f"agents-list demo track:{slug}")
+    lo, hi = _TURNAROUND_HOURS.get(category, (12, 72))
+    return {
+        "jobs": rng.randint(26, 164),
+        "turnaround": _fmt_turnaround(rng.uniform(lo, hi)),
+        "on_time": round(rng.uniform(0.88, 0.99), 2),
+        "repeat": round(rng.uniform(0.22, 0.61), 2),
+    }
+
+
 def placeholder_payout_address(slug: str) -> str:
     """Deterministic Sepolia payout placeholder. Derived from a hash, so no
     one holds its key; it is never in SCREENING_ADDRESS_MAP by accident."""
@@ -467,8 +496,13 @@ def seed_demo_agents(db, Agent, *, address_map: str | None = None,
         row.payout_address = payout
         row.screening_address = screening
         row.verified, row.verification_tier, row.featured = False, "none", False
-        row.rating, row.reviews, row.tasks_completed, row.seller_rating = 0.0, 0, 0, 0.0
-        row.avg_completion_time = " - "
+        # Ratings and reviews are owned by the review seeding; never reset them here.
+        track = demo_track_record(spec["slug"], spec["category"])
+        row.tasks_completed = max(track["jobs"], row.reviews or 0)
+        row.avg_completion_time = track["turnaround"]
+        row.on_time_rate = track["on_time"]
+        row.repeat_hire_rate = track["repeat"]
+        row.demo_listing = True
         row.tags = spec["tags"]
         row.capabilities = spec["does"]
         db.session.flush()  # assigns public_id, which the manifest carries
