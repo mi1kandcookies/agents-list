@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "components/status_pill.html" import status_pill %}
+{% from "components/chain_node.html" import chain_node %}
+{% block title %}Custody chain {{ chain.engagement_id }}{% endblock %}
+
+{% block head %}
+<style>
+  .cchain { max-width: 880px; margin: 0 auto; padding: 40px 16px 80px; }
+  .cchain-lede { color: var(--ink-2); font-size: .9375rem; max-width: 62ch; margin: 0 0 24px; }
+  .cchain h2 { font-size: 1rem; margin: 32px 0 12px; }
+  .ctree { list-style: none; margin: 0; padding: 0; }
+  .ctree .ctree { margin-left: 11px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
+  .ctree-item { position: relative; padding-top: 12px; min-width: 0; }
+  .ctree .ctree > .ctree-item::before {
+    content: ''; position: absolute; left: -14px; top: 30px; width: 12px;
+    border-top: 1px solid var(--border-strong);
+  }
+  .ctree-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 14px; min-width: 0; overflow-wrap: anywhere;
+  }
+  .ctree-card.is-current { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .ctree-human { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ctree-human svg { flex: none; color: var(--accent); }
+  .ctree-kicker { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+  .ctree-band { border-bottom: 1px dashed var(--border); padding-bottom: 10px; margin-bottom: 10px; }
+  .ctree-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .ctree-row + .ctree-row { margin-top: 6px; }
+  .ctree-name { font-weight: 600; }
+  .ctree-mono { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); }
+  .ctree-money { font-family: var(--font-mono); font-size: .8125rem; color: var(--ink); }
+  .ctree-meter { height: 4px; background: var(--surface-3); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .ctree-meter span { display: block; height: 100%; background: var(--accent); }
+  .ctree-chip { font-size: var(--fs-xs); padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--ink-2); }
+  .ctree-outcome { color: var(--ink-2); font-size: .875rem; margin-top: 6px; }
+  .ctree-v { font-family: var(--font-mono); }
+  .ctree-v.is-pay       { color: var(--success); background: var(--success-soft); border-color: var(--success-line); }
+  .ctree-v.is-cap       { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
+  .ctree-v.is-ask_human { color: var(--info); background: var(--info-soft); border-color: var(--info-line); }
+  .ctree-v.is-refuse    { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
+  .ctree-empty { color: var(--ink-3); font-size: .875rem; }
+</style>
+{% endblock %}
+
+{% macro verdict_pill(v) -%}
+{%- if v -%}
+<span class="status-pill ctree-v is-{{ v.verdict|lower }}" title="{{ v.hop }} · {{ v.id }}" data-verdict="{{ v.verdict }}">
+  {{- v.verdict|replace('_', ' ') }}{% if v.verdict == 'CAP' and v.cap_micro %} ≤ {{ v.cap_micro|usdc }}{% endif -%}
+</span>
+{%- else -%}
+<span class="status-pill is-unknown" data-verdict="">not screened</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro node(n) -%}
+<li class="ctree-item">
+  <div class="ctree-card{{ ' is-current' if n.current }}" data-engagement="{{ n.engagement_id }}" data-depth="{{ n.depth }}">
+    <div class="ctree-band">
+      {% if n.mandate %}
+      {% set m = n.mandate %}
+      <div class="ctree-row">
+        <span class="ctree-kicker">{{ 'Root mandate' if m.depth == 0 else 'Mandate' }}</span>
+        <span class="ctree-mono">{{ m.mandate_id }}</span>
+        {{ status_pill(m.status) }}
+      </div>
+      <div class="ctree-row">
+        <span class="ctree-money">{{ m.spent_micro|usdc }} spent / {{ m.budget_micro|usdc }}</span>
+        <span class="ctree-mono">{{ m.remaining_micro|usdc }} left</span>
+      </div>
+      <div class="ctree-meter" aria-hidden="true"><span style="width: {{ ((m.budget_micro - m.remaining_micro) * 100 // m.budget_micro) if m.budget_micro else 0 }}%"></span></div>
+      <div class="ctree-row">
+        {% for c in m.categories %}<span class="ctree-chip">{{ c }}</span>{% endfor %}
+        <span class="ctree-mono">depth {{ m.depth }} of {{ m.max_depth }}</span>
+        <span class="ctree-mono">expires {{ m.exp_text }}</span>
+      </div>
+      {% else %}
+      <div class="ctree-row">
+        <span class="ctree-kicker">Mandate</span>
+        <span class="ctree-empty">none yet{% if n.status == 'awaiting_approval' %}, waiting for the human's approval{% endif %}</span>
+      </div>
+      <div class="ctree-row"><span class="ctree-mono">depth {{ n.depth }}</span>{% if n.category %}<span class="ctree-chip">{{ n.category }}</span>{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="ctree-row">
+      <span class="ctree-kicker">{{ 'Hired agent' if n.depth == 0 else 'Sub-agent' }}</span>
+      <span class="ctree-name">{{ n.agent_name or 'Unknown agent' }}</span>
+      <span class="ctree-mono">{{ n.agent_id }}</span>
+    </div>
+    <div class="ctree-row">
+      {{ status_pill(n.status) }}
+      {{ verdict_pill(n.verdict) }}
+      <span class="ctree-money">{{ n.total_micro|usdc }}</span>
+      <a class="ctree-mono" href="/jobs/{{ n.engagement_id }}">{{ n.engagement_id }}</a>
+      {% if n.current %}<span class="ctree-mono">(this job)</span>{% endif %}
+    </div>
+    <div class="ctree-outcome">{{ n.outcome|truncate(160) }}</div>
+  </div>
+  {% if n.children %}
+  <ol class="ctree">
+    {% for c in n.children %}{{ node(c) }}{% endfor %}
+  </ol>
+  {% endif %}
+</li>
+{%- endmacro %}
+
+{% block content %}
+<div class="cchain">
+  <div class="hero-eyebrow" style="margin-bottom:12px;"><a href="/jobs">Jobs</a> / <a href="/jobs/{{ chain.engagement_id }}">{{ chain.engagement_id }}</a> / chain</div>
+  <h1 style="font-size:clamp(1.5rem,3vw,2rem); letter-spacing:-.025em; margin-bottom:10px;">Custody chain</h1>
+  <p class="cchain-lede">Every dollar here traces back to one approval by one verified human. Each hop below holds a mandate that can only be narrower than the one above it, and each payee was screened before money was allocated to it.</p>
+  {% if chain.escrow_mode == 'simulated' %}<p class="ctree-mono" style="margin:-12px 0 20px;">Simulated escrow: allocations are recorded in the ledger only.</p>{% endif %}
+
+  <ol class="ctree" aria-label="Custody chain">
+    <li class="ctree-item">
+      <div class="ctree-card ctree-human" data-node="human">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+        <span class="ctree-kicker">Human</span>
+        {% if chain.human %}
+        <span class="ctree-mono" title="sha256 of the pairwise World ID subject">{{ chain.human.label }}</span>
+        <span class="ctree-empty">verified with World ID{% if chain.human.banned %} · banned{% endif %}</span>
+        {% else %}
+        <span class="ctree-empty">no human has approved this job yet</span>
+        {% endif %}
+      </div>
+      <ol class="ctree">
+        {{ node(chain.root) }}
+      </ol>
+    </li>
+  </ol>
+
+  <h2>Money trail</h2>
+  {% if chain.trail %}
+  <ol class="chain">
+    {% for t in chain.trail %}
+    {{ chain_node(('Escrow funded for ' if t.kind == 'fund' else 'Sub-hire allocated to ') ~ (t.agent_name or t.engagement_id),
+                  state='failed' if t.status == 'failed' else 'done', amount=t.amount_micro|usdc,
+                  meta=t.id ~ ' · ' ~ t.engagement_id ~ ' · ' ~ ('simulated, not on chain' if t.simulated else ('ledger only' if not t.tx_hash else t.tx_hash)),
+                  href=t.explorer) }}
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="ctree-empty">Nothing has been funded yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
