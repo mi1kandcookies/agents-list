@@ -15,7 +15,8 @@ Blueprints:
 Custody-chain blueprints (docs/decisions/0001-custody-chain.md):
     identity /login, /auth/world/*          approvals /approvals/*, /api/approvals/*
     engagements /api/engagements/*          screening /api/screening/*
-    mandates /api/mandates/*                humans /humans/*
+    mandates /api/mandates/*, /api/engagements/<id>/chain
+    humans   /humans/*
     names    /api/names/*
 """
 from __future__ import annotations
