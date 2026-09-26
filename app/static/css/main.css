@@ -575,7 +575,6 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .site-footer a, .site-footer small { font-size: 0.8125rem; color: var(--ink-3); }
 .site-footer a { transition: color .15s var(--ease-out); }
 .site-footer a:hover { color: var(--ink); }
-.site-footer .footer-credit { margin-left: 14px; }
 
 .site-footer--scene {
   position: relative; isolation: isolate; border-top: 0;

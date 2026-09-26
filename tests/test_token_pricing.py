@@ -115,9 +115,9 @@ def test_card_renders_icon_not_letters(app):
     assert icon_svg("circle-dollar-sign") in html
 
 
-def test_footer_credits_the_icon_set(client):
+def test_footer_has_no_icon_set_link(client):
     html = client.get("/").get_data(as_text=True)
-    assert 'href="https://lucide.dev"' in html and "Icons by Lucide" in html
+    assert "lucide.dev" not in html and "Icons by" not in html
 
 
 # ── estimator ───────────────────────────────────────────────────────────────
