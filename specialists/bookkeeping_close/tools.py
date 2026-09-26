@@ -5,7 +5,11 @@ domain tools for the month-end close specialist.
 All arithmetic lives here, in Decimal, so the model never adds numbers: it
 decides what an ambiguous transaction is, explains variances and writes the
 memo. Tools are plain functions `fn(workspace, *, fetch=None, run=None,
-**args) -> dict` listed in TOOL_DEFS; agent.py wraps them for the kit.
+resolve_path=None, **args) -> dict` listed in TOOL_DEFS; the kit wraps them
+(tools_from_defs) and passes resolve_path, its PolicyGate-checked path
+helper. Every model-supplied path goes through it before a file is touched,
+and every output is recorded as agent-authored in the claim ledger, so a
+tool-written file can never be cited as a source.
 
 File formats (CSV with a header row; amounts may use $, commas and
 parentheses for negatives):
@@ -17,9 +21,11 @@ parentheses for negatives):
     journal entries  entry_id, date, account, description, debit, credit, support, status
     rules            pattern, account, confidence
 
-Paths are workspace-relative. Outputs may only be written under
-deliverables/; inputs/ is the customer's and is never modified. Nothing here
-posts to a ledger: journal entries are drafts with status "draft - do not post".
+Paths are workspace-relative and checked lexically before the filesystem is
+touched (the kit's jail_path); .agentkit/ belongs to the kit and is refused.
+Outputs may only be written under deliverables/; inputs/ is the customer's
+and is never modified. Nothing here posts to a ledger: journal entries are
+drafts with status "draft - do not post".
 """
 from __future__ import annotations
 
@@ -33,7 +39,8 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
+from agentkit.policy import INTERNAL_DIR, jail_path
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -87,16 +94,39 @@ def parse_date(value: Any) -> date:
 
 
 def resolve(workspace: Path, rel: str, *, write: bool = False) -> Path:
-    """Workspace-relative path, jailed; writes only under deliverables/."""
+    """Workspace-relative path, jailed by the kit (lexical check first, so a
+    UNC or device path never reaches the filesystem, then symlinks); never
+    under .agentkit/; writes only under deliverables/."""
     if not rel or not isinstance(rel, str):
         raise ToolError("a workspace-relative path is required")
     root = Path(workspace).resolve()
-    path = (root / rel).resolve()
-    if path != root and root not in path.parents:
-        raise ToolError(f"path escapes the workspace: {rel}")
-    if write and (root / "deliverables").resolve() not in path.parents:
+    try:
+        path = jail_path(root, rel)
+    except PolicyViolation as exc:
+        raise ToolError(str(exc)) from None
+    parts = [part.lower() for part in path.relative_to(root).parts]
+    if parts and parts[0] == INTERNAL_DIR:
+        raise ToolError(f"path {rel!r} is internal to the kit")
+    if write and (len(parts) < 2 or parts[0] != "deliverables"):
         raise ToolError(f"outputs must be written under deliverables/: {rel}")
     return path
+
+
+def gate(workspace: Path, resolve_path: Any, *, reads: Any = (), writes: Any = ()) -> None:
+    """Check a tool's model-supplied paths before any file is touched.
+
+    resolve_path is the kit's helper (None when a tool is called directly):
+    it applies the PolicyGate, so a refused path is reported as a policy
+    denial, and with write=True it records the output as agent-authored.
+    Outputs are first held to the deliverables/ rule, so nothing outside it
+    is ever marked authored."""
+    for rel in as_list(reads):
+        if rel and resolve_path is not None:
+            resolve_path(rel)
+    for rel in as_list(writes):
+        resolve(workspace, rel, write=True)
+        if resolve_path is not None:
+            resolve_path(rel, write=True)
 
 
 def read_rows(workspace: Path, rel: str, required: list[str]) -> list[dict[str, str]]:
@@ -429,8 +459,9 @@ def period_bounds(period: str) -> tuple[date, date]:
 
 # --- tools ----------------------------------------------------------------------
 
-def parse_bank_statement(workspace: Path, *, fetch=None, run=None, path: str = "inputs/bank_statement.csv",
-                         **_: Any) -> dict:
+def parse_bank_statement(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                         path: str = "inputs/bank_statement.csv", **_: Any) -> dict:
+    gate(workspace, resolve_path, reads=[path])
     s = load_statement(Path(workspace), path)
     return {"rows": len(s["lines"]), "first_date": s["start"].isoformat(), "last_date": s["end"].isoformat(),
             "opening_balance": fmt(s["opening"]) if s["opening"] is not None else None,
@@ -439,12 +470,13 @@ def parse_bank_statement(workspace: Path, *, fetch=None, run=None, path: str = "
             "net_activity": fmt(s["net"]), "running_balance_breaks": s["breaks"]}
 
 
-def categorize_transactions(workspace: Path, *, fetch=None, run=None,
+def categorize_transactions(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                             statement: str = "inputs/bank_statement.csv",
                             rules: str = "inputs/categorization_rules.csv",
                             output: str = "deliverables/m2-period-close/categorized.csv",
                             min_confidence: float = 0.8, **_: Any) -> dict:
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[statement, rules], writes=[output])
     s = load_statement(workspace, statement)
     rows = categorize(s["lines"], load_rules(workspace, rules), float(min_confidence))
     write_rows(workspace, output, ["row", "date", "description", "amount", "account", "confidence",
@@ -456,7 +488,7 @@ def categorize_transactions(workspace: Path, *, fetch=None, run=None,
                             for r in review]}
 
 
-def find_exceptions(workspace: Path, *, fetch=None, run=None,
+def find_exceptions(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                     categorized: str = "deliverables/m2-period-close/categorized.csv",
                     gl: str = "inputs/gl_detail.csv", chart_of_accounts: str = "inputs/chart_of_accounts.csv",
                     output: str = "deliverables/m2-period-close/exceptions.csv",
@@ -464,6 +496,7 @@ def find_exceptions(workspace: Path, *, fetch=None, run=None,
     """Exceptions queue: items needing review, likely duplicates, large
     round-dollar movements and every GL line sitting in a suspense account."""
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[categorized, gl, chart_of_accounts], writes=[output])
     cat = read_rows(workspace, categorized, ["row", "date", "description", "amount", "account", "needs_review"])
     coa = load_coa(workspace, chart_of_accounts)
     suspense = {a for a, info in coa.items() if SUSPENSE_NAME_RE.search(info["name"])}
@@ -499,11 +532,13 @@ def find_exceptions(workspace: Path, *, fetch=None, run=None,
             "items": items[:50]}
 
 
-def reconcile_bank(workspace: Path, *, fetch=None, run=None, statement: str = "inputs/bank_statement.csv",
+def reconcile_bank(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                   statement: str = "inputs/bank_statement.csv",
                    gl: str = "inputs/gl_detail.csv", cash_account: str = "", period: str = "",
                    date_window: int = 5,
                    output: str = "deliverables/m2-period-close/bank_reconciliation.json", **_: Any) -> dict:
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[statement, gl], writes=[output])
     if not cash_account:
         raise ToolError("cash_account is required (the GL account for this bank account)")
     s = load_statement(workspace, statement)
@@ -528,13 +563,14 @@ def _append_entry(workspace: Path, output: str, rows: list[dict[str, Any]]) -> N
     write_rows(workspace, output, JE_COLUMNS, existing + rows)
 
 
-def draft_journal_entry(workspace: Path, *, fetch=None, run=None, entry_id: str = "", date: str = "",
-                        description: str = "", lines: list | None = None, support: str = "",
+def draft_journal_entry(workspace: Path, *, fetch=None, run=None, resolve_path=None, entry_id: str = "",
+                        date: str = "", description: str = "", lines: list | None = None, support: str = "",
                         output: str = "deliverables/m2-period-close/journal_entries.csv",
                         chart_of_accounts: str = "inputs/chart_of_accounts.csv", **_: Any) -> dict:
     """Append one balanced draft entry. Refuses unbalanced entries, entries
     without support, suspense accounts and plug-like descriptions."""
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[chart_of_accounts], writes=[output])
     if not entry_id or not description or not lines:
         raise ToolError("entry_id, description and at least two lines are required")
     if not str(support).strip():
@@ -565,7 +601,7 @@ def draft_journal_entry(workspace: Path, *, fetch=None, run=None, entry_id: str 
             "status": DRAFT_STATUS}
 
 
-def build_accrual_schedule(workspace: Path, *, fetch=None, run=None,
+def build_accrual_schedule(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                            schedule: str = "inputs/accrual_schedule.csv", period: str = "",
                            output: str = "deliverables/m2-period-close/accrual_schedule.csv",
                            journal_output: str = "deliverables/m2-period-close/journal_entries.csv",
@@ -573,6 +609,8 @@ def build_accrual_schedule(workspace: Path, *, fetch=None, run=None,
     """Roll the prepaid / accrual / deferred revenue / depreciation schedule
     to period end and draft one entry per item with a this-period amount."""
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[schedule],
+         writes=[output, journal_output] if draft_entries else [output])
     _, end = period_bounds(period)
     rows = schedule_rows(workspace, schedule, end)
     write_rows(workspace, output, ["item_id", "type", "description", "pl_account", "balance_account",
@@ -602,11 +640,13 @@ def build_accrual_schedule(workspace: Path, *, fetch=None, run=None,
             "drafted": drafted, "rows": rows}
 
 
-def build_trial_balance(workspace: Path, *, fetch=None, run=None, gl: str = "inputs/gl_detail.csv",
+def build_trial_balance(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                        gl: str = "inputs/gl_detail.csv",
                         journal_entries: str | None = "deliverables/m2-period-close/journal_entries.csv",
                         chart_of_accounts: str = "inputs/chart_of_accounts.csv", as_of: str = "",
                         output: str = "deliverables/m2-period-close/trial_balance.csv", **_: Any) -> dict:
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[gl, journal_entries, chart_of_accounts], writes=[output])
     gl_lines = load_gl(workspace, gl)
     journal = load_journal(workspace, journal_entries)
     coa = load_coa(workspace, chart_of_accounts)
@@ -624,13 +664,14 @@ def build_trial_balance(workspace: Path, *, fetch=None, run=None, gl: str = "inp
             "unknown_accounts": sorted(a for a in balances if a not in coa)}
 
 
-def flux_analysis(workspace: Path, *, fetch=None, run=None,
+def flux_analysis(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                   current: str = "deliverables/m2-period-close/trial_balance.csv",
                   prior: Any = ("inputs/prior_trial_balance.csv", "inputs/prior_month_pl.csv"),
                   threshold_abs: str = "1000", threshold_pct: str = "10",
                   output: str = "deliverables/m3-close-package/flux.csv", **_: Any) -> dict:
     """Variance table with an empty commentary column for the model to fill."""
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[current, *as_list(prior)], writes=[output])
     rows = flux(load_balances(workspace, current), load_balances(workspace, prior),
                 threshold_abs=money(threshold_abs), threshold_pct=Decimal(str(threshold_pct)))
     for r in rows:
@@ -642,12 +683,14 @@ def flux_analysis(workspace: Path, *, fetch=None, run=None,
             "flagged_rows": flagged, "note": "write commentary for every flagged row; do not change amounts"}
 
 
-def tie_opening_balances(workspace: Path, *, fetch=None, run=None, gl: str = "inputs/gl_detail.csv",
+def tie_opening_balances(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                         gl: str = "inputs/gl_detail.csv",
                          prior_trial_balance: str = "inputs/prior_trial_balance.csv", period: str = "",
                          tolerance: str = "1.00",
                          output: str = "deliverables/m1-onboarding/opening_balance_tieout.csv",
                          **_: Any) -> dict:
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[gl, prior_trial_balance], writes=[output])
     start, _end = period_bounds(period)
     opening = balances_from(load_gl(workspace, gl), before=start)
     prior = load_balances(workspace, prior_trial_balance)
@@ -665,12 +708,13 @@ def tie_opening_balances(workspace: Path, *, fetch=None, run=None, gl: str = "in
             "note": "explain every difference outside tolerance in the explanation column"}
 
 
-def build_account_map(workspace: Path, *, fetch=None, run=None,
+def build_account_map(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                       chart_of_accounts: str = "inputs/chart_of_accounts.csv", gl: str = "inputs/gl_detail.csv",
                       output: str = "deliverables/m1-onboarding/account_map.csv", **_: Any) -> dict:
     """Map each account to its statement and a default line by type; the
     model may refine the line names afterwards."""
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[chart_of_accounts, gl], writes=[output])
     coa = load_coa(workspace, chart_of_accounts)
     used = {g.account for g in load_gl(workspace, gl)}
     default_line = {"asset": "Assets", "liability": "Liabilities", "equity": "Equity",
@@ -684,12 +728,13 @@ def build_account_map(workspace: Path, *, fetch=None, run=None,
     return {"output": output, "accounts": len(rows), "unmapped_gl_accounts": sorted(used - set(coa))}
 
 
-def build_financial_statements(workspace: Path, *, fetch=None, run=None,
+def build_financial_statements(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                                trial_balance: str = "deliverables/m2-period-close/trial_balance.csv",
                                chart_of_accounts: str = "inputs/chart_of_accounts.csv",
                                output: str = "deliverables/m3-close-package/financial_statements.json",
                                **_: Any) -> dict:
     workspace = Path(workspace)
+    gate(workspace, resolve_path, reads=[trial_balance, chart_of_accounts], writes=[output])
     data = statements(load_balances(workspace, trial_balance), load_coa(workspace, chart_of_accounts))
     data["source"] = trial_balance
     write_json(workspace, output, data)
