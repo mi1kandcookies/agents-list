@@ -42,7 +42,7 @@ def _guarded(fn: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]
     def wrapper(workspace: Path, params: dict | None = None, *, run=None) -> dict[str, Any]:
         try:
             return fn(Path(workspace), dict(params or {}), run=run)
-        except (AgentKitError, OSError, ValueError, KeyError, TypeError) as exc:
+        except (AgentKitError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             return _result(False, f"{fn.__name__}: {exc}", 0.0)
     return wrapper
 
@@ -71,7 +71,10 @@ def verified_sources(workspace: Path, doc: dict[str, Any], prefixes: list[str],
     """Problems with the recorded sources: outside the trusted prefixes, in
     the knowledge base, missing, or changed since the shred (sha256
     mismatch); and solicitation files under inputs/ (outside the knowledge
-    base) that were never shredded."""
+    base) that were never shredded. A questionnaire engagement must shred
+    every CSV there; its other documents (cover instructions) may stay
+    unshredded."""
+    suffixes = {".csv"} if source_mode(doc) == "questionnaire" else T.DOCUMENT_SUFFIXES
     problems = []
     sources = doc.get("sources") or []
     if not sources:
@@ -96,7 +99,7 @@ def verified_sources(workspace: Path, doc: dict[str, Any], prefixes: list[str],
     if inputs.is_dir():
         for path in sorted(inputs.rglob("*")):
             rel = T.relpath(workspace, path)
-            if (path.is_file() and path.suffix.lower() in T.DOCUMENT_SUFFIXES
+            if (path.is_file() and path.suffix.lower() in suffixes
                     and not rel.lower().startswith(kb) and rel.lower() not in recorded):
                 problems.append(f"{rel} is not shredded (every solicitation file is a source)")
     return problems
@@ -451,7 +454,8 @@ def words_per_page(params: dict[str, Any], rules: list[dict[str, Any]]) -> float
     12 point), halved when the solicitation requires double spacing and
     reduced for a required font above 12 point."""
     wpp = float(params.get("words_per_page", 500))
-    if any(r["kind"] == "spacing" and str(r["value"]).lower() == "double" for r in rules):
+    spacing = {str(r["value"]).lower() for r in rules if r["kind"] == "spacing"}
+    if spacing == {"double"}:       # "single-spaced except ..." leaves it ambiguous
         wpp /= 2
     fonts = [float(r["value"]) for r in rules if r["kind"] == "font_size"]
     if fonts and max(fonts) > 12:
@@ -473,7 +477,8 @@ def draft_within_limits(workspace: Path, params: dict[str, Any], *, run=None) ->
     sections = T.draft_sections(T.read_text(workspace, params.get("path", T.DRAFT_PATH)))
     report = T.page_limit_report(
         [{"heading": s["heading"], "level": s["level"], "amount": T.prose_words(s["body"]) / wpp}
-         for s in sections], rules, float(params.get("unlimited_pages", T.UNLIMITED_PAGES)))
+         for s in sections], rules, float(params.get("unlimited_pages", T.UNLIMITED_PAGES)),
+        exemptions=T.page_exemptions(workspace, loaded.doc))
     problems = _limit_problems(report, "prose")
     notes = [f"{c['volume']}: ~{c['pages']:.1f}/{c['limit']:g} pages" for c in report["volumes"]
              if c["limit"] is not None]

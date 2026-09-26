@@ -192,7 +192,9 @@ def normalize_ws(text: str) -> str:
 
 def read_csv_rows(workspace: Path, rel: str) -> list[dict[str, str]]:
     text = read_text(workspace, rel).lstrip("﻿")
-    return [{(k or "").strip(): (v or "").strip() for k, v in row.items()}
+    # values beyond the header arrive as a list under the key None
+    return [{(k or "").strip(): (",".join(v) if isinstance(v, list) else (v or "")).strip()
+             for k, v in row.items()}
             for row in csv.DictReader(io.StringIO(text))]
 
 
@@ -493,6 +495,11 @@ def load_requirements(workspace: Path, rel: str = REQUIREMENTS_PATH) -> dict[str
         raise ToolError(f"{rel} is not valid JSON: {exc}") from exc
     if not isinstance(doc, dict) or not isinstance(doc.get("requirements"), list):
         raise ToolError(f"{rel} must be an object with a requirements list")
+    if not all(isinstance(r, dict) and isinstance(r.get("id"), str) for r in doc["requirements"]):
+        raise ToolError(f"{rel}: every requirement must be an object with a string id")
+    if not isinstance(doc.get("sources", []), list) or not all(
+            isinstance(s, dict) and isinstance(s.get("path"), str) for s in doc.get("sources", [])):
+        raise ToolError(f"{rel}: sources must be objects with a string path")
     return doc
 
 
@@ -709,7 +716,8 @@ def shares_terms(a: str, b: str) -> bool:
 def passage_relevant(text: str, passage_id: str, passage: str) -> bool:
     """A KB passage shares a term with the text, counting its file name
     ("past-performance.md") as part of the passage."""
-    return shares_terms(text, f"{passage_id.split('#')[0]} {passage}")
+    name = re.sub(r"\.[A-Za-z0-9]+$", "", passage_id.split("#")[0])
+    return shares_terms(text, f"{name} {passage}")
 
 
 def bm25_index(passages: dict[str, str]) -> dict[str, Any]:
@@ -815,6 +823,12 @@ _SCOPE_ASIDE = re.compile(r"[,(]\s*(?:including|excluding|except|exclusive of|in
 # Prose outside every page-limited section tolerated before the check fails
 # (a cover letter or title block), in pages.
 UNLIMITED_PAGES = 1.0
+# Sentences that take a volume or section out of the page count ("The Price
+# Volume has no page limit", "Resumes do not count toward the page limit").
+_PAGE_EXEMPT = re.compile(r"\bno (?:page|length) limit|\bnot (?:be )?(?:page[- ]limited|subject to (?:the |a |any )?"
+                          r"page|counted (?:toward|against|in)|included in (?:the )?page)|"
+                          r"\bdo(?:es)? not count (?:toward|against)|\bexcluded from (?:the )?page|\bunlimited\b",
+                          re.I)
 
 
 def _clean_heading(text: str) -> str:
@@ -890,16 +904,19 @@ def _limit_targets(secs: list[dict[str, Any]], scope: str) -> list[int]:
 
 
 def page_limit_report(sections: list[dict[str, Any]], rules: list[dict[str, Any]],
-                      unlimited_pages: float = UNLIMITED_PAGES) -> dict[str, Any]:
+                      unlimited_pages: float = UNLIMITED_PAGES,
+                      exemptions: list[str] | None = None) -> dict[str, Any]:
     """Page limits recomputed from the solicitation applied to sections whose
     amount is in pages. A limit applies to the sections its scope names (at
     any heading level), to the whole response when it names the proposal or
     quote, or to every top-level volume when it is the only limit. Prose
     outside every limited section beyond unlimited_pages fails, so a volume
-    title that matches no limit cannot escape it."""
+    title that matches no limit cannot escape it, unless an exemption
+    sentence of the solicitation names that section."""
     secs = nest_sections(sections)
     limits = [r for r in rules if r["kind"] == "page_limit"]
     checks, unmatched, covered = [], [], set()
+    exempt: set[int] = set()
 
     def subtree(i: int) -> set[int]:
         return {j for j in range(len(secs)) if j == i or i in _ancestors(secs, j)}
@@ -939,7 +956,10 @@ def page_limit_report(sections: list[dict[str, Any]], rules: list[dict[str, Any]
         if sec["level"] == 1 and i not in covered:
             checks.append({"volume": sec["heading"], "pages": round(sec["total"], 2), "limit": None,
                            "limit_source": ""})
-    outside = round(sum(s["amount"] for i, s in enumerate(secs) if i not in covered), 2)
+    for text in exemptions or []:
+        for i in _limit_targets(secs, text):
+            exempt.update(subtree(i))
+    outside = round(sum(s["amount"] for i, s in enumerate(secs) if i not in covered | exempt), 2)
     return {"volumes": checks,
             "over_limit": [c["volume"] for c in checks if c["limit"] is not None and c["pages"] > c["limit"]],
             "unmatched_limits": [f"{r['value']:g} pages ({r['section']} p{r['page']}): {r['text'][:120]}"
@@ -954,6 +974,13 @@ def solicitation_rules(workspace: Path, doc: dict[str, Any]) -> list[dict[str, A
     for src in doc.get("sources", []):
         rules.extend(format_rules_text(read_text(workspace, src["path"]), src["path"]))
     return rules
+
+
+def page_exemptions(workspace: Path, doc: dict[str, Any]) -> list[str]:
+    """Solicitation sentences that exempt a volume or section from the page
+    count."""
+    return [s["text"] for src in doc.get("sources", [])
+            for s in split_sentences(read_text(workspace, src["path"])) if _PAGE_EXEMPT.search(s["text"])]
 
 
 def outline_budget(workspace: Path, outline: str, requirements: str) -> dict[str, Any]:
@@ -972,7 +999,8 @@ def outline_budget(workspace: Path, outline: str, requirements: str) -> dict[str
                          "amount": float(p.group(1)) if p else 0.0})
         if c := _COVERS_TAG.search(line):
             covered.update(_REQ_ID.findall(c.group(1)))
-    report = page_limit_report(sections, solicitation_rules(workspace, doc))
+    report = page_limit_report(sections, solicitation_rules(workspace, doc),
+                               exemptions=page_exemptions(workspace, doc))
     content = [r["id"] for r in doc["requirements"] if r.get("type") not in COMPLIANCE_ONLY_TYPES]
     return {**report, "headings": len(sections), "uncovered": [rid for rid in content if rid not in covered],
             "unknown_ids": sorted(covered - {r["id"] for r in doc["requirements"]})}
@@ -1045,12 +1073,36 @@ def _cert_key(name: str) -> str:
     return _squash(name).replace("type2", "typeii").replace("type1", "typei")
 
 
-def cert_supported(name: str, support: str) -> bool:
+# A certification named within a few words after one of these, in the same
+# sentence, is denied or not yet held: "is not FedRAMP authorized", "is
+# pursuing SOC 2", "has no current SOC 2 report" (but not "no findings in
+# its SOC 2 report").
+_CERT_NEGATION = re.compile(r"\b(?:not|never|without|lacks?|pursu\w*|plans? to|planned|planning|"
+                            r"intends? to|working toward|in progress|expects? to|anticipat\w*|seeking|"
+                            r"roadmap)\b", re.I)
+_CERT_NO = re.compile(r"\bno(?:\s+\w+)?\s*$", re.I)
+
+
+def cert_mentions(text: str) -> list[tuple[str, str, bool]]:
+    """(name, comparable key, negated) for every certification in text."""
+    out = []
+    for m in _CERT.finditer(text):
+        starts = [b.end() for b in re.finditer(r"[.!?;](?:\s|$)|\n", text[:m.start()])]
+        window = " ".join(text[starts[-1] if starts else 0:m.start()].split()[-5:])
+        negated = bool(_CERT_NEGATION.search(window) or _CERT_NO.search(window))
+        out.append((m.group(1), _cert_key(m.group(1)), negated))
+    return out
+
+
+def cert_supported(name: str, support: str, negated: bool = False) -> bool:
     """The support names the certification: "SOC 2" is supported by "SOC 2
-    Type II", but "SOC 2 Type II" is not supported by "SOC 2 Type I"."""
+    Type II", but "SOC 2 Type II" is not supported by "SOC 2 Type I". An
+    affirmative mention needs an affirmative one in the support: "not
+    FedRAMP authorized" grounds "we are not FedRAMP authorized", not "we
+    are FedRAMP authorized"."""
     key = _cert_key(name)
-    return any(k == key or ("type" not in key and k.startswith(key))
-               for k in (_cert_key(c) for c in _CERT.findall(support)))
+    return any((k == key or ("type" not in key and k.startswith(key))) and (negated or not denied)
+               for _, k, denied in cert_mentions(support))
 
 
 def _strip_refs(text: str) -> str:
@@ -1069,7 +1121,7 @@ def unsupported_tokens(sentence: str, support: str, cert_support: str | None = N
     # Certification names are matched whole (so "SOC 2" is not also a bare "2").
     missing = [t for t in _NUMBER.findall(_CERT.sub(" ", body)) if _norm_number(t) not in support_numbers]
     certs_in = support if cert_support is None else cert_support
-    missing += [c for c in _CERT.findall(body) if not cert_supported(c, certs_in)]
+    missing += [name for name, _, denied in cert_mentions(body) if not cert_supported(name, certs_in, denied)]
     return missing
 
 
@@ -1320,8 +1372,10 @@ def answer_problems(question: str, answer: str, refs: list[str], passages: dict[
     problems = []
     if missing := unsupported_tokens(answer, support):
         problems.append(f"not in the cited passages: {missing}")
-    if named := [c for c in _CERT.findall(question) if not cert_supported(c, support)]:
-        problems.append(f"the question asks about {named}, which no cited passage names")
+    denies = bool(re.match(r"\s*no\b", answer, re.I))     # "No, ..." needs no affirmative passage
+    if named := [c for c in _CERT.findall(question) if not cert_supported(c, support, denies)]:
+        problems.append(f"the question asks about {named}, which no cited passage "
+                        + ("names" if denies else "affirms"))
     if not any(passage_relevant(question, ref, passages[ref]) for ref in refs):
         problems.append("no cited passage shares a term with the question")
     return problems
