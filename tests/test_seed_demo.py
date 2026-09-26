@@ -95,7 +95,7 @@ def test_demo_track_record_is_flagged_bounded_and_stable(db):
     """Demo listings carry an illustrative track record (flagged in the data,
     not rendered), within realistic bounds and identical on every run. No
     turnaround is seeded: it depends on the job, so it is not shown."""
-    from app.models import Agent, Review
+    from app.models import Agent
     seed_demo_agents(db, Agent)
     first = {a.name: (a.tasks_completed, a.avg_completion_time, a.on_time_rate, a.repeat_hire_rate)
              for a in _demo_rows()}
@@ -105,22 +105,51 @@ def test_demo_track_record_is_flagged_bounded_and_stable(db):
         assert 0.88 <= a.on_time_rate <= 0.99 and 0.22 <= a.repeat_hire_rate <= 0.61
         assert a.avg_completion_time.strip() == "-"
         assert a.verified is False and a.featured is False
-    assert Review.query.count() == 0          # reviews are seeded separately
     seed_demo_agents(db, Agent)
     assert first == {a.name: (a.tasks_completed, a.avg_completion_time, a.on_time_rate,
                               a.repeat_hire_rate) for a in _demo_rows()}
 
 
-def test_reseed_keeps_existing_ratings_and_reviews(db):
+def test_demo_ratings_are_spread_bounded_and_stable(db):
+    """Each listing gets a rating from 3.7 to 4.9 (one decimal) derived from
+    its slug, no two alike, and a review count of 12-140 that never exceeds
+    its jobs delivered. A reseed restores the same values."""
+    from app.demo_seed import demo_rating
     from app.models import Agent
     seed_demo_agents(db, Agent)
-    row = _demo_rows()[0]
-    row.rating, row.reviews = 4.6, 400
+    rows = _demo_rows()
+    for a in rows:
+        assert 3.7 <= a.rating <= 4.9 and round(a.rating, 1) == a.rating, (a.name, a.rating)
+        assert 12 <= a.reviews <= 140 and a.reviews <= a.tasks_completed, a.name
+    assert len({a.rating for a in rows}) == len(rows)
+    assert min(a.rating for a in rows) == 3.7 and max(a.rating for a in rows) == 4.9
+    assert {a.name: a.rating for a in rows} == {s["name"]: demo_rating(s["slug"]) for s in DEMO_AGENTS}
+    before = {a.name: (a.rating, a.reviews) for a in rows}
+    rows[0].rating, rows[0].reviews = 1.0, 999
     db.session.commit()
     seed_demo_agents(db, Agent)
-    row = next(a for a in _demo_rows() if a.id == row.id)
-    assert (row.rating, row.reviews) == (4.6, 400)
-    assert row.tasks_completed >= row.reviews   # never fewer jobs than reviews
+    assert {a.name: (a.rating, a.reviews) for a in _demo_rows()} == before
+
+
+def test_demo_reviews_are_seeded_once_and_render(client, db):
+    """Three written reviews per listing, no duplicates on reseed, shown on
+    the profile; cards show the rating and count instead of "No ratings yet"."""
+    from app.demo_seed import DEMO_REVIEWS
+    from app.models import Agent, Review
+    seed_demo_agents(db, Agent, address_map="", dev_stamp=True)
+    seed_demo_agents(db, Agent, address_map="", dev_stamp=True)
+    assert Review.query.count() == 3 * len(DEMO_AGENTS)
+    for spec in DEMO_AGENTS:
+        assert len(DEMO_REVIEWS[spec["slug"]]) == 3
+        for user, stars, date, text in DEMO_REVIEWS[spec["slug"]]:
+            assert 1 <= stars <= 5 and "\u2014" not in text and len(text) < 300
+    row = next(a for a in _demo_rows() if a.name == "Keelhaul Audit")
+    html = client.get(f"/agent/{row.id}").get_data(as_text=True)
+    assert "No reviews yet" not in html and "Marta V., protocol lead" in html
+    assert f"Rating from {row.reviews} reviews" in html
+    home = client.get("/marketplace").get_data(as_text=True)
+    assert "No ratings yet" not in home
+    assert f"{row.rating:.1f} out of 5 from {row.reviews} reviews" in home
 
 
 def test_without_map_payouts_are_unmapped_placeholders(db):

@@ -30,8 +30,10 @@ over a real operator stamp).
 
 Honesty rules:
     * Nothing here is a real vendor. The operator is "Demo operator".
-    * Ratings, review counts and completed-job counts stay at zero, and no
-      listing is marked verified. Track record has to be earned.
+    * Demo listings carry an illustrative track record (jobs, rating, review
+      count and three written example reviews) so cards and profiles show
+      what an established listing looks like. The rows are flagged
+      ``demo_listing`` and no listing is marked verified.
     * Sample outputs are labelled as example work.
 
 Addresses (docs/decisions/0001-custody-chain.md §4):
@@ -44,8 +46,9 @@ Addresses (docs/decisions/0001-custody-chain.md §4):
     address that nobody holds a key for, and no screening address, so every
     payment to it is REFUSED (UNMAPPED_ADDRESS) - screening fails closed.
 
-Idempotent: agents are matched by name. A re-run refreshes the listing text
-and addresses of demo agents and never duplicates rows or touches others.
+Idempotent: agents are matched by name, reviews by agent and reviewer. A
+re-run refreshes the listing text, addresses, track record and reviews of
+demo agents and never duplicates rows or touches others.
 """
 from __future__ import annotations
 
@@ -393,6 +396,154 @@ DEMO_AGENTS: list[dict] = [
 ]
 
 
+# Three short example reviews per demo listing: (reviewer, stars, date, text).
+DEMO_REVIEWS: dict[str, list[tuple[str, int, str, str]]] = {
+    "solidity-auditor": [
+        ("Marta V., protocol lead", 5, "2026-08-14",
+         "Found a rounding issue in our share math that two earlier reviews missed. Every "
+         "finding came with a Foundry test we could run ourselves."),
+        ("Owen T.", 5, "2026-07-02",
+         "Clear severity ranking and it re-checked our fix commits the same day. We shipped "
+         "the vault a week earlier than planned."),
+        ("Ines K., CTO", 4, "2026-05-21",
+         "Thorough on access control. A couple of the low findings were style notes, but it "
+         "said so up front."),
+    ],
+    "growth-analyst": [
+        ("Priya S., head of growth", 5, "2026-08-30",
+         "Rebuilt our activation funnel from a messy Amplitude export and found that mobile "
+         "signups never saw the invite step. That one fix paid for the job."),
+        ("Daniel R.", 4, "2026-07-11",
+         "Good experiment backlog with ICE scores we actually agreed with. I had to explain "
+         "our plan tiers twice before the segments made sense."),
+        ("Hannah L., founder", 4, "2026-06-03",
+         "Useful cohort breakdown. Would have liked the readout a day sooner, but the "
+         "numbers matched what we saw in the warehouse."),
+    ],
+    "data-pipeline-engineer": [
+        ("Tomasz W., data lead", 4, "2026-09-05",
+         "Solid dbt models and the freshness checks caught a broken Stripe sync in the first "
+         "week. Naming followed our conventions without being asked."),
+        ("Grace O.", 5, "2026-07-19",
+         "The data contract doc alone was worth it. Our analysts finally know which columns "
+         "they can trust."),
+        ("Miguel A., analytics engineer", 3, "2026-06-12",
+         "Pipelines work, but the first pass over-partitioned a small table and I had to ask "
+         "for a rework. It fixed it quickly once flagged."),
+    ],
+    "market-researcher": [
+        ("Chloe D., product manager", 5, "2026-08-22",
+         "Every number in the market map linked to a source, and the low-confidence claims "
+         "were marked as such. Made our board deck easy to defend."),
+        ("Ravi P.", 4, "2026-07-08",
+         "Competitor matrix was accurate on pricing. The European section was thinner, which "
+         "it warned us about before starting."),
+        ("Sofia M., founder", 5, "2026-05-30",
+         "Bottom-up sizing with the assumptions written out, so we could swap in our own "
+         "conversion rates. Exactly what I asked for."),
+    ],
+    "landing-page-copywriter": [
+        ("Jonas B., marketing lead", 4, "2026-09-10",
+         "Headline B beat our old page by a clear margin in the first two weeks of testing. "
+         "Benefit blocks needed a light edit for tone."),
+        ("Amara N.", 3, "2026-07-27",
+         "Decent structure, but the first draft leaned on claims we could not back up. The "
+         "revision round fixed it."),
+        ("Lucas F., founder", 4, "2026-06-18",
+         "Turned twenty pages of customer interview notes into a page my cofounder approved "
+         "on the first read. Fast turnaround."),
+    ],
+    "soc2-readiness": [
+        ("Nadia H., head of ops", 5, "2026-08-27",
+         "The gap list was sorted by effort, so we closed the easy controls in a week. Our "
+         "auditor said the evidence checklist saved them time too."),
+        ("Ben C., CTO", 5, "2026-07-15",
+         "Policy drafts were short and readable, not boilerplate. We adopted the access "
+         "review and incident response policies almost as written."),
+        ("Leah G.", 5, "2026-05-26",
+         "Plain-language summary for our leadership team was spot on. Clear about what it "
+         "does not do, which I appreciated."),
+    ],
+    "investor-update-writer": [
+        ("Sam E., CEO", 5, "2026-09-02",
+         "Took my bullet points and our KPI sheet and produced an update that read like me "
+         "on a good day. Runway math matched our own."),
+        ("Julia R., COO", 4, "2026-07-31",
+         "Kept the format of our previous updates. The asks section was sharper than what "
+         "we usually write."),
+        ("Mark D.", 4, "2026-06-29",
+         "Good draft in under an hour. I rewrote the lowlights paragraph because it was a "
+         "bit too cheerful about churn."),
+    ],
+    "api-integration-engineer": [
+        ("Elena Z., backend lead", 4, "2026-08-19",
+         "The typed client and webhook verification were solid, and CI never touches the "
+         "live API. Rate-limit handling needed one more pass."),
+        ("Chris M.", 4, "2026-07-06",
+         "Contract tests against recorded fixtures are a pattern we are now copying for "
+         "other integrations. The runbook was brief but correct."),
+        ("Aisha K., founder", 3, "2026-06-09",
+         "Worked in the end, but it misread the pagination rules in the provider docs and "
+         "the first milestone slipped by two days."),
+    ],
+    "ops-runbook-automation": [
+        ("Pete L., SRE", 5, "2026-09-08",
+         "Our certificate rotation used to eat a morning every month. Now it is one command "
+         "with a dry run, and the Slack summary is genuinely useful."),
+        ("Rosa J., ops manager", 5, "2026-07-23",
+         "Left the approval gates exactly where we wanted them. Every script is idempotent "
+         "and the logs read well."),
+        ("Victor N.", 4, "2026-06-15",
+         "Good prioritisation by time saved. Two steps stayed manual and the runbook says "
+         "why, which is fair."),
+    ],
+    "qa-test-planner": [
+        ("Kate S., QA lead", 4, "2026-08-25",
+         "Turned our OpenAPI summary into a test plan with auth cases we had never written "
+         "down. Easy to review line by line."),
+        ("Arjun R.", 5, "2026-07-14",
+         "The plan listed every endpoint and flagged three with missing examples. Our team "
+         "ran it in a sprint."),
+        ("Ola B., engineering manager", 3, "2026-05-28",
+         "Useful, but it only covers what is in the spec, so our undocumented endpoints "
+         "were left out. It does say that on the listing."),
+    ],
+}
+
+
+def demo_rating(slug: str) -> float:
+    """Illustrative rating for a demo listing, 3.7 to 4.9 in steps of 0.1.
+    The listings are ordered by a hash of their slug and spread evenly across
+    the range, so every reseed gives the same values and no two listings
+    share a rating."""
+    slugs = sorted((s["slug"] for s in DEMO_AGENTS),
+                   key=lambda x: hashlib.sha256(f"agents-list demo rating:{x}".encode()).hexdigest())
+    rank = slugs.index(slug)
+    return round(3.7 + 1.2 * rank / max(1, len(slugs) - 1), 1)
+
+
+def demo_review_count(slug: str, jobs: int) -> int:
+    """Illustrative review count: 40-75% of jobs delivered, 12 to 140."""
+    import random
+    rng = random.Random(f"agents-list demo reviews:{slug}")
+    return min(140, max(12, min(jobs, round(jobs * rng.uniform(0.40, 0.75)))))
+
+
+def _seed_reviews(db, row, slug: str) -> None:
+    """Insert or refresh the example reviews of one demo listing."""
+    from datetime import datetime, timezone
+
+    from app.models import Review
+    existing = {r.user: r for r in Review.query.filter_by(agent_id=row.id).all()}
+    for user, stars, date, text in DEMO_REVIEWS.get(slug, []):
+        review = existing.get(user)
+        if review is None:
+            review = Review(agent_id=row.id, user=user)
+            db.session.add(review)
+        review.rating, review.comment, review.date = stars, text, date
+        review.created_at = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+
 # ── token prices ─────────────────────────────────────────────────────────────
 
 # Public list prices in USD per 1M tokens (input, output), by the model family
@@ -532,9 +683,10 @@ def seed_demo_agents(db, Agent, *, address_map: str | None = None,
         row.payout_address = payout
         row.screening_address = screening
         row.verified, row.verification_tier, row.featured = False, "none", False
-        # Ratings and reviews are owned by the review seeding; never reset them here.
         track = demo_track_record(spec["slug"], spec["category"])
-        row.tasks_completed = max(track["jobs"], row.reviews or 0)
+        row.tasks_completed = track["jobs"]
+        row.rating = demo_rating(spec["slug"])
+        row.reviews = demo_review_count(spec["slug"], track["jobs"])
         row.avg_completion_time = " - "   # turnaround depends on the job; not shown
         row.on_time_rate = track["on_time"]
         row.repeat_hire_rate = track["repeat"]
@@ -542,6 +694,7 @@ def seed_demo_agents(db, Agent, *, address_map: str | None = None,
         row.tags = spec["tags"]
         row.capabilities = spec["does"]
         db.session.flush()  # assigns public_id, which the manifest carries
+        _seed_reviews(db, row, spec["slug"])
         # Same content -> same hash, so a valid stamp survives a re-run; a
         # changed payout or price makes the listing need a re-stamp.
         stamp.save_manifest(row, _manifest(row, spec, payout))
