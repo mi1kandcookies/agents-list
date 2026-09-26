@@ -26,7 +26,8 @@ listing:
     - characterization tests with a suspicious-behavior log
     - unit coverage uplift verified by coverage delta and mutation score
     - test-only patches with diff-scope, assertion and secret audits
-  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 12000}
+  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 12000,
+            task_price_usdc: 5.0}
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: code
 prompts:

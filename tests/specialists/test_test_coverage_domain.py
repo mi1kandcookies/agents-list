@@ -7,6 +7,7 @@ import yaml
 
 from agentkit.errors import PolicyViolation, ToolError
 from agentkit.evals import load_cases, prepare_workspace
+from agentkit.manifest import load_manifest, operator_fields, task_price_micro
 from agentkit.registry import load_specialist
 from specialists.test_coverage import checks as C
 from specialists.test_coverage import tools as T
@@ -683,6 +684,17 @@ def test_manifest_parses_and_references_known_tools_and_checks():
     assert m["models"]["primary"].startswith("anthropic:")
     for rel in [m["prompts"]["system"], *m["prompts"]["include"]]:
         assert (PACK / rel).is_file()
+
+
+def test_manifest_loads_strictly_with_catalog_category_and_task_price():
+    manifest = load_manifest(PACK / "agent.yaml")
+    assert manifest.listing.category == "Development"
+    pricing = manifest.listing.pricing
+    assert pricing.model == "per_milestone" and 0 < pricing.typical_low < pricing.typical_high
+    # The stamped x402 per-task price is separate from the engagement range.
+    assert task_price_micro(manifest) == 5_000_000
+    fields = operator_fields(manifest)
+    assert fields["model"] == manifest.models.primary and fields["mcp_servers"] == []
 
 
 def test_rubrics_are_well_formed():
