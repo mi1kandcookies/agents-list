@@ -13,6 +13,14 @@ Environment variables:
     CORS_ORIGINS          Comma-separated allowed origins (default: *)
     RATELIMIT_DEFAULT     Default rate limit string (default: 600/minute)
     AUTO_MIGRATE          Run Alembic upgrade at boot (default on outside production)
+    TRUST_PROXY           Trust one proxy's X-Forwarded-For/-Proto/-Host (default on
+                          when VERCEL is set, else off)
+    SESSION_COOKIE_SECURE Send the session cookie over HTTPS only (default on in
+                          production)
+    RATELIMIT_STORAGE_URI Flask-Limiter storage (default memory://, per process)
+
+On Vercel (the platform sets VERCEL=1) the default config is production, SQLite
+is refused and MANDATE_SIGNING_KEY is required; see docs/deploy/vercel.md.
 
 Chain settings (RPC_URL, CHAIN_ID, EXPLORER_URL, contract addresses, signer
 keys) live in chain/config.py and chain/client.py and default to Ethereum
@@ -25,6 +33,16 @@ from typing import Optional
 
 def _flag(name: str, default: str) -> bool:
     return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def on_vercel() -> bool:
+    """True inside a Vercel build or function (the platform sets VERCEL=1)."""
+    return bool(os.environ.get("VERCEL", "").strip())
+
+
+def default_config_name() -> str:
+    """FLASK_ENV, else production on Vercel, else development."""
+    return os.environ.get("FLASK_ENV", "").strip() or ("production" if on_vercel() else "development")
 
 
 def _database_url() -> str:
@@ -40,6 +58,16 @@ def _database_url() -> str:
     return url
 
 
+def _engine_options(url: str) -> dict:
+    """Engine options for Postgres on serverless: drop dead pooled connections
+    after a frozen instance resumes, and skip server-side prepared statements
+    so a transaction-mode pooler (PgBouncer and most hosted poolers) works."""
+    if not (on_vercel() and url.startswith("postgresql")):
+        return {}
+    return {"pool_pre_ping": True, "pool_recycle": 300,
+            "connect_args": {"prepare_threshold": None}}
+
+
 class Config:
     """Base configuration - shared across all environments."""
 
@@ -49,8 +77,22 @@ class Config:
     TESTING: bool = False
     ENV_NAME: str = os.environ.get("FLASK_ENV", "development")
 
+    # ── Session cookie ─────────────────────────────────────────────────────
+    # Lax keeps the cookie on the identity provider's top-level GET redirect to
+    # /auth/world/callback (the provider only supports response_mode=query).
+    SESSION_COOKIE_HTTPONLY: bool = True
+    SESSION_COOKIE_SAMESITE: str = "Lax"
+    SESSION_COOKIE_SECURE: bool = _flag("SESSION_COOKIE_SECURE", "0")
+
+    # ── Reverse proxy ──────────────────────────────────────────────────────
+    # Behind one proxy (Vercel, a load balancer) that sets X-Forwarded-*.
+    # Never enable it when clients can reach the app directly: the headers
+    # would then be client-controlled.
+    TRUST_PROXY: bool = _flag("TRUST_PROXY", "1" if on_vercel() else "0")
+
     # ── Database ───────────────────────────────────────────────────────────
     SQLALCHEMY_DATABASE_URI: str = _database_url()
+    SQLALCHEMY_ENGINE_OPTIONS: dict = _engine_options(SQLALCHEMY_DATABASE_URI)
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     SQLALCHEMY_ECHO: bool = False  # Set True to log all SQL in development
 
@@ -63,7 +105,8 @@ class Config:
 
     # ── Rate limiting ──────────────────────────────────────────────────────
     RATELIMIT_DEFAULT: str = os.environ.get("RATELIMIT_DEFAULT", "600/minute")
-    RATELIMIT_STORAGE_URI: str = "memory://"  # swap to redis:// in production
+    # memory:// counts per process; serverless instances each keep their own.
+    RATELIMIT_STORAGE_URI: str = os.environ.get("RATELIMIT_STORAGE_URI", "") or "memory://"
     RATELIMIT_HEADERS_ENABLED: bool = True
 
     # ── Auth ───────────────────────────────────────────────────────────────
@@ -90,7 +133,8 @@ class Config:
     # AUTO_MIGRATE: run `alembic upgrade head` at boot. On by default for local
     # development so a fresh checkout just works; production runs
     # `flask --app wsgi db upgrade` explicitly (see docker-compose.yml).
-    AUTO_MIGRATE: bool = _flag("AUTO_MIGRATE", "1")
+    # Never by default on Vercel: every cold start would race to migrate.
+    AUTO_MIGRATE: bool = _flag("AUTO_MIGRATE", "0" if on_vercel() else "1")
     STRICT_PROD_VALIDATION: bool = _flag("STRICT_PROD_VALIDATION", "1")
 
 
@@ -104,6 +148,7 @@ class TestingConfig(Config):
     """Testing - in-memory SQLite, no rate limiting."""
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    SQLALCHEMY_ENGINE_OPTIONS: dict = {}
     RATELIMIT_ENABLED = False
     AUTO_MIGRATE = False  # tests build the schema with create_all()
     ENS_SIDECAR_URL = ""  # tests install a fake names client
@@ -113,7 +158,10 @@ class TestingConfig(Config):
 class ProductionConfig(Config):
     """Production - strict, no debug, env-driven secrets."""
     DEBUG = False
+    ENV_NAME = "production"
     AUTO_MIGRATE = _flag("AUTO_MIGRATE", "0")
+    SESSION_COOKIE_SECURE = _flag("SESSION_COOKIE_SECURE", "1")
+    PREFERRED_URL_SCHEME = "https"
 
     @classmethod
     def init_app(cls, app):
@@ -131,6 +179,8 @@ def validate_runtime_config(app) -> None:
     """
     Fail fast in production when critical config is unsafe.
     """
+    if on_vercel() and not app.testing:
+        validate_serverless_config(app)
     env = (app.config.get("ENV_NAME") or os.environ.get("FLASK_ENV", "development")).lower()
     if env != "production":
         return
@@ -172,6 +222,22 @@ def validate_runtime_config(app) -> None:
 
     if errors:
         raise RuntimeError("Production configuration invalid: " + " ".join(errors))
+
+
+def validate_serverless_config(app) -> None:
+    """Refuse settings that cannot work on stateless serverless instances,
+    whatever FLASK_ENV says: a SQLite file is per instance (and read-only),
+    and a mandate key generated into instance/ would differ per instance."""
+    errors = []
+    db_uri = str(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+    if not db_uri or db_uri.startswith("sqlite:"):
+        errors.append("DATABASE_URL must point at Postgres on Vercel (SQLite is per instance "
+                      "and not persisted); see docs/deploy/vercel.md.")
+    if not (app.config.get("MANDATE_SIGNING_KEY") or os.environ.get("MANDATE_SIGNING_KEY")):
+        errors.append("MANDATE_SIGNING_KEY must be set on Vercel (a generated key would "
+                      "differ per instance).")
+    if errors:
+        raise RuntimeError("Serverless configuration invalid: " + " ".join(errors))
 
 
 # Map FLASK_ENV → config class
