@@ -542,11 +542,42 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .subnav a:hover { color: var(--ink); }
 .subnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
 
-.site-footer { border-top: 1px solid var(--border); margin-top: 72px; }
-.site-footer .shell { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-top: 24px; padding-bottom: 24px; }
-.site-footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
-.site-footer a, .site-footer small { font-size: 0.8125rem; color: var(--ink-3); }
-.site-footer a:hover { color: var(--ink); }
+/* ── Footer scene ─────────────────────────────────────────────────────────
+   A field panorama rises out of the page background; the footer bar floats
+   on frosted glass at its base. Lazy-loaded, so it costs nothing until near. */
+.site-footer {
+  position: relative; isolation: isolate; margin-top: clamp(32px, 4vw, 64px);
+  min-height: clamp(260px, 30vw, 460px);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  background: #bd986d;                      /* image mean tone: no flash before decode */
+  overflow: hidden;
+}
+.footer-scene { position: absolute; inset: 0; z-index: -1; }
+.footer-scene img {
+  width: 100%; height: 100%; object-fit: cover; object-position: 50% 58%;
+  opacity: 0; transition: opacity .9s var(--ease-out);
+}
+.footer-scene img.is-loaded { opacity: 1; }
+.footer-scene::after {                       /* dissolve out of the page background */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg,
+    var(--bg) 0%,
+    color-mix(in srgb, var(--bg) 70%, transparent) 14%,
+    color-mix(in srgb, var(--bg) 18%, transparent) 38%,
+    transparent 56%);
+}
+.footer-bar {
+  background: color-mix(in srgb, #fff 56%, transparent);
+  backdrop-filter: saturate(1.5) blur(16px); -webkit-backdrop-filter: saturate(1.5) blur(16px);
+  border-top: 1px solid rgb(255 255 255 / .45);
+}
+.footer-bar .shell { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-top: 18px; padding-bottom: 18px; }
+.site-footer nav { display: flex; gap: 22px; flex-wrap: wrap; }
+.site-footer a, .site-footer small { font-size: 0.8125rem; color: #2a2622; font-weight: 500; }
+.site-footer small { font-weight: 400; color: #3d3831; }
+.site-footer a { transition: color .15s var(--ease-out); }
+.site-footer a:hover { color: #000; }
+@media (prefers-reduced-motion: reduce) { .footer-scene img { transition: none; } }
 
 /* ══ Page header (shared by inner pages) ════════════════════════════════════ */
 .page-head { padding: 40px 0 24px; }

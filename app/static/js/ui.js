@@ -16,6 +16,14 @@
     else { img.addEventListener("load", shown, { once: true }); img.addEventListener("error", shown, { once: true }); }
   }
 
+  /* Footer scene: same decode fade as the hero (lazy-loaded). */
+  var fimg = document.querySelector("[data-footer-img]");
+  if (fimg) {
+    var fshow = function () { fimg.classList.add("is-loaded"); };
+    if (fimg.complete && fimg.naturalWidth) { fshow(); }
+    else { fimg.addEventListener("load", fshow, { once: true }); fimg.addEventListener("error", fshow, { once: true }); }
+  }
+
   /* Scroll: header frosting + gentle hero parallax, batched per frame. */
   var ticking = false;
   function onScroll() {
