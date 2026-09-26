@@ -14,6 +14,7 @@ import uuid
 from flask import jsonify
 
 from app.extensions import db
+from chain.config import explorer_url
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def orders_for_buyer(wallet: str, *, completed: bool) -> list:
         ct = (CT.query.filter(CT.meta.like(f'%"orderId": "{o.id}"%'))
               .order_by(CT.id.desc()).first())
         d["txHash"]    = ct.tx_hash if ct else ""
-        d["snowtrace"] = f"https://testnet.snowtrace.io/tx/{ct.tx_hash}" if ct else ""
+        d["explorer"]  = explorer_url("tx", ct.tx_hash) if ct else ""
         d["sourceChain"] = bool(ct)
         d["orderUrl"]  = f"/order/{o.id}"
         out.append(d)
@@ -132,8 +133,8 @@ def get_onchain():
 
 def live_chain_stats(live_only: bool = False) -> dict:
     """Site-wide aggregate from ChainTransaction.
-    live_only=True restricts to rows with meta.real=true (real Fuji txs
-    fired from the demo), hiding the tick-engine backfill."""
+    live_only=True restricts to rows with meta.real=true (transactions the
+    platform actually submitted on-chain)."""
     from app.models import ChainTransaction as CT, Agent as AgentModel, VerificationEntry
     from sqlalchemy import func as sfn
     import datetime as _dt
@@ -191,10 +192,8 @@ def live_chain_stats(live_only: bool = False) -> dict:
 
 
 def seller_earnings_from_chain(agent_ids: list) -> dict:
-    """Seller revenue aggregation. Every figure is filtered to REAL Fuji
-    txs (meta.real=true). Previously included the 136k seeded sim rows
-    which made /seller/earnings show fabricated $1,994 revenue for a
-    seller who had never actually been hired."""
+    """Seller revenue aggregation. Every figure is filtered to real on-chain
+    txs (meta.real=true)."""
     from app.models import ChainTransaction as CT
     from sqlalchemy import func as sfn
     import datetime as _dt

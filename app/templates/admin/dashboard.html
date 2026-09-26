@@ -226,7 +226,7 @@ makeDoughnutChart('breakdown-chart',
       tbody.innerHTML = d.transactions.map(tx => {
         const color = KIND_COLOR[tx.kind] || '#9aa4b2';
         const h = tx.txHash && tx.txHash.startsWith('0x') ? tx.txHash : '0x' + (tx.txHash || '');
-        const explorerUrl = tx.explorerUrl || '';
+        const explorerUrl = tx.explorer || '';
         const amt = tx.amountUSDCDisplay ? '$' + Number(tx.amountUSDCDisplay).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
         const agent = tx.agentId ? '#' + tx.agentId : '—';
         return `<tr>

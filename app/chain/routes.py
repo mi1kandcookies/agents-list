@@ -1,10 +1,10 @@
 """Chain-facing routes: frontend chain config, x402 payments, legacy contract reads."""
 from __future__ import annotations
 
+import json
 import logging
-import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from app.extensions import db, limiter
 from app.services import api_error, get_onchain, is_valid_wallet, record_order_from_payment
@@ -12,33 +12,35 @@ from app.services import api_error, get_onchain, is_valid_wallet, record_order_f
 log = logging.getLogger(__name__)
 bp = Blueprint("chain", __name__)
 
-FACILITATOR_URL = os.environ.get("FACILITATOR_URL")
+
+
+def _chain_unavailable(exc: Exception):
+    """Map chain-client failures to API errors: 503 when the contract or
+    signer is not configured on this network, 502 for RPC/tx failures."""
+    from chain.client import ContractNotConfigured
+    if isinstance(exc, ContractNotConfigured):
+        return api_error(str(exc), 503, code="NOT_DEPLOYED")
+    return api_error(f"chain call failed: {str(exc)[:200]}", 502, code="CHAIN_ERROR")
 
 
 @bp.route("/config.js")
 def config_js():
-    import json
-    from flask import Response
-    from chain.client import get_deployment
+    """window.AGENTSLIST_CHAIN / AGENTSLIST_ADDRESSES for the frontend, rendered
+    from server env so the browser never carries hardcoded chain values."""
+    from chain.config import get_chain_config, get_deployment
     d = get_deployment()
     js = (
         "// Auto-generated from server env. Do not edit.\n"
-        "window.AGENTSLIST_CHAIN = " + json.dumps({
-            "chainId":    d["chainId"],
-            "chainIdHex": d["chainIdHex"],
-            "name":       d["chain"],
-            "rpcUrl":     d["rpcUrl"],
-            "explorer":   d["explorer"],
-            "nativeCurrency": {"name": "AVAX", "symbol": "AVAX", "decimals": 18},
-        }) + ";\n"
+        "window.AGENTSLIST_CHAIN = " + json.dumps(get_chain_config().to_frontend()) + ";\n"
         "window.AGENTSLIST_ADDRESSES = " + json.dumps(d["contracts"]) + ";\n"
+        "window.AGENTSLIST_PAYMENT_RECIPIENT = " + json.dumps(d["paymentRecipient"]) + ";\n"
     )
     return Response(js, mimetype="application/javascript")
 
 
 @bp.route("/api/onchain/info")
 def api_onchain_info():
-    from chain.client import get_deployment
+    from chain.config import get_deployment
     return jsonify(get_deployment())
 
 
@@ -66,16 +68,24 @@ def api_x402_pay():
     if not db.session.get(AgentModel, agent_id):
         return api_error("agent not found", 404, code="AGENT_NOT_FOUND", field="agentId")
 
+    from chain.config import payment_recipient
+    recipient = payment_recipient()
+    if recipient and payload["to"].lower() != recipient.lower():
+        return api_error("'to' must be the platform payment recipient", field="to")
+
     amount_usdc = value_micro / 1_000_000.0
     buyer_addr = payload["from"]
     task = str(payload.get("task") or "")[:4000]
 
     oc = get_onchain()
-    if oc and oc.facilitator:
+    if oc and oc.facilitator and recipient:
         try:
             result = oc.x402_execute(payload)
         except Exception as e:
             log.warning("x402 execute failed: %s", e)
+            from chain.client import ContractNotConfigured
+            if isinstance(e, ContractNotConfigured):
+                return _chain_unavailable(e)
             return api_error(f"on-chain payment failed: {str(e)[:200]}", 502, code="PAYMENT_FAILED")
         tx_hash = (result.get("txHashes") or {}).get("permit") or ""
         order_id = record_order_from_payment(agent_id, buyer_addr, amount_usdc,
@@ -89,7 +99,8 @@ def api_x402_pay():
         "agentId": agent_id,
         "status": "pending_payment",
         "realTx": False,
-        "note": "FACILITATOR_PRIVATE_KEY is not set, so the signed authorization was not submitted on-chain.",
+        "note": "FACILITATOR_PRIVATE_KEY and PAYMENT_RECIPIENT are required to submit "
+                "the signed authorization on-chain; the order was recorded as pending_payment.",
     })
 
 
@@ -107,43 +118,32 @@ def api_agents_register():
         return api_error("name must be at least 3 characters", field="name")
 
     oc = get_onchain()
-    if oc:
-        try:
-            result = oc.register_agent(payload["wallet"], payload["name"], payload["endpointURL"])
-            return jsonify(result), 201
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    return jsonify({
-        "agentId": None,
-        "status": "mock_registered",
-        "note": "No FACILITATOR_PRIVATE_KEY - registration not sent on-chain.",
-    }), 201
+    if not (oc and oc.facilitator and oc.has_contract("AgentRegistry")):
+        return api_error("legacy AgentRegistry is not deployed on this network; "
+                         "ERC-8004 registration is on the roadmap", 503, code="NOT_DEPLOYED")
+    try:
+        return jsonify(oc.register_agent(payload["wallet"], payload["name"], payload["endpointURL"])), 201
+    except Exception as e:
+        return _chain_unavailable(e)
 
 
 @bp.route("/api/session/<session_id>")
 def api_session(session_id):
+    """Read a legacy EscrowPayment session (replaced by EngagementEscrow)."""
     try:
         sid = int(session_id)
     except ValueError:
-        return jsonify({"error": "session id must be numeric"}), 400
+        return api_error("session id must be numeric", field="session_id")
     oc = get_onchain()
-    if oc:
-        try:
-            s = oc.get_session(sid)
-            # Contract returns zero-struct for unknown sessions; map that to 404.
-            if s.get("user") == "0x0000000000000000000000000000000000000000":
-                return jsonify({"error": "session not found"}), 404
-            return jsonify(s)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 502
-    if FACILITATOR_URL:
-        try:
-            import requests
-            r = requests.get(f"{FACILITATOR_URL}/session/{session_id}", timeout=10)
-            return (r.text, r.status_code, r.headers.items())
-        except Exception as e:
-            return jsonify({"error": str(e)}), 502
-    return jsonify({"error": "no on-chain backend configured"}), 503
+    if not (oc and oc.has_contract("EscrowPayment")):
+        return api_error("EscrowPayment is not deployed on this network", 503, code="NOT_DEPLOYED")
+    try:
+        s = oc.get_session(sid)
+    except Exception as e:
+        return _chain_unavailable(e)
+    if s.get("user") == "0x0000000000000000000000000000000000000000":
+        return api_error("session not found", 404, code="SESSION_NOT_FOUND")
+    return jsonify(s)
 
 
 @bp.route("/api/session/<session_id>/cancel", methods=["POST"])
@@ -151,19 +151,11 @@ def api_session_cancel(session_id):
     try:
         sid = int(session_id)
     except ValueError:
-        return jsonify({"error": "session id must be numeric"}), 400
-
+        return api_error("session id must be numeric", field="session_id")
     oc = get_onchain()
-    if oc:
-        try:
-            return jsonify(oc.cancel_session(sid))
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    if FACILITATOR_URL:
-        try:
-            import requests as _req
-            r = _req.post(f"{FACILITATOR_URL}/session/{session_id}/cancel", timeout=15)
-            return (r.text, r.status_code, r.headers.items())
-        except Exception as e:
-            return jsonify({"error": str(e)}), 502
-    return jsonify({"error": "no on-chain backend configured"}), 503
+    if not (oc and oc.facilitator and oc.has_contract("EscrowPayment")):
+        return api_error("EscrowPayment is not deployed on this network", 503, code="NOT_DEPLOYED")
+    try:
+        return jsonify(oc.cancel_session(sid))
+    except Exception as e:
+        return _chain_unavailable(e)

@@ -11,7 +11,7 @@ machine-to-machine stablecoin payments:
   Client → GET /resource
            X-Payment: <signed EIP-3009 permit>
   Server ← HTTP 200 OK
-           X-Payment-Receipt: <tx hash + snowtrace>
+           X-Payment-Receipt: <tx hash + explorer link>
            <actual response body>
 
 Without this, our app merely *has* an x402 endpoint; with this, our app
@@ -29,11 +29,15 @@ Usage:
 If the caller attaches a valid X-Payment header, the decorator:
   1. Parses the permit
   2. Validates signature + nonce + expiry
-  3. Executes via MockUSDC.transferWithAuthorization (through facilitator)
+  3. Executes USDC.transferWithAuthorization (facilitator pays gas)
   4. Injects an X-Payment-Receipt response header with the tx hash
   5. Calls the wrapped function and returns its body with 200
 
 Otherwise it returns 402 with a challenge header describing what's expected.
+
+Note: this is the homegrown `x402/eip-3009` format inherited from the prototype.
+Moving to the current x402 spec (`exact` scheme, CAIP-2 network ids) with the
+official SDK is on the roadmap.
 """
 from __future__ import annotations
 import json
@@ -56,8 +60,12 @@ def _rand_nonce() -> str:
 
 def build_challenge(price_usdc: float, recipient: str, resource_id: str,
                     *, valid_seconds: int = 3600, usdc_address: str = "",
-                    chain_id: int = 43113, notes: str = "") -> dict:
-    """Construct the X-Payment-Challenge body."""
+                    chain=None, domain: dict | None = None, notes: str = "") -> dict:
+    """Construct the X-Payment-Challenge body for the active chain."""
+    from chain.config import get_chain_config
+    chain = chain or get_chain_config()
+    chain_id = chain.chain_id
+    domain = domain or {"name": "USDC", "version": "2"}
     now = int(time.time())
     value_micro = int(price_usdc * 1_000_000)
     return {
@@ -66,7 +74,8 @@ def build_challenge(price_usdc: float, recipient: str, resource_id: str,
         "resourceId": resource_id,
         "chain": {
             "chainId": chain_id,
-            "name": "Avalanche Fuji" if chain_id == 43113 else f"chain-{chain_id}",
+            "network": chain.caip2,
+            "name": chain.name,
         },
         "token": {
             "address": usdc_address,
@@ -82,8 +91,8 @@ def build_challenge(price_usdc: float, recipient: str, resource_id: str,
         "permit": {
             "type": "EIP-3009/transferWithAuthorization",
             "domain": {
-                "name": "Mock USDC",
-                "version": "1",
+                "name": domain["name"],
+                "version": domain["version"],
                 "chainId": chain_id,
                 "verifyingContract": usdc_address,
             },
@@ -127,33 +136,29 @@ def parse_payment_header(header_value: str) -> dict | None:
     return None
 
 
-def execute_payment(permit: dict, *, recipient_override: str = None) -> dict:
-    """Submit the permit on-chain via facilitator. Returns receipt.
-    Lazy-imports onchain so this module has no hard deps on web3."""
+def execute_payment(permit: dict, *, expected_recipient: str | None = None) -> dict:
+    """Submit a buyer-signed permit on-chain via the facilitator.
+
+    The EIP-3009 signature covers `to`, so the permit must already name the
+    expected recipient; it is never rewritten here.
+    """
+    if expected_recipient and str(permit.get("to", "")).lower() != expected_recipient.lower():
+        return {"ok": False, "error": "permit recipient does not match the challenge"}
     try:
         from chain.client import OnChain
         oc = OnChain.from_env()
     except Exception as e:
-        return {"ok": False, "error": f"onchain not configured: {e}"}
-    if not oc or not oc.facilitator:
+        return {"ok": False, "error": f"chain client unavailable: {e}"}
+    if not oc.facilitator:
         return {"ok": False, "error": "facilitator not configured"}
     try:
-        # Map the permit fields to what oc.x402_execute expects
-        p = {
-            "from": permit["from"],
-            "to": recipient_override or permit["to"],
-            "value": permit["value"],
+        result = oc.x402_execute({
+            "from": permit["from"], "to": permit["to"], "value": permit["value"],
             "validAfter": int(permit.get("validAfter", 0)),
             "validBefore": int(permit["validBefore"]),
-            "nonce": permit["nonce"],
-            "v": int(permit["v"]),
-            "r": permit["r"],
-            "s": permit["s"],
+            "nonce": permit["nonce"], "v": int(permit["v"]), "r": permit["r"], "s": permit["s"],
             "agentId": int(permit.get("agentId", 0)),
-            "tokenBudget": int(permit.get("tokenBudget", permit["value"])),
-            "categoryId": int(permit.get("categoryId", 0)),
-        }
-        result = oc.x402_execute(p)
+        })
         return {"ok": True, **result}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
@@ -173,15 +178,17 @@ def require_x402(
       resource_id: string or callable(req, kwargs) -> string; uniquely
                    identifies what's being paid for (e.g. f"agent-{id}").
       recipient_resolver: callable(req, kwargs) -> 0x address; where the
-                          USDC should go. Defaults to EscrowPayment.
+                          USDC should go. Defaults to PAYMENT_RECIPIENT.
       notes: human-readable message for the 402 challenge body.
     """
     def wrap(view):
         @wraps(view)
         def inner(*args, **kwargs):
-            from chain.client import ADDRESSES, CHAIN_ID
-            usdc = ADDRESSES.get("MockUSDC", "")
-            default_recipient = ADDRESSES.get("EscrowPayment", "")
+            from chain.client import _usdc_address
+            from chain.config import get_chain_config, payment_recipient
+            chain = get_chain_config()
+            usdc = _usdc_address() or ""
+            default_recipient = payment_recipient() or ""
             recipient = default_recipient
             if recipient_resolver:
                 try:
@@ -198,7 +205,7 @@ def require_x402(
                     recipient=recipient,
                     resource_id=rid,
                     usdc_address=usdc,
-                    chain_id=CHAIN_ID,
+                    chain=chain,
                     notes=notes,
                 )
                 resp = jsonify({
@@ -208,7 +215,7 @@ def require_x402(
                 })
                 resp.status_code = 402
                 resp.headers["X-Payment-Challenge"] = json.dumps(challenge)
-                resp.headers["WWW-Authenticate"] = f'{X402_SCHEME} price={price_per_call_usdc} usdc={usdc} chain={CHAIN_ID}'
+                resp.headers["WWW-Authenticate"] = f'{X402_SCHEME} price={price_per_call_usdc} usdc={usdc} chain={chain.caip2}'
                 return resp
 
             # Payment attached — parse + execute
@@ -222,7 +229,9 @@ def require_x402(
             if missing:
                 return jsonify({"error": f"permit missing fields: {missing}"}), 400
 
-            receipt = execute_payment(permit, recipient_override=recipient)
+            if not recipient:
+                return jsonify({"error": "payment recipient not configured"}), 503
+            receipt = execute_payment(permit, expected_recipient=recipient)
             if not receipt.get("ok"):
                 # Payment attempt failed — refuse the service
                 resp = jsonify({"error": "payment failed", "detail": receipt.get("error")})
@@ -240,7 +249,7 @@ def require_x402(
                 result.headers["X-Payment-Receipt"] = json.dumps({
                     "sessionId": receipt.get("sessionId"),
                     "txHashes": receipt.get("txHashes"),
-                    "snowtrace": receipt.get("snowtrace"),
+                    "explorer": receipt.get("explorer"),
                 })
             return result
         return inner
