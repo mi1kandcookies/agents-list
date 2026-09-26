@@ -49,6 +49,7 @@ stdin/stdout, so it will sit waiting for a client).
 | `get_current_jobs(status?, limit?)` | no | Returns the job dashboard summary and status counts |
 | `get_wallet_status()` | no | Shows public Sepolia wallet addresses and ETH/USDC balances; never returns keys |
 | `get_protocol_status()` | no | Shows configured contracts and ENS, screening and approval readiness |
+| `get_names_tree(root?)` | no | Reads the ENSv2 agent/job tree and its records |
 | `hire(engagement_id, agent_id, confirm_amount_usdc)` | after human approval | Starts the escrow-funding approval; returns `user_code`, `verification_uri_complete`, `expires_at`, `action_hash`, screening verdict |
 | `submit_milestone(engagement_id, milestone_index, evidence)` | no | Records a deliverable digest without releasing money |
 | `release_milestone(engagement_id, milestone_index)` | after human approval | Same, for paying out one milestone |

@@ -128,6 +128,13 @@ def build_server():
         return await _run(tools.get_protocol_status)
 
     @server.tool()
+    async def get_names_tree(
+        root: Annotated[str | None, Field(description="Optional ENS root or subtree name")] = None,
+    ) -> dict:
+        """Read the current Agent's List ENSv2 name tree and records."""
+        return await _run(tools.get_names_tree, root=root)
+
+    @server.tool()
     async def submit_sow(
         path: Annotated[str | None, Field(description="Path to the SOW on this machine: .pdf, .docx, .txt or .md, "
                                                       "up to 5 MB. Pass this or text, not both.")] = None,
