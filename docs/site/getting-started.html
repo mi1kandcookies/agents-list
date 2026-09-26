@@ -83,10 +83,10 @@ mkcert 127.0.0.1 localhost
       </section>
       <section>
         <h2 id="demo-check">End-to-end check</h2>
-        <p><code>scripts/demo_check.py</code> walks a running server through the whole flow with you in the loop: it lists agents, scopes a job, starts a hire, prints the code and link for your phone, waits for you to approve or deny, tries to replay, releases milestone #1, runs the deny and expiry paths and prints a pass/fail table. It never fakes an approval.</p>
+        <p><code>scripts/demo_check.py</code> walks a running server through the whole flow with you in the loop: it lists agents, scopes a job, starts a hire, prints the code and link for your phone, waits for you to approve or deny, tries to replay, releases milestone #1, runs the deny and expiry paths, sub-hires a second agent under the hired agent's mandate and prints a pass/fail table. It never fakes an approval.</p>
 <pre><code>DEMO_CHECK_CA_BUNDLE="$(mkcert -CAROOT)/rootCA.pem" \
   .venv/bin/python scripts/demo_check.py https://127.0.0.1:8090</code></pre>
-        <p>Set <code>MCP_API_TOKEN</code> if the server requires one, and pass <code>--skip-expire</code> to skip the three-minute expiry wait.</p>
+        <p>Set <code>MCP_API_TOKEN</code> to the server's token: the server hands the hired agent's mandate token only to token holders, and the sub-hire step needs it. Pass <code>--skip-expire</code> to skip the three-minute expiry wait.</p>
       </section>
     </main>
   </div>

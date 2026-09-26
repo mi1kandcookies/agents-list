@@ -49,9 +49,9 @@
             <tr><td><code>POST /api/engagements/&lt;id&gt;/hire</code></td><td><code>{flow: "device" | "web", confirm_amount_usdc}</code></td><td>202 approval</td></tr>
             <tr><td><code>POST /api/engagements/&lt;id&gt;/milestones/&lt;idx&gt;/submit</code></td><td><code>{evidence}</code></td><td>200 with the evidence hash</td></tr>
             <tr><td><code>POST /api/engagements/&lt;id&gt;/milestones/&lt;idx&gt;/release</code></td><td><code>{flow}</code></td><td>202 approval</td></tr>
-            <tr><td><code>GET /api/engagements/&lt;id&gt;</code></td><td></td><td>Engagement, milestones, ledger (with explorer links), approvals, mandate, <code>chain_url</code></td></tr>
+            <tr><td><code>GET /api/engagements/&lt;id&gt;</code></td><td></td><td>Engagement, milestones, ledger (with explorer links), approvals, mandate, <code>chain_url</code>; <code>mandate_token</code> only for callers holding the API token</td></tr>
             <tr><td><code>GET /api/engagements/&lt;id&gt;/chain</code></td><td></td><td>Custody chain <code>{nodes, edges}</code></td></tr>
-            <tr><td><code>POST /api/engagements/&lt;id&gt;/subhire</code></td><td><code>{agent_id, outcome, budget_usdc, category}</code> with <code>Authorization: Mandate &lt;jwt&gt;</code></td><td>Specified in decision 0001; not served yet</td></tr>
+            <tr><td><code>POST /api/engagements/&lt;id&gt;/subhire</code></td><td><code>{agent_id, outcome, budget_usdc, category}</code> with <code>Authorization: Mandate &lt;jwt&gt;</code> (the mandate granted for <code>&lt;id&gt;</code>)</td><td>201 child engagement with its own <code>mandate_token</code> (PAY or CAP), 202 approval for the root human (ASK_HUMAN), 403 <code>SCREENING_REFUSED</code></td></tr>
             <tr><td><code>GET /api/approvals/&lt;id&gt;</code></td><td></td><td>Approval; also advances a pending device flow</td></tr>
             <tr><td><code>POST /api/approvals/&lt;id&gt;/cancel</code></td><td><code>{reason?}</code></td><td>Approval (409 if it is no longer pending)</td></tr>
             <tr><td><code>GET /api/mandates/&lt;id&gt;</code></td><td></td><td>Mandate claims, status and balances</td></tr>
@@ -84,7 +84,8 @@
             <tr><td><code>BANNED</code>, <code>CAP_EXCEEDED</code></td><td>The human is banned or over their weekly cap.</td></tr>
             <tr><td><code>MILESTONE_NOT_RELEASABLE</code></td><td>The milestone is not funded, or is already paid.</td></tr>
             <tr><td><code>APPROVAL_CONSUMED</code>, <code>APPROVAL_EXPIRED</code></td><td>The approval was already used, or ran out of time.</td></tr>
-            <tr><td><code>MANDATE_INVALID</code>, <code>MANDATE_EXCEEDED</code></td><td>The mandate is invalid, revoked or too small for the request.</td></tr>
+            <tr><td><code>MANDATE_INVALID</code>, <code>MANDATE_EXPIRED</code> (401)</td><td>No valid mandate was presented, or it is not the one granted for this engagement.</td></tr>
+            <tr><td><code>MANDATE_REVOKED</code>, <code>MANDATE_EXCEEDED</code>, <code>CATEGORY_NOT_ALLOWED</code>, <code>DEPTH_EXCEEDED</code> (403)</td><td>The request goes beyond the mandate.</td></tr>
           </tbody>
         </table>
       </section>
