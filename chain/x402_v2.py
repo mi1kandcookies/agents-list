@@ -49,6 +49,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 X402_VERSION = 2
 SCHEME = "exact"
@@ -263,8 +264,14 @@ class GuardedSigner:
 
 def sign_payment(account, requirements: PaymentRequirements, *, expected: Expectation,
                  domain: dict | None = None, now: int | None = None,
-                 nonce: str | None = None, resource: dict | None = None) -> dict:
-    """Preflight, then build and sign the exact-scheme PaymentPayload."""
+                 nonce: str | None = None, resource: dict | None = None,
+                 before_sign: Callable[[dict], object] | None = None) -> dict:
+    """Preflight, run the optional risk gate, then sign the exact payload.
+
+    ``before_sign`` receives the exact EIP-712 typed data that will be signed.
+    A screening or approval exception from the hook aborts before the account
+    signer is called.
+    """
     from chain.usdc import authorization_typed_data
     d = preflight(requirements, expected, domain=domain)
     now = int(time.time()) if now is None else now
@@ -277,6 +284,8 @@ def sign_payment(account, requirements: PaymentRequirements, *, expected: Expect
         "nonce": nonce or "0x" + secrets.token_hex(32),
     }
     typed = authorization_typed_data(authorization, d)
+    if before_sign is not None:
+        before_sign(typed)
     signed = GuardedSigner(account, expected, d).sign_typed_data(typed, now=now)
     signature = "0x" + bytes(signed.signature).hex()
     out = {"x402Version": X402_VERSION, "accepted": requirements.to_dict(),
@@ -295,6 +304,7 @@ class VerifiedPayment:
     nonce: str
     network: str
     permit: dict          # EIP-3009 fields + v, r, s, for settlement
+    typed_data: dict      # exact EIP-712 payload reconstructed from the permit
 
 
 def _uint(value, name: str) -> int:
@@ -346,7 +356,7 @@ def verify_payment(payload: dict, requirements: PaymentRequirements, *,
     if valid_before - now > requirements.max_timeout_seconds + CLOCK_SKEW_SECONDS:
         raise X402Error("VALIDITY_WINDOW", "authorization is valid for longer than maxTimeoutSeconds")
 
-    from chain.usdc import recover_authorization_signer
+    from chain.usdc import authorization_typed_data, recover_authorization_signer
     d = dict(_domain(domain))
     if (d.get("name"), d.get("version")) != (requirements.extra.get("name"),
                                               requirements.extra.get("version")):
@@ -358,6 +368,7 @@ def verify_payment(payload: dict, requirements: PaymentRequirements, *,
     permit = {"from": payer, "to": to, "value": str(value), "validAfter": valid_after,
               "validBefore": valid_before, "nonce": nonce.lower(), "v": v,
               "r": "0x" + sig[:32].hex(), "s": "0x" + sig[32:64].hex()}
+    typed_data = authorization_typed_data(permit, d)
     try:
         signer = recover_authorization_signer(permit, d)
     except Exception:
@@ -365,7 +376,8 @@ def verify_payment(payload: dict, requirements: PaymentRequirements, *,
     if signer.lower() != payer.lower():
         raise X402Error("INVALID_SIGNATURE", "signature does not match authorization.from")
     return VerifiedPayment(payer=payer.lower(), pay_to=to.lower(), amount_micro=value,
-                           nonce=nonce.lower(), network=requirements.network, permit=permit)
+                           nonce=nonce.lower(), network=requirements.network, permit=permit,
+                           typed_data=typed_data)
 
 
 def settle(verified: VerifiedPayment, *, escrow, ref: str | None = None):

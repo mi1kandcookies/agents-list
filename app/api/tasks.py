@@ -159,7 +159,7 @@ def api_agent_task(agent_ref):
 
     engagement = db.session.get(Engagement, row.engagement_id)
     verdict = eng_svc.screen(HOP, chain_address=verified.pay_to, amount_micro=amount,
-                             engagement=engagement, agent=agent)
+                             engagement=engagement, agent=agent, typed_data=verified.typed_data)
     try:
         screening_policy.enforce_verdict(verdict, amount)
     except screening_policy.ScreeningBlocked as exc:

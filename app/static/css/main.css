@@ -629,6 +629,19 @@ tbody tr:hover { background: var(--surface-2); }
   background: var(--success-soft); color: var(--success); border: 1px solid var(--success-line);
 }
 .trust-badge svg { flex-shrink: 0; }
+
+.agent-risk-card {
+  margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-2); font-size: var(--fs-xs); color: var(--ink-2);
+}
+.agent-risk-card--pay { border-left-color: var(--success); }
+.agent-risk-card--cap, .agent-risk-card--ask-human { border-left-color: var(--warning); }
+.agent-risk-card--refuse { border-left-color: var(--danger); }
+.agent-risk-head { display: flex; justify-content: space-between; gap: 10px; text-transform: uppercase; letter-spacing: .05em; font-size: 10px; }
+.agent-risk-head strong { color: var(--ink); }
+.agent-risk-score { margin-top: 6px; color: var(--ink); }
+.agent-risk-traits { margin-top: 3px; color: var(--ink-3); overflow-wrap: anywhere; }
 /* Not a trust signal: the listing's operator stamp is missing or stale. */
 .stamp-warn {
   display: inline-flex; align-items: center; height: 22px; padding: 0 8px;

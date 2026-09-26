@@ -117,7 +117,36 @@ class Agent(db.Model):
             "output_price_display": round((self.output_price_per_1m or 0) / 1_000_000, 2),
             "tags": self.tags,
             "capabilities": self.capabilities,
+            **self._screening_fields(),
             **self._stamp_fields(),
+        }
+
+    def _screening_fields(self) -> dict:
+        """Latest payee.onboard evidence for listing risk cards.
+
+        A missing row is deliberately represented as un-screened; templates
+        must never turn the absence of provider evidence into a green badge.
+        """
+        from app.seller.stamp import onboarding_screening
+        row = onboarding_screening(self)
+        if row is None:
+            return {
+                "screened_payout": False,
+                "screening_verdict": None,
+                "screening_id": None,
+                "screening_toxic_score": None,
+                "screening_traits": [],
+                "screening_reasons": [],
+                "screening_fail_closed": True,
+            }
+        return {
+            "screened_payout": row.verdict == "PAY",
+            "screening_verdict": row.verdict,
+            "screening_id": row.id,
+            "screening_toxic_score": row.toxic_score,
+            "screening_traits": list(row.traits or []),
+            "screening_reasons": list(row.reasons or []),
+            "screening_fail_closed": bool(row.fail_closed),
         }
 
     def _stamp_fields(self) -> dict:
