@@ -996,7 +996,8 @@ def _cell(value: Any) -> str:
 
 
 def _marks(row: dict) -> str:
-    return (" (escalate)" if _flag(row, "escalate") else "") + (" [review]" if _flag(row, "review_flag") else "")
+    return ((" (escalate)" if _flag(row, "escalate") else "")
+            + (" [review]" if _flag(row, "review_flag") else ""))
 
 
 def render_issues_md(doc: dict) -> str:
@@ -1121,7 +1122,8 @@ def _norm_map(text: str) -> tuple[str, list[int]]:
     return "".join(out), idx
 
 
-def locate_targets(paragraphs: list[str], ops: list[dict]) -> tuple[dict[int, tuple[int, int, int]], list[str]]:
+def locate_targets(paragraphs: list[str],
+                   ops: list[dict]) -> tuple[dict[int, tuple[int, int, int]], list[str]]:
     """({op index: (paragraph, start, end)}, errors) for the ops' targets.
 
     A target must match exactly once in the whole contract and stay inside
