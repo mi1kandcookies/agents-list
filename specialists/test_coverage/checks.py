@@ -372,6 +372,7 @@ def targets_ranking_matches(workspace: Path, params: dict, *, run=None) -> dict:
     summary = T.summarize_coverage(T._read_text(workspace, params["coverage"]), "auto", params.get("include"))
     churn = T._churn_map(T._read_text(workspace, params["churn"])) if params.get("churn") else {}
     truth = {r["path"]: r for r in T.ranked_targets(summary, churn)}
+    joined, ambiguous = T.join_churn(summary["files"], churn)
     rows = list(csv.DictReader(io.StringIO(T._read_text(workspace, params["targets"]))))
     if len(rows) < int(params.get("min_rows", 1)):
         return _result(False, f"targets CSV has {len(rows)} rows")
@@ -400,7 +401,10 @@ def targets_ranking_matches(workspace: Path, params: dict, *, run=None) -> dict:
     skipped = [p for p, r in truth.items() if p not in listed and r["risk_score"] > prev + 1e-9]
     if skipped:
         problems.append(f"riskier files left off the list: {sorted(skipped)[:5]}")
-    return _result(not problems, "; ".join(problems[:10]) or f"{len(rows)} targets verified")
+    matched = sum(1 for c in joined.values() if c)
+    note = f"; {matched} of {len(joined)} files matched to churn" + (
+        f", ambiguous: {ambiguous[:5]}" if ambiguous else "")
+    return _result(not problems, "; ".join(problems[:10]) or f"{len(rows)} targets verified{note}")
 
 
 CHECK_DEFS: dict[str, Callable[..., dict[str, Any]]] = {

@@ -311,6 +311,25 @@ def test_rank_targets_orders_by_risk(tmp_path):
         T.rank_targets(tmp_path, coverage="cov.xml", churn="badchurn.csv")
 
 
+def test_churn_joins_coverage_paths_by_path_suffix(tmp_path):
+    """git names files from the repo root; JaCoCo, Go and LCOV do not."""
+    churn = {"src/main/java/com/example/orders/Pricing.java": 40, "route.go": 7, "sub/route.go": 3,
+             "src/billing/invoice.ts": 12, "a/util.py": 5, "b/util.py": 6, "lib/other.py": 2}
+    joined, ambiguous = T.join_churn(
+        ["com/example/orders/Pricing.java", "example.com/fleet/route.go", "example.com/fleet/sub/route.go",
+         "/home/ci/work/src/billing/invoice.ts", "util.py", "x/other.py", "new.py"], churn)
+    assert joined == {"com/example/orders/Pricing.java": 40, "example.com/fleet/route.go": 7,
+                      "example.com/fleet/sub/route.go": 3, "/home/ci/work/src/billing/invoice.ts": 12,
+                      "util.py": 0, "x/other.py": 0, "new.py": 0}
+    assert ambiguous == ["util.py"]          # a/util.py or b/util.py: neither is taken
+    write(tmp_path, "jacoco.xml", JACOCO)
+    write(tmp_path, "churn.csv", "path,commits\nsrc/main/java/com/example/orders/Pricing.java,40\n")
+    out = T.rank_targets(tmp_path, coverage="jacoco.xml", churn="churn.csv", out="t.csv")
+    assert out["targets"][0]["churn"] == 40 and out["churn_matched"] == 1
+    res = C.targets_ranking_matches(tmp_path, {"targets": "t.csv", "coverage": "jacoco.xml", "churn": "churn.csv"})
+    assert res["passed"] is True and "1 of 1 files matched to churn" in res["details"]
+
+
 def test_git_churn_counts_commits(tmp_path):
     (tmp_path / "repo").mkdir()
 

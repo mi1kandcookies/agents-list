@@ -1019,12 +1019,51 @@ def _churn_map(text: str) -> dict[str, int]:
     return out
 
 
+def join_churn(paths: Iterable[str], churn: dict[str, int]) -> tuple[dict[str, int], list[str]]:
+    """Commits per coverage path, and the paths whose match is ambiguous.
+
+    Coverage tools name files differently from git: JaCoCo relative to the
+    package root, Go by module import path, LCOV often absolutely. A path
+    takes the churn of the git path equal to it, else of the one it shares
+    the longest whole-segment suffix with (one path ending the other); two
+    equally good candidates match neither. No candidate means no commits in
+    the window (churn 0)."""
+    by_name: dict[str, list[str]] = {}
+    for g in churn:
+        by_name.setdefault(g.rsplit("/", 1)[-1], []).append(g)
+    out: dict[str, int] = {}
+    ambiguous: list[str] = []
+    for p in paths:
+        if p in churn:
+            out[p] = churn[p]
+            continue
+        segs = p.split("/")
+        best, best_len, tie = None, 0, False
+        for g in by_name.get(segs[-1], []):
+            gsegs = g.split("/")
+            n = min(len(segs), len(gsegs))
+            if segs[-n:] != gsegs[-n:]:
+                continue   # neither path ends the other
+            if n > best_len:
+                best, best_len, tie = g, n, False
+            elif n == best_len:
+                tie = True
+        if best is not None and not tie:
+            out[p] = churn[best]
+        else:
+            out[p] = 0
+            if tie:
+                ambiguous.append(p)
+    return out, ambiguous
+
+
 def ranked_targets(summary: dict, churn: dict[str, int], top_n: int | None = None) -> list[dict]:
     rows = []
+    joined, _ = join_churn(summary["files"], churn)
     for path, rec in summary["files"].items():
         if not rec["lines_total"]:
             continue
-        c = churn.get(path, 0)
+        c = joined[path]
         rows.append({"path": path, "lines_total": rec["lines_total"], "line_pct": rec["line_pct"],
                      "branch_pct": rec["branch_pct"], "churn": c,
                      "risk_score": risk_score(rec["line_pct"], rec["lines_total"], c),
@@ -1046,6 +1085,7 @@ def rank_targets(workspace: Path, *, fetch=None, run=None, resolve_path=None, co
     summary = summarize_coverage(_read_text(workspace, coverage, resolve_path), "auto", include)
     churn_map = _churn_map(_read_text(workspace, churn, resolve_path)) if churn else {}
     rows = ranked_targets(summary, churn_map, top_n)
+    joined, ambiguous = join_churn(summary["files"], churn_map)
     if out:
         target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1055,7 +1095,8 @@ def rank_targets(workspace: Path, *, fetch=None, run=None, resolve_path=None, co
         for row in rows:
             writer.writerow({k: "" if row[k] is None else row[k] for k in TARGET_COLUMNS})
         target.write_text(buf.getvalue(), encoding="utf-8")
-    return {"targets": rows, "written": out}
+    return {"targets": rows, "written": out,
+            "churn_matched": sum(1 for c in joined.values() if c), "churn_ambiguous": ambiguous}
 
 
 def git_churn(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
@@ -1190,8 +1231,10 @@ TOOL_DEFS: list[dict[str, Any]] = [
          "path": _PATH, "scope": _GLOBS, "out": _PATH}}},
     {"name": "rank_targets", "risk": "write", "function": rank_targets,
      "description": "Risk-rank source files from a coverage report and an optional path,commits "
-                    "churn CSV (score = uncovered share x log2(2+churn) x log2(2+lines)); "
-                    "`out` writes the targets CSV with a proposed coverage floor per file.",
+                    "churn CSV (score = uncovered share x log2(2+churn) x log2(2+lines)); coverage "
+                    "paths are matched to git paths by their longest common path suffix, and "
+                    "ambiguous matches are listed. `out` writes the targets CSV with a proposed "
+                    "coverage floor per file.",
      "input_schema": {"type": "object", "required": ["coverage"], "properties": {
          "coverage": _PATH, "churn": _PATH, "include": _GLOBS,
          "top_n": {"type": "integer", "minimum": 1}, "out": _PATH}}},

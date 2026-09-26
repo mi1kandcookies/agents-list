@@ -30,9 +30,13 @@
 `risk = (1 - line_pct/100) x log2(2 + commits) x log2(2 + lines)`
 
 Files that are large, change often and are mostly untested rank first. A
-fully covered file scores 0. The proposed floor per file defaults to the
-current line coverage + 20pp, rounded up to 5, capped at 90; adjust it in
-the plan with a reason, never silently.
+fully covered file scores 0. Coverage tools name files differently from
+git (JaCoCo by package, Go by import path, LCOV often absolutely), so each
+report path takes the churn of the git path it shares the longest path
+suffix with; `rank_targets` lists ambiguous matches, which the plan should
+resolve. The proposed floor per file defaults to the current line coverage
++ 20pp, rounded up to 5, capped at 90; adjust it in the plan with a reason,
+never silently.
 
 ## Default positions (unless the SOW says otherwise)
 
