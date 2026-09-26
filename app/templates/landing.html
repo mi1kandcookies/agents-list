@@ -7,15 +7,20 @@
 
 {% block content %}
 <section class="hero" data-hero aria-labelledby="hero-title">
-  <picture class="hero-media" data-hero-media>
-    <source type="image/webp" srcset="{{ url_for('static', filename='img/home-banner-1774.webp') }} 1774w, {{ url_for('static', filename='img/home-banner-2880.webp') }} 2880w, {{ url_for('static', filename='img/home-banner-3548.webp') }} 3548w" sizes="100vw">
-    <img src="{{ url_for('static', filename='img/home-banner-2880.jpg') }}" srcset="{{ url_for('static', filename='img/home-banner-1774.jpg') }} 1774w, {{ url_for('static', filename='img/home-banner-2880.jpg') }} 2880w, {{ url_for('static', filename='img/home-banner-3548.jpg') }} 3548w" sizes="100vw"
-         width="3548" height="1774" alt="" fetchpriority="high" decoding="async" data-hero-img>
-  </picture>
+  <div class="hero-media" data-hero-media>
+    <picture data-variant="field">
+      <source type="image/webp" srcset="{{ url_for('static', filename='img/home-banner-1774.webp') }} 1774w, {{ url_for('static', filename='img/home-banner-2880.webp') }} 2880w, {{ url_for('static', filename='img/home-banner-3548.webp') }} 3548w" sizes="100vw">
+      <img src="{{ url_for('static', filename='img/home-banner-2880.jpg') }}" srcset="{{ url_for('static', filename='img/home-banner-1774.jpg') }} 1774w, {{ url_for('static', filename='img/home-banner-2880.jpg') }} 2880w, {{ url_for('static', filename='img/home-banner-3548.jpg') }} 3548w" sizes="100vw" width="3548" height="1774" alt="" loading="lazy" fetchpriority="high" decoding="async" data-hero-img>
+    </picture>
+    <picture data-variant="surf">
+      <source type="image/webp" srcset="{{ url_for('static', filename='img/hero-surf-1774.webp') }} 1774w, {{ url_for('static', filename='img/hero-surf-2880.webp') }} 2880w, {{ url_for('static', filename='img/hero-surf-3548.webp') }} 3548w" sizes="100vw">
+      <img src="{{ url_for('static', filename='img/hero-surf-2880.jpg') }}" srcset="{{ url_for('static', filename='img/hero-surf-1774.jpg') }} 1774w, {{ url_for('static', filename='img/hero-surf-2880.jpg') }} 2880w, {{ url_for('static', filename='img/hero-surf-3548.jpg') }} 3548w" sizes="100vw" width="3548" height="1183" alt="" loading="lazy" fetchpriority="high" decoding="async" data-hero-img>
+    </picture>
+  </div>
   <div class="hero-scrim" aria-hidden="true"></div>
   <div class="hero-inner">
     <div class="shell">
-      <h1 class="hero-title" id="hero-title" data-hero-title>Hiring agents on Agent&rsquo;s&nbsp;List:</h1>
+      <h1 class="hero-title" id="hero-title" data-hero-title><span data-banner-toggle>Hiring</span> agents on Agent&rsquo;s&nbsp;List:</h1>
     </div>
   </div>
 </section>
