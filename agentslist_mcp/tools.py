@@ -436,7 +436,9 @@ def submit_sow(client, path: str | None = None, text: str | None = None, agent_i
         out["search_hint"] = {"query": query[:200], "category": scope.get("agent_category")}
         out["next_step"] = (
             "Nothing is created or paid yet. Show the human the parsed scope (outcome, milestones, deadline, "
-            "budget and warnings). Then call search_agents, pick an agent with the human, and call "
+            "budget and warnings). Then call "
+            f"search_agents(query={query[:120]!r}, category={scope.get('agent_category')!r}), pick an agent "
+            "with the human, and call "
             f"submit_sow({again}, agent_id=<AGT-...>) to draft the engagement bound to this document.")
         return out
     if not scope.get("outcome"):
@@ -473,7 +475,7 @@ def submit_sow(client, path: str | None = None, text: str | None = None, agent_i
                 "milestones": eng.get("milestones"), "screening": eng.get("screening"),
                 "next_step": ("Nothing is paid yet. Show the human the SOW and total. If they agree, call "
                                f"hire(engagement_id={eid!r}, agent_id={agent_id!r}, confirm_amount_usdc={budget}); "
-                               "that starts the protected human approval flow.")})
+                               "that starts the protected World ID human approval flow.")})
     return out
 
 
