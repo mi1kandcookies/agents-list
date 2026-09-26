@@ -16,6 +16,10 @@ instance/
 
 # Local tooling
 .worktrees/
+.foundry-cache/
+cache/
+contracts-out/
+broadcast/
 .pytest_cache/
 
 # Names sidecar state (deployed addresses, commit secret)
