@@ -1,0 +1,17 @@
+{
+  "name": "m2-metrics-tamarind",
+  "milestone": "m2-metrics",
+  "fixture": "evals/fixtures/tamarind-loop",
+  "brief": {
+    "engagement_id": "eval-da-m2",
+    "specialist": "data-analyst",
+    "objective": "Define paid revenue and paying customers per month for Tamarind Loop Software (fictional) and reconcile them to the finance-reported totals.",
+    "intake": {
+      "data_files": "inputs/customers.csv and inputs/invoices.csv",
+      "kpis": "paid_revenue_YYYY_MM and paying_customers_YYYY_MM for July and August 2026 (owner: finance lead)",
+      "reference_totals": "inputs/reference_totals.csv",
+      "business_rules": "is_test = 1 marks QA and demo tenants; only status = paid is revenue"
+    }
+  },
+  "notes": "A naive SUM over invoices double-counts the duplicated export row and includes test tenants, so it misses the August reference by far more than 0.5%. Passing requires de-duplication plus the test-account exclusion, stated as business rules in definitions.md."
+}

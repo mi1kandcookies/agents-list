@@ -454,6 +454,64 @@ def test_metrics_reconcile_needs_reconciliation_file(ws):
     assert checks.metrics_reconcile(ws, {"reconciliation": ""})["passed"] is True
 
 
+# --- manifest -----------------------------------------------------------------------
+
+KIT_TOOLS = {"read_document", "read_file", "write_file", "edit_file", "list_files", "search_files",
+             "record_source", "record_claim", "ask_client", "post_progress", "submit_milestone",
+             "run_command", "http_fetch", "web_search"}
+KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+              "json_valid", "csv_columns", "command_succeeds", "ledger_verified", "citations_resolve",
+              "disclaimer_present", "rubric_grader", "human_signoff"}
+
+
+def _manifest() -> dict:
+    return yaml.safe_load((PKG / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_manifest_parses_and_references_known_tools_and_checks():
+    m = _manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "data-analyst" and m["profile"] == "data"
+    domain_tools = {d["name"] for d in tools.TOOL_DEFS}
+    assert set(m["tools"]) <= KIT_TOOLS | domain_tools
+    assert domain_tools <= set(m["tools"])
+    used_checks = {a["check"] for ms in m["milestones"] for a in ms["acceptance"]}
+    assert used_checks <= KIT_CHECKS | set(checks.CHECK_DEFS)
+    assert set(checks.CHECK_DEFS) <= used_checks
+
+
+def test_manifest_milestones_and_files():
+    m = _manifest()
+    assert [ms["id"] for ms in m["milestones"]] == ["m1-profile", "m2-metrics", "m3-analysis"]
+    for ms in m["milestones"]:
+        assert ms["deliverables"]
+        assert all(d.startswith(f"deliverables/{ms['id']}/") for d in ms["deliverables"])
+        lo, hi = ms["hours"]
+        assert 0 < lo <= hi
+        for a in ms["acceptance"]:
+            assert a.get("kind", "automated") in ("automated", "rubric", "human")
+            if a["check"] == "rubric_grader":
+                rubric = yaml.safe_load((PKG / a["params"]["rubric"]).read_text(encoding="utf-8"))
+                assert {"name", "criteria", "threshold"} <= set(rubric)
+                assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9
+    for rel in [m["prompts"]["system"], *m["prompts"]["include"]]:
+        assert (PKG / rel).is_file(), rel
+    assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
+    assert m["human_gate"]["required"] is False
+    assert m["listing"]["pricing"]["currency"] == "USDC"
+    assert m["models"]["primary"] == "anthropic:claude-opus-5"
+    assert any(i["required"] for i in m["intake"])
+
+
+def test_eval_cases_reference_real_milestones():
+    ids = {ms["id"] for ms in _manifest()["milestones"]}
+    cases = sorted((PKG / "evals" / "cases").glob("*.json"))
+    assert cases
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert {"name", "brief", "milestone", "notes"} <= set(case)
+        assert case["milestone"] in ids
+
+
 def test_check_defs_are_callable():
     assert set(checks.CHECK_DEFS) == {"profile_matches_source", "queries_reexecute",
                                       "figures_match_queries", "metrics_valid", "metrics_reconcile"}

@@ -1,0 +1,17 @@
+{
+  "name": "m1-profile-tamarind",
+  "milestone": "m1-profile",
+  "fixture": "evals/fixtures/tamarind-loop",
+  "brief": {
+    "engagement_id": "eval-da-m1",
+    "specialist": "data-analyst",
+    "objective": "Inventory and profile the billing exports of Tamarind Loop Software (fictional) and list data-quality issues before KPIs are defined.",
+    "intake": {
+      "data_files": "inputs/customers.csv and inputs/invoices.csv from the billing system",
+      "business_questions": "See inputs/questions.md",
+      "kpis": "Paid revenue per month, paying customers per month (owner: finance lead)",
+      "business_rules": "is_test = 1 marks QA and demo tenants; only status = paid is revenue"
+    }
+  },
+  "notes": "A good profile finds the exact duplicate August invoice row, the two test tenants, the soft-deleted customer and the customer with a missing region, and quantifies each. profile_matches_source must pass without hand edits."
+}

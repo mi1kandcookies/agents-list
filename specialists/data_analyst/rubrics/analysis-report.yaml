@@ -1,0 +1,21 @@
+name: Analysis report
+threshold: 0.75
+criteria:
+  - id: answers
+    description: Every business question from the brief is answered directly, with the answer up front.
+    weight: 0.3
+  - id: evidence
+    description: Every number carries an [F:id] marker and the argument follows from those figures.
+    weight: 0.25
+  - id: method
+    description: Definitions, exclusions and data used are stated precisely enough to reproduce the work.
+    weight: 0.15
+  - id: caveats
+    description: Data-quality issues that affect the answers and anything not checked are disclosed.
+    weight: 0.15
+  - id: actionability
+    description: Findings point to concrete next steps or decisions for the business owner.
+    weight: 0.1
+  - id: clarity
+    description: Concise, plain language; no jargon without explanation, no filler.
+    weight: 0.05
