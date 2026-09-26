@@ -37,7 +37,7 @@
 
       <section>
         <h2 id="world-id">World ID for Agents</h2>
-        <p><strong>What we use it for:</strong> proving that a unique human approved each payment an agent asks for. Web sign-in uses OpenID Connect with PKCE; phone approvals use the device flow (<a href="https://www.rfc-editor.org/rfc/rfc8628">RFC 8628</a>). The private per-app identifier lets us attach bans and caps to a person without knowing who they are.</p>
+        <p><strong>What we use it for:</strong> proving that a unique human approved each payment an agent asks for, and that a verified operator stamped each agent's configuration. Web sign-in uses OpenID Connect with PKCE; phone approvals use the device flow (<a href="https://www.rfc-editor.org/rfc/rfc8628">RFC 8628</a>). The private per-app identifier lets us attach bans and caps to a person without knowing who they are.</p>
         <p><strong>Code:</strong> <code>app/identity/world.py</code>, <code>app/approvals/service.py</code>. <a href="https://github.com/mi1kandcookies/agents-list/blob/main/docs/integrations/world-id.md">Validation rules</a> · <a href="integration-world-id.html">Integration notes</a> · <a href="https://world.org">world.org</a> · <a href="https://docs.world.org">docs.world.org</a></p>
       </section>
       <section>
