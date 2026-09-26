@@ -165,9 +165,8 @@ class CoverageSpecialist(Specialist):
 
     def _matrix_command(self, ctx: ToolContext, runs_dir: str) -> dict[str, Any]:
         """The command run_test_matrix recorded in runs_dir/matrix.json, checked."""
-        if ctx.path(runs_dir, write=True) != self._lexical(ctx, runs_dir):
-            raise AgentKitError(f"{runs_dir} is reached through a link")
-        data = json.loads(ctx.path(f"{runs_dir}/matrix.json").read_text(encoding="utf-8"))
+        self._own_path(ctx, runs_dir)
+        data = json.loads(self._own_path(ctx, f"{runs_dir}/matrix.json").read_text(encoding="utf-8"))
         cmd = data.get("command") if isinstance(data, dict) else None
         if not isinstance(cmd, dict):
             raise AgentKitError("matrix.json records no command (run_test_matrix writes one)")
@@ -240,7 +239,7 @@ class CoverageSpecialist(Specialist):
     def _own_path(self, ctx: ToolContext, rel: str) -> Path:
         """A deliverable path the harness writes: inside the policy's rules
         and reached without a link (the model could point one at a file the
-        harness would then overwrite)."""
+        harness would then overwrite, such as a test in repo/)."""
         target = ctx.path(rel, write=True)
         if target != self._lexical(ctx, rel):
             raise AgentKitError(f"{rel} is reached through a link")

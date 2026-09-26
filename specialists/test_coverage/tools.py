@@ -1208,7 +1208,7 @@ TOOL_DEFS: list[dict[str, Any]] = [
                     "flag every path outside the test-path globs (renames count both sides).",
      "input_schema": {"type": "object", "required": ["patch"], "properties": {
          "patch": _PATH, "test_globs": _GLOBS, "allow": _GLOBS}}},
-    {"name": "export_patch", "risk": "write", "function": export_patch,
+    {"name": "export_patch", "risk": "exec", "function": export_patch,
      "description": "Preview the patch the harness will deliver: every change under repo/ since "
                     "this milestone started (new files included, committed or not; ignored files "
                     "and tool output left out), written to a deliverable path, with its scope.",

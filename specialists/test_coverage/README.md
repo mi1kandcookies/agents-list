@@ -43,14 +43,15 @@ Domain tools (`tools.py`, deterministic):
 | tool | does |
 |---|---|
 | `parse_coverage` | Cobertura / JaCoCo / LCOV / Go profile -> per-file line and branch counts, missing lines |
-| `coverage_delta` | before/after deltas over a scope, with measured line totals |
+| `coverage_delta` | before/after deltas over a scope with test code left out, measured line totals, files measured on one side only |
 | `run_test_matrix` | runs the suite N times via the kit runner, JUnit per run, flake census |
 | `parse_test_results` | census from existing JUnit files |
-| `diff_scope` / `export_patch` | patch files, sizes and anything outside test paths |
+| `diff_scope` | patch files, sizes and anything outside test paths |
+| `export_patch` | preview of the patch the harness will deliver, from its private store |
 | `find_assertion_free_tests` | tests with no real assertion (Python AST; JS/TS, Java/Kotlin, Go heuristics) |
 | `find_weakened_tests` | deleted test files, changed or removed tests and assertions, skip/xfail/only markers, pytest hooks that drop tests or rewrite results |
 | `parse_mutation_report` | mutation score and surviving mutants (mutation-testing-elements JSON) |
-| `git_churn` / `rank_targets` | churn x size x uncovered-share risk ranking |
+| `git_churn` / `rank_targets` | churn x size x uncovered-share risk ranking (report paths matched to git paths by path suffix) |
 | `scan_patch_secrets` | secret-looking values in added lines (reports location, never the value) |
 
 Domain tools resolve every path through the kit's policy gate
@@ -141,6 +142,10 @@ writing. A pinned behavior is not a claim that the behavior is correct.
 - New files that a `.gitignore` added during the engagement covers are left
   out of the patch like any ignored file, so the customer would not receive
   them (production files the base tracks are always compared).
+- The kit's `edit_file` writes LF line endings, so editing an existing CRLF
+  test file turns into a whole-file change in the patch, which
+  `no_weakened_tests` reports as changed tests. New tests belong in new
+  files anyway.
 - An allowlisted interpreter or git can also touch files outside the tools'
   rules, so this specialist must run in an OS sandbox (see "Containment" in
   docs/decisions/0002-specialist-kit.md). The harness's own git commands

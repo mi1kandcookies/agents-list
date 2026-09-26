@@ -225,6 +225,9 @@ def _matrix_problems(workspace: Path, runs_glob: str, runs: list[dict[str, str]]
     by_name = dict(zip(names, runs))
     problems = []
     for entry in log:
+        if not isinstance(entry, dict):
+            problems.append("matrix.json has a malformed log entry")
+            continue
         n, junit, code = entry.get("run"), entry.get("junit"), entry.get("exit_code")
         if entry.get("timed_out"):
             problems.append(f"run {n} timed out")
@@ -232,7 +235,7 @@ def _matrix_problems(workspace: Path, runs_glob: str, runs: list[dict[str, str]]
             problems.append(f"run {n} wrote no JUnit file")
         elif code not in (0, None) and not any(o in ("failed", "error") for o in by_name[junit].values()):
             problems.append(f"run {n} exited {code} without a failing test")
-    extra = sorted(set(names) - {e.get("junit") for e in log})
+    extra = sorted(set(names) - {e.get("junit") for e in log if isinstance(e, dict)})
     if extra:
         problems.append(f"run files not in matrix.json: {extra[:5]}")
     return problems
@@ -272,7 +275,8 @@ def tests_stable(workspace: Path, params: dict, *, run=None) -> dict:
 
     suites = (RepoStore(workspace).state().get("suites") or {})
     earlier_ids, known_bad = set(), set()
-    for mid in params.get("baseline") or []:
+    baseline = params.get("baseline") or []
+    for mid in [baseline] if isinstance(baseline, str) else baseline:
         rec = suites.get(mid)
         if not isinstance(rec, dict):
             notes.append(f"no recorded runs from {mid} to compare")

@@ -142,3 +142,29 @@ def test_export_patch_previews_the_active_base(ws):
     assert "+++ b/tests/test_new.py" in (ws / "deliverables/m2/repo.patch").read_text(encoding="utf-8")
     with pytest.raises(Exception):   # the kit's path rules still apply to `out`
         T.export_patch(ws, out=".agentkit/test-coverage/state.json")
+
+
+def test_finalize_never_writes_through_a_linked_deliverable(ws):
+    """A repo.patch the model turned into a link to a production file is
+    removed (the link), not followed: the harness would overwrite the file."""
+    from agentkit.events import MemorySink
+    from agentkit.loop import RunOutcome
+    from agentkit.registry import load_specialist
+    from agentkit.tools import ToolContext
+
+    spec = load_specialist("test-coverage")
+    m = spec.manifest.milestone("m2-characterization")
+    events = MemorySink()
+    ctx = ToolContext(workspace=ws, policy=spec.policy(), events=events)
+    spec.prepare(ctx, m)
+    target = ws / "deliverables/m2-characterization/repo.patch"
+    try:
+        target.symlink_to(ws / "repo/pkg/calc.py")
+    except OSError:
+        pytest.skip("symlinks are not available here")
+    before = (ws / "repo/pkg/calc.py").read_bytes()
+    spec.finalize(ctx, m, RunOutcome(status="submitted"))
+    assert (ws / "repo/pkg/calc.py").read_bytes() == before
+    assert not target.exists() and not target.is_symlink()
+    rebuilt = events.of_type("patch_rebuilt")[0].data
+    assert rebuilt["ok"] is False and "link" in rebuilt["error"]
