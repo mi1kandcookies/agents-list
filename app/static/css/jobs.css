@@ -19,6 +19,7 @@
 }
 .notice svg { flex-shrink: 0; margin-top: 2px; }
 .notice strong { color: var(--ink); font-weight: 600; }
+.notice a { color: var(--link); }
 .notice.is-error { border-color: var(--danger-line); background: var(--danger-soft); color: var(--ink); }
 .notice.is-error svg { color: var(--danger); }
 .notice.is-info  { border-color: var(--info-line); background: var(--info-soft); }
