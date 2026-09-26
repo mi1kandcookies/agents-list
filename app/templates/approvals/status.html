@@ -1,23 +1,9 @@
 {% extends "base.html" %}
+{% from "components/verdict_card.html" import verdict_card %}
 {% block title %}{{ kind_label }} approval{% endblock %}
 {% block head %}
-<style>
-  .apr { max-width: 640px; margin: 0 auto; padding: 48px 20px 80px; }
-  .apr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
-  .apr-head h1 { font-size: 1.375rem; margin: 0; }
-  .apr-pill { font-size: 0.6875rem; padding: 4px 10px; }
-  .apr-summary { width: 100%; border-collapse: collapse; margin: 0 0 16px; }
-  .apr-summary th, .apr-summary td { text-align: left; padding: 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
-  .apr-summary th { color: var(--ink-2); font-weight: 500; width: 38%; padding-right: 12px; }
-  .apr-summary td { word-break: break-all; }
-  .apr-hash { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-3); word-break: break-all; margin-bottom: 20px; }
-  .apr-panel { margin-top: 20px; }
-  .apr-code { font-family: var(--font-mono); font-size: 2rem; letter-spacing: 0.12em; margin: 8px 0 16px; }
-  .apr-link { display: block; font-size: 1rem; word-break: break-all; margin-bottom: 16px; }
-  .apr-muted { color: var(--ink-2); font-size: 0.875rem; }
-  .apr-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
-  .apr-terminal h2 { font-size: 1.125rem; margin: 0 0 8px; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/screening.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/approvals.css') }}?v=20260926b">
 {% endblock %}
 {% block content %}
 <div class="apr" id="approval"
@@ -28,30 +14,65 @@
      data-interval="{{ approval.poll_interval or 3 }}"
      data-expires-at="{{ expires_at }}">
 
-  <div class="apr-head">
-    <h1>{{ kind_label }}</h1>
-    <span class="badge apr-pill {{ pill[1] }}" id="approval-pill">{{ pill[0] }}</span>
-  </div>
+  <div class="apr-card">
+    <header class="apr-head">
+      <div>
+        <div class="apr-eyebrow">Approval request · <span class="mono">{{ approval.id }}</span></div>
+        <h1>{{ kind_label }}</h1>
+      </div>
+      <span class="badge apr-pill {{ pill[1] }}" id="approval-pill">{{ pill[0] }}</span>
+    </header>
 
-  <div class="card">
-    <p class="apr-muted" style="margin-top:0;">You are approving exactly this action:</p>
-    <table class="apr-summary">
-      {% for label, value in summary %}
-      <tr><th scope="row">{{ label }}</th><td>{{ value }}</td></tr>
-      {% endfor %}
-    </table>
-    <div class="apr-hash">Action hash {{ approval.action_hash }}</div>
+    {% if amount_micro is not none or agent %}
+    <section class="apr-hero" aria-label="Payment">
+      {% if amount_micro is not none %}
+      <div class="apr-amount mono">{{ amount_micro|usdc }}</div>
+      {% endif %}
+      {% if agent %}
+      <div class="apr-who">to <strong>{{ agent.name }}</strong> <span class="mono">{{ agent.public_id }}</span></div>
+      {% endif %}
+    </section>
+    {% endif %}
 
-    {% if terminal or approval.state == 'approved' %}
-      {% include "approvals/_terminal.html" %}
+    {# Outcome first once it is decided; otherwise the terms come before the sign-in step. #}
+    {% set decided = terminal or approval.state == 'approved' %}
+    {% if decided %}{% include "approvals/_terminal.html" %}{% endif %}
+
+    <section class="apr-section">
+      <h2 class="apr-label">{{ 'What was requested' if decided else 'You are approving exactly this' }}</h2>
+      <dl class="apr-summary">
+        {% for label, value in summary %}
+        <div><dt>{{ label }}</dt><dd class="mono">{{ value }}</dd></div>
+        {% endfor %}
+      </dl>
+      <div class="apr-hash">
+        <span>Action hash</span>
+        <span class="mono">{{ approval.action_hash }}</span>
+        <button type="button" class="copy-btn" data-copy="{{ approval.action_hash }}" aria-label="Copy action hash"><span data-copy-label>Copy</span></button>
+      </div>
+    </section>
+
+    {% if screening %}
+    <section class="apr-section">
+      <h2 class="apr-label">Risk screening</h2>
+      {{ verdict_card(screening) }}
+    </section>
+    {% endif %}
+
+    {% if decided %}
     {% elif approval.flow == 'device' %}
       {% include "approvals/_pending_device.html" %}
     {% else %}
       {% include "approvals/_pending_web.html" %}
     {% endif %}
   </div>
+
+  {% if job_url and not terminal %}
+  <p class="apr-back"><a href="{{ job_url }}">← Back to the job</a></p>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/copy.js') }}"></script>
 <script src="{{ url_for('static', filename='js/approval-poll.js') }}"></script>
 {% endblock %}

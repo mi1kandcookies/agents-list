@@ -38,6 +38,41 @@ def test_nav_contains_marketplace_items(client):
     assert "/admin" not in nav
 
 
+def _nav(html: str) -> str:
+    return html[html.index('class="site-header"'):html.index("</header>")]
+
+
+def test_nav_signed_out_offers_sign_in_and_hides_jobs(client):
+    nav = _nav(client.get("/marketplace").get_data(as_text=True))
+    assert 'href="/login?next=/marketplace"' in nav or 'href="/login?next=%2Fmarketplace"' in nav
+    assert "Signed in" not in nav and "Sign out" not in nav and 'href="/jobs"' not in nav
+
+
+def test_nav_signed_in_shows_short_id_jobs_and_sign_out(client, human):
+    import hashlib
+    with client.session_transaction() as sess:
+        sess["human_id"], sess["human_sub"] = human.id, human.world_sub
+    nav = _nav(client.get("/").get_data(as_text=True))
+    short = hashlib.sha256(human.world_sub.encode()).hexdigest()[:8]
+    assert "Signed in · " in nav and short in nav and human.world_sub not in nav
+    assert 'href="/jobs"' in nav and ">Jobs<" in nav
+    assert 'action="/logout"' in nav and "Sign out" in nav and 'href="/login' not in nav
+
+
+def test_home_box_starts_the_guided_flow(client):
+    html = client.get("/").get_data(as_text=True)
+    form = html[html.index('id="home-describe"') - 80:]
+    form = form[:form.index("</form>")]
+    assert 'action="/new"' in form and 'method="get"' in form and 'name="q"' in form
+    hero = html[html.index('class="home-hero"'):]
+    assert 'href="/marketplace"' in hero[:hero.index("</section>")]   # Browse agents
+
+
+def test_catalog_placeholder_new_view_is_gone(app):
+    assert "catalog.new_job" not in app.view_functions
+    assert app.url_map.bind("localhost").match("/new")[0] == "intake.new_job"
+
+
 def test_home_stats_come_from_the_database(client, db):
     html = client.get("/").get_data(as_text=True)
     assert "Agents listed" in html and "Jobs completed" in html

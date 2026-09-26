@@ -1,111 +1,274 @@
 {% extends "base.html" %}
-{% block title %}Job {{ job.engagement_id }}{% endblock %}
+{% from "components/status_pill.html" import status_pill %}
+{% from "components/agent_card.html" import monogram, operator_label, trust_badges %}
+{% block title %}{{ job.outcome|truncate(60) }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926b">{% endblock %}
+
+{% macro check_icon() -%}
+<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+{%- endmacro %}
 
 {% block content %}
-<div class="container-sm" style="padding-top:48px; padding-bottom:80px;">
-  <div style="margin-bottom:24px;">
-    <div class="hero-eyebrow" style="margin-bottom:12px;"><a href="/jobs">Jobs</a> / {{ job.engagement_id }}</div>
-    <h1 style="font-size:clamp(1.5rem,3vw,2rem); letter-spacing:-.025em; margin-bottom:10px;">{{ job.outcome|truncate(140) }}</h1>
-    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:var(--text-2); font-size:.875rem;">
-      <span class="badge badge-pending" data-status="{{ job.status }}">{{ job.status|replace('_', ' ') }}</span>
-      <span>{{ job.agent_name }} <span style="font-family:var(--font-mono); color:var(--text-3);">{{ job.agent_id }}</span></span>
-      <span style="font-family:var(--font-mono);">{{ job.total_micro|usdc }}</span>
-      {% if job.escrow_mode == 'simulated' %}<span class="badge badge-warning">simulated escrow</span>{% endif %}
+{% set agent = view.agent %}
+{% set active = job.status in ('funded', 'in_progress') %}
+<div class="jobs-page" data-job="{{ job.engagement_id }}" data-status="{{ job.status }}">
+
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="{{ url_for('engagements.jobs_list') }}">Jobs</a><span aria-hidden="true">/</span>
+    <span class="mono">{{ job.engagement_id }}</span>
+    {% if job.parent_engagement_id %}<span aria-hidden="true">·</span><span>Sub-hire of <a class="mono" href="/jobs/{{ job.parent_engagement_id }}">{{ job.parent_engagement_id }}</a></span>{% endif %}
+  </nav>
+
+  <header class="job-head">
+    <h1>{{ job.outcome|truncate(140) }}</h1>
+    <div class="job-meta">
+      {{ status_pill(job.status) }}
+      {% if agent %}
+      <span>Agent <a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ job.agent_name }}</a> <span class="mono">{{ job.agent_id }}</span></span>
+      {% endif %}
+      {% if job.created_at %}<span>Opened <span class="mono">{{ job.created_at|utc('%Y-%m-%d') }}</span></span>{% endif %}
+      {% if job.escrow_mode == 'simulated' %}<span class="sim" title="Escrow runs in simulation on this server; no funds move on chain.">simulated escrow</span>{% endif %}
     </div>
-  </div>
+  </header>
+
+  <nav class="job-tabs" aria-label="Job sections">
+    <a href="/jobs/{{ job.engagement_id }}" aria-current="page">Overview</a>
+    <a href="{{ view.chain_page }}">Delegation chain</a>
+    {% if view.names_root %}
+    <a href="{{ url_for('names.names_page', root=view.names_root) }}">Names</a>
+    {% else %}
+    <span class="is-off" title="No name has been issued for this job yet">Names</span>
+    {% endif %}
+  </nav>
 
   {% if error %}
-  <div class="card card-sm" role="alert" style="border-color:var(--red-border); background:var(--red-dim); color:var(--red); margin-bottom:20px;">{{ error }}</div>
+  <div class="notice is-error" role="alert">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div><strong>That didn't go through.</strong> {{ error }}</div>
+  </div>
+  {% endif %}
+  {% if job.status == 'refused' %}
+  <div class="notice is-error" role="status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+    <div><strong>Risk screening refused this agent's payout address.</strong> No money moved. Pick another agent to continue.</div>
+  </div>
   {% endif %}
 
-  <section class="card" style="margin-bottom:20px;">
-    <h2 style="font-size:1rem; margin-bottom:12px;">Statement of work</h2>
-    <p style="color:var(--text-2); margin-bottom:10px; white-space:pre-wrap;">{{ job.outcome }}</p>
-    <div class="text-sm" style="font-family:var(--font-mono); color:var(--text-3); word-break:break-all;">sow_hash {{ job.sow_hash }}</div>
-    {% if job.deadline_at %}<div class="text-sm" style="color:var(--text-3); margin-top:6px;">Deadline: <span data-ts="{{ job.deadline_at }}">{{ job.deadline_at }}</span></div>{% endif %}
-    {% if job.status in ('scoped', 'awaiting_approval') and not job.parent_engagement_id %}
-    <form method="post" action="/jobs/{{ job.engagement_id }}/hire" style="margin-top:16px;">
-      <button type="submit" class="btn btn-gradient">Approve &amp; fund {{ job.total_micro|usdc }}</button>
-      <span class="form-hint" style="margin-left:10px;">Funds escrow after you verify with World ID.</span>
-    </form>
-    {% endif %}
-    {% if job.parent_engagement_id %}
-    <div class="text-sm" style="margin-top:12px;">Sub-hire of <a href="/jobs/{{ job.parent_engagement_id }}" style="font-family:var(--font-mono);">{{ job.parent_engagement_id }}</a> (depth {{ job.depth }})</div>
-    {% endif %}
-    {% if job.mandate %}
-    <div class="text-sm" style="margin-top:12px;">Agent mandate: <a href="{{ job.mandate.url }}" style="font-family:var(--font-mono);">{{ job.mandate.mandate_id }}</a> · <a href="{{ job.chain_page_url }}">custody chain</a></div>
-    {% elif job.parent_engagement_id %}
-    <div class="text-sm" style="margin-top:6px;"><a href="{{ job.chain_page_url }}">custody chain</a></div>
-    {% endif %}
+  {# ── Money summary ─────────────────────────────────────────────────── #}
+  <section class="job-summary" aria-label="Payment progress">
+    <div>
+      <div class="sum-label">Released of total</div>
+      <div class="sum-figure">{{ view.released_micro|usdc }}<small>of {{ job.total_micro|usdc }}</small></div>
+      <div class="money-bar" role="img" aria-label="{{ view.released_micro|usdc }} released, {{ view.in_escrow_micro|usdc }} in escrow, of {{ job.total_micro|usdc }}">
+        <span class="is-released" style="width:{{ view.released_pct }}%"></span>
+        <span class="is-escrow" style="width:{{ view.escrow_pct }}%"></span>
+      </div>
+      <div class="money-legend">
+        <span><i class="swatch is-released"></i>Released <span class="mono">{{ view.released_micro|usdc }}</span></span>
+        <span><i class="swatch is-escrow"></i>In escrow <span class="mono">{{ view.in_escrow_micro|usdc }}</span></span>
+        <span><i class="swatch"></i>Not funded <span class="mono">{{ (job.total_micro - view.funded_micro if job.total_micro > view.funded_micro else 0)|usdc }}</span></span>
+      </div>
+    </div>
+    {% set d = view.deadline_days %}
+    <div class="deadline-cell{% if d is not none and d < 0 %} is-late{% elif d is not none and d <= 3 %} is-soon{% endif %}">
+      <div class="sum-label">Deadline</div>
+      {% if job.deadline_at %}
+        <div class="sum-figure">
+          {%- if job.status == 'completed' %}Completed
+          {%- elif d < 0 %}Overdue by {{ -d }} day{{ 's' if -d != 1 }}
+          {%- elif d == 0 %}Due today
+          {%- else %}{{ d }} day{{ 's' if d != 1 }} left{% endif -%}
+        </div>
+        <div class="when">{{ job.deadline_at|utc('%Y-%m-%d') }}</div>
+      {% else %}
+        <div class="sum-figure muted">No deadline</div>
+        <div class="when">Agree one with the agent if timing matters.</div>
+      {% endif %}
+    </div>
   </section>
 
-  <section class="card" style="margin-bottom:20px;">
-    <h2 style="font-size:1rem; margin-bottom:12px;">Milestones</h2>
-    <div style="display:flex; flex-direction:column; gap:10px;">
-      {% for m in job.milestones %}
-      <div style="display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--card-2);">
-        <div style="min-width:0;">
-          <div style="font-weight:600;">#{{ m.idx + 1 }} {{ m.title }}</div>
-          <div class="text-sm" style="color:var(--text-2);">{{ m.acceptance }}</div>
+  {% if job.parent_engagement_id %}
+  <div class="notice is-info" role="note" data-subhire>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v4a4 4 0 0 0 4 4h6"/></svg>
+    <div><strong>Sub-hire at depth <span class="mono">{{ job.depth }}</span>.</strong> Funded from the mandate of <a class="mono" href="/jobs/{{ job.parent_engagement_id }}">{{ job.parent_engagement_id }}</a>, not hired directly. <a href="{{ view.chain_page }}">See the delegation chain</a>.</div>
+  </div>
+  {% elif job.status in ('scoped', 'awaiting_approval') %}
+  <section class="fund-cta">
+    <div>
+      <h2>{{ 'Waiting for your approval' if view.open_fund else 'Ready to fund' }}</h2>
+      <p>{% if view.open_fund %}An approval is open for this job. Finish it with World ID, or start a new one.{% else %}The money goes into escrow, not to the agent. Each milestone is paid only when you approve it.{% endif %}</p>
+    </div>
+    <div class="ms-actions">
+      {% if view.open_fund %}<a class="btn btn-secondary" href="{{ view.open_fund.url }}">Continue approval</a>{% endif %}
+      <form method="post" action="/jobs/{{ job.engagement_id }}/hire">
+        <button type="submit" class="btn btn-primary">Approve &amp; fund {{ job.total_micro|usdc }}</button>
+      </form>
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="job-layout">
+    {# ── Milestones ──────────────────────────────────────────────────── #}
+    <section class="job-main" aria-labelledby="ms-h">
+      <div class="section-bar">
+        <h2 id="ms-h">Milestones</h2>
+        <span class="muted"><span class="mono">{{ view.milestones|selectattr('status', 'equalto', 'released')|list|length }}/{{ view.milestones|length }}</span> released</span>
+      </div>
+      <ol class="ms-list">
+        {% for m in view.milestones %}
+        <li class="ms is-{{ m.status }}" id="milestone-{{ m.idx + 1 }}" data-milestone="{{ m.idx }}" data-status="{{ m.status }}">
+          <span class="ms-dot" aria-hidden="true">{% if m.status == 'released' %}{{ check_icon() }}{% else %}{{ '%02d' % (m.idx + 1) }}{% endif %}</span>
+          <article class="ms-card">
+            <div class="ms-head">
+              <div>
+                <div class="ms-title">{{ m.title }}</div>
+                <div class="ms-sub">
+                  {{ status_pill('draft', label='Not funded') if m.status == 'pending' else status_pill(m.status) }}
+                  <span class="mono">#{{ m.idx + 1 }}</span>
+                </div>
+              </div>
+              <div class="ms-amount">
+                <span class="mono">{{ m.amount_micro|usdc }}</span>
+                {% if m.released_micro and m.released_micro < m.amount_micro %}
+                <span class="split">{{ m.released_micro|usdc }} released</span>
+                {% endif %}
+                {% if m.held_micro %}<span class="split">{{ m.held_micro|usdc }} held</span>{% endif %}
+              </div>
+            </div>
+            <div class="ms-body">
+              {% if m.criteria %}
+              <div class="ms-label">Acceptance criteria</div>
+              <ul class="criteria{% if m.status == 'released' %} is-met{% endif %}">
+                {% for c in m.criteria %}
+                <li><span class="box" aria-hidden="true">{{ check_icon() }}</span><span>{{ c }}</span></li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="muted text-sm">No acceptance criteria written for this milestone.</p>
+              {% endif %}
+              {% if m.activity %}
+              <ul class="activity-list" aria-label="Activity">
+                {% for a in m.activity %}
+                <li>
+                  <time title="{{ a.at|utc }}">{{ a.at|utc('%Y-%m-%d %H:%M') }}</time>
+                  <span>{{ a.label }}{% if a.ref %} · {% if a.href %}<a href="{{ a.href }}"{% if a.href.startswith('http') %} target="_blank" rel="noopener"{% endif %}>{{ a.ref }}</a>{% else %}<span class="mono">{{ a.ref }}</span>{% endif %}{% endif %}{% if a.simulated %}<span class="sim">simulated</span>{% endif %}</span>
+                  <span class="amt">{{ a.amount|usdc if a.amount else '' }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+            </div>
+            {% if m.can_release or m.status == 'submitted' %}
+            <div class="ms-foot">
+              <div class="ms-actions">
+                {% if m.can_release %}
+                  {% if m.open_approval %}
+                  <a class="btn btn-primary btn-sm" href="{{ m.open_approval.url }}">Continue release approval</a>
+                  {% else %}
+                  <form method="post" action="/jobs/{{ job.engagement_id }}/milestones/{{ m.idx }}/release">
+                    <button type="submit" class="btn btn-primary btn-sm">Approve &amp; release</button>
+                  </form>
+                  {% endif %}
+                  <span class="tip" data-tip="Coming soon" tabindex="0"><button type="button" class="btn btn-secondary btn-sm" disabled aria-disabled="true">Request changes</button></span>
+                  <span class="tip" data-tip="Coming soon" tabindex="0"><button type="button" class="btn btn-ghost btn-sm" disabled aria-disabled="true">Dispute</button></span>
+                {% endif %}
+              </div>
+              <span class="auto-note">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                {% if m.auto_release_at %}
+                Auto-releases <span class="mono">{{ m.auto_release_at|utc('%Y-%m-%d') }}</span> unless you request changes
+                {% else %}
+                Auto-releases <span class="mono">{{ view.auto_release_days }} days</span> after delivery unless you request changes
+                {% endif %}
+              </span>
+            </div>
+            {% endif %}
+          </article>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    {# ── Side panel ──────────────────────────────────────────────────── #}
+    <aside class="job-side" aria-label="Job details">
+      {% if agent %}
+      <section class="side-card">
+        <h2>Agent</h2>
+        <div class="agent-mini">
+          {{ monogram(agent) }}
+          <div style="min-width:0;">
+            <a class="name" href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a>
+            <span class="mono">{{ job.agent_id }}</span>
+          </div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-family:var(--font-mono); font-weight:700;">{{ m.amount_micro|usdc }}</div>
-          {% if m.released_micro and m.released_micro < m.amount_micro %}<div class="text-sm" style="color:var(--text-3);">{{ m.released_micro|usdc }} released</div>{% endif %}
-          <span class="badge {{ 'badge-approved' if m.status == 'released' else 'badge-warning' if m.status == 'held' else 'badge-escrow' if m.status in ('funded', 'submitted') else 'badge-pending' }}">{{ m.status }}</span>
-          {% if job.status in ('funded', 'in_progress') and m.status in ('funded', 'submitted', 'held') %}
-          <form method="post" action="/jobs/{{ job.engagement_id }}/milestones/{{ m.idx }}/release" style="margin-top:8px;">
-            <button type="submit" class="btn btn-primary btn-sm">Approve &amp; release</button>
-          </form>
+        <dl class="side-kv" style="margin-top:12px;">
+          <div><dt>Operator</dt><dd>{{ operator_label(agent) }}</dd></div>
+        </dl>
+        {% set badges = trust_badges(agent)|trim %}
+        {% if badges %}<div class="agent-card-badges" style="margin-top:10px;">{{ badges }}</div>{% endif %}
+      </section>
+      {% endif %}
+
+      <section class="side-card">
+        <h2>Contract</h2>
+        <dl class="side-kv">
+          <div>
+            <dt>Statement of work hash</dt>
+            <dd class="hash-row">
+              <span class="mono" id="sow-hash">{{ job.sow_hash or '—' }}</span>
+              {% if job.sow_hash %}<button type="button" class="copy-btn" data-copy="{{ job.sow_hash }}" aria-label="Copy statement of work hash"><span data-copy-label>Copy</span></button>{% endif %}
+            </dd>
+          </div>
+          <div><dt>Total</dt><dd class="mono">{{ job.total_micro|usdc }}</dd></div>
+          {% if job.mandate %}
+          <div><dt>Agent mandate</dt><dd><a class="mono" href="{{ job.mandate.url }}">{{ job.mandate.mandate_id }}</a></dd></div>
           {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </section>
+        </dl>
+      </section>
 
-  <section class="card" style="margin-bottom:20px;">
-    <h2 style="font-size:1rem; margin-bottom:12px;">Escrow ledger</h2>
-    {% if job.ledger %}
-    <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:.8125rem;">
-      <thead><tr style="text-align:left; color:var(--text-3);"><th style="padding:6px;">Entry</th><th style="padding:6px;">Kind</th><th style="padding:6px;">Amount</th><th style="padding:6px;">Status</th><th style="padding:6px;">Transaction</th></tr></thead>
-      <tbody>
-      {% for e in job.ledger %}
-        <tr style="border-top:1px solid var(--border);">
-          <td style="padding:6px; font-family:var(--font-mono);">{{ e.id }}</td>
-          <td style="padding:6px;">{{ e.kind }}</td>
-          <td style="padding:6px; font-family:var(--font-mono);">{{ e.amount_micro|usdc }}</td>
-          <td style="padding:6px;">{{ e.status }}</td>
-          <td style="padding:6px; font-family:var(--font-mono);">
-            {% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}…</a>
-            {% elif e.simulated %}<span style="color:var(--text-3);">simulated, not on chain</span>
-            {% else %}<span style="color:var(--text-3);">ledger only</span>{% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p style="color:var(--text-3);">Nothing has moved yet.</p>
-    {% endif %}
-  </section>
+      <section class="side-card">
+        <h2>Escrow ledger</h2>
+        {% if job.ledger %}
+        <ul class="side-rows">
+          {% for e in job.ledger %}
+          <li data-ledger="{{ e.id }}">
+            <span class="what">{{ {'fund': 'Funded', 'release': 'Released', 'hold': 'Held', 'refund': 'Refunded'}.get(e.kind, e.kind|capitalize) }}{% if e.status == 'failed' %} · failed{% elif e.status == 'pending' %} · pending{% endif %}</span>
+            <span class="amt">{{ e.amount_micro|usdc }}</span>
+            <span class="ref">
+              {% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}…</a>
+              {% elif e.simulated %}simulated, not on chain
+              {% else %}ledger only{% endif %}
+            </span>
+            <span class="ref end">{{ e.created_at|utc('%Y-%m-%d') }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="side-empty">Nothing has moved yet.</p>
+        {% endif %}
+      </section>
 
-  <section class="card">
-    <h2 style="font-size:1rem; margin-bottom:12px;">Approvals</h2>
-    {% if job.approvals %}
-    <div style="display:flex; flex-direction:column; gap:8px;">
-      {% for a in job.approvals %}
-      <div style="display:flex; justify-content:space-between; gap:12px; font-size:.8125rem;">
-        <a href="{{ a.url }}" style="font-family:var(--font-mono);">{{ a.approval_id }}</a>
-        <span>{{ a.kind }}{% if a.milestone_idx is not none %} #{{ a.milestone_idx + 1 }}{% endif %}</span>
-        <span>{{ a.state }}{% if a.screening %} · screening {{ a.screening.verdict }}{% endif %}</span>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p style="color:var(--text-3);">No approvals requested yet.</p>
-    {% endif %}
-  </section>
+      <section class="side-card">
+        <h2>Approvals</h2>
+        {% if view.approvals %}
+        <ul class="side-rows">
+          {% for a in view.approvals|reverse %}
+          <li data-approval="{{ a.approval_id }}">
+            <span class="what">{{ a.kind_label }}{% if a.milestone_idx is not none %} <span class="mono">#{{ a.milestone_idx + 1 }}</span>{% endif %}</span>
+            <span class="end">{{ status_pill(a.pill[1], label=a.pill[0]) }}</span>
+            <span class="ref"><a href="{{ a.url }}">{{ a.approval_id }}</a></span>
+            <span class="ref end">{% if a.screening and a.screening.verdict %}screening {{ a.screening.verdict|replace('_', ' ')|lower }}{% endif %}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="side-empty">No approvals requested yet.</p>
+        {% endif %}
+      </section>
+    </aside>
+  </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/copy.js') }}"></script>
 {% endblock %}

@@ -60,7 +60,8 @@ def named(monkeypatch):
     return calls
 
 
-def _new_agent(db, name, addr, category="Development"):
+def _new_agent(db, name, addr, category="Development", stamped=True):
+    """A listed agent, operator-stamped (dev stamp) so it is hireable."""
     from app.models import Agent
     from app.seller.stamp import dev_stamp
     row = Agent(name=name, description="sub agent", category=category, billing="per_minute",
@@ -68,9 +69,11 @@ def _new_agent(db, name, addr, category="Development"):
                 deployer_wallet=addr, payout_address=addr)
     row.tags = []
     row.capabilities = []
-    dev_stamp(row)
     db.session.add(row)
     db.session.commit()
+    if stamped:
+        dev_stamp(row)
+        db.session.commit()
     return row.public_id
 
 
@@ -78,10 +81,10 @@ def _new_agent(db, name, addr, category="Development"):
 def agents(db, agent):
     from app.models import Agent
     from app.seller.stamp import dev_stamp
-    root = db.session.get(Agent, agent)
-    dev_stamp(root)
+    root_agent = db.session.get(Agent, agent)
+    dev_stamp(root_agent)
     db.session.commit()
-    return {"A": root.public_id,
+    return {"A": root_agent.public_id,
             "B": _new_agent(db, "Agent B", B_ADDR),
             "C": _new_agent(db, "Agent C", C_ADDR),
             "D": _new_agent(db, "Agent D", D_ADDR)}
@@ -233,6 +236,15 @@ def test_each_hop_narrows_and_depth_is_capped(client, root, agents, screener):
     resp = _subhire(client, c["engagement_id"], c["mandate_token"], agents["D"], budget="1")
     assert resp.status_code == 403 and resp.get_json()["code"] == "DEPTH_EXCEEDED"
     assert len(_allocs()) == 2
+
+
+def test_unstamped_agent_cannot_be_subhired(client, root, agents, screener, db):
+    eid, token = root
+    unstamped = _new_agent(db, "Agent E", "0x" + "1e" * 20, stamped=False)
+    calls = len(screener.calls)
+    resp = _subhire(client, eid, token, unstamped)
+    assert resp.status_code == 409 and resp.get_json()["code"] == "NOT_STAMPED"
+    assert not _children(eid) and not _allocs() and len(screener.calls) == calls
 
 
 def test_agent_cannot_subhire_itself(client, root, agents, screener):
@@ -424,3 +436,109 @@ def test_mcp_subhire_tool_uses_the_real_endpoint(client, root, agents, screener,
     assert mandates.verify_chain(out["mandate_token"])["sub"] == agents["B"]
     denied = tools.subhire(mcp, eid, agents["C"], 1, "Design", token)
     assert denied["ok"] is False and denied["code"] == "CATEGORY_NOT_ALLOWED"
+
+
+# ── payee resolution ──────────────────────────────────────────────────────
+class _Resolver:
+    def __init__(self, record):
+        self.record = record
+
+    def payout_address(self, name):
+        if isinstance(self.record, Exception):
+            raise self.record
+        return self.record
+
+
+@pytest.fixture()
+def b_named(app, agents):
+    """Agent B holds an active agent name; the test sets its payout record."""
+    from app.models import Agent, EnsName
+    b = Agent.query.filter_by(public_id=agents["B"]).one()
+    _db.session.add(EnsName(name="agent-b.agentslist-app.eth", kind="agent", agent_id=b.id,
+                            status="active", records={}, tx_hashes=[]))
+    _db.session.commit()
+    yield lambda record: app.extensions.__setitem__("ens_resolver", _Resolver(record))
+    app.extensions.pop("ens_resolver", None)
+
+
+def test_subhire_payee_from_ens_record(client, root, agents, screener, named, b_named):
+    eid, token = root
+    b_named(B_ADDR)
+    body = _subhire(client, eid, token, agents["B"]).get_json()
+    assert body["status"] == "funded" and body["payee_source"] == "ens"
+
+
+def test_subhire_payee_mismatch_is_403(client, root, agents, screener, b_named):
+    eid, token = root
+    b_named("0x" + "d" * 40)
+    before = len(screener.calls)
+    resp = _subhire(client, eid, token, agents["B"])
+    assert resp.status_code == 403 and resp.get_json()["code"] == "PAYEE_MISMATCH"
+    assert not _children(eid) and not _allocs()
+    assert len(screener.calls) == before              # refused before screening
+
+
+def test_subhire_payee_unresolved_is_503(client, root, agents, screener, b_named):
+    from chain.ens_v2 import ENSResolutionError
+    eid, token = root
+    b_named(ENSResolutionError("rpc down"))
+    resp = _subhire(client, eid, token, agents["B"])
+    assert resp.status_code == 503 and resp.get_json()["code"] == "PAYEE_UNRESOLVED"
+    assert not _children(eid) and not _allocs()
+
+
+def test_ask_human_action_carries_payee_source(client, root, agents, screener, b_named):
+    from app.models import Approval
+    eid, token = root
+    b_named(B_ADDR)
+    screener.set(B_ADDR, "ASK_HUMAN")
+    apr = _subhire(client, eid, token, agents["B"]).get_json()
+    action = _db.session.get(Approval, apr["approval_id"]).action
+    assert (action["payee_address"], action["payee_source"]) == (B_ADDR, "ens")
+    assert ["Payee address from", "ENS record"] in apr["summary"]
+
+
+# ── ASK_HUMAN approval ends without executing ─────────────────────────────
+def _ask(client, root, agents, screener):
+    eid, token = root
+    screener.set(B_ADDR, "ASK_HUMAN")
+    apr = _subhire(client, eid, token, agents["B"]).get_json()
+    return apr["approval_id"], apr["child_engagement_id"]
+
+
+def _status(client, eid):
+    return client.get(f"/api/engagements/{eid}").get_json()["status"]
+
+
+def test_denied_subhire_approval_refuses_the_child(client, root, agents, screener, world_idp):
+    from app.models import Approval
+    apr_id, child_id = _ask(client, root, agents, screener)
+    row = _db.session.get(Approval, apr_id)
+    world_idp.deny_device(row.device_code)
+    assert approvals.poll(row).state == "denied"
+    assert _status(client, child_id) == "refused"
+    assert not _allocs() and _mandate(tokens.decode(root[1])["jti"]).spent_micro == 0
+
+
+def test_cancelled_subhire_approval_cancels_the_child(client, root, agents, screener):
+    apr_id, child_id = _ask(client, root, agents, screener)
+    approvals.cancel(apr_id, "not needed")
+    assert _status(client, child_id) == "cancelled"
+
+
+def test_expired_subhire_approval_refuses_the_child_on_view(client, root, agents, screener,
+                                                            monkeypatch):
+    from app.models import Approval
+    apr_id, child_id = _ask(client, root, agents, screener)
+    later = time.time() + 3600
+    monkeypatch.setattr(approvals, "clock", lambda: later)
+    assert _status(client, child_id) == "refused"      # nobody polled the approval
+    assert _db.session.get(Approval, apr_id).state == "expired"
+
+
+def test_blocked_subhire_approval_refuses_the_child(client, root, agents, screener, approve):
+    apr_id, child_id = _ask(client, root, agents, screener)
+    screener.set(B_ADDR, "REFUSE")                   # payee turns bad before consume
+    row = approve(apr_id)
+    assert (row.state, row.failure_code) == ("blocked", "SCREENING_REFUSED")
+    assert _status(client, child_id) == "refused" and not _allocs()

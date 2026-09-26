@@ -32,8 +32,11 @@ MIGRATIONS_DIR = str(Path(__file__).resolve().parent / "models" / "migrations")
 
 
 def _load_dotenv(path: Path) -> None:
-    """Minimal .env loader (no python-dotenv dependency). Existing env wins."""
-    if not path.exists():
+    """Minimal .env loader (no python-dotenv dependency). Existing env wins.
+
+    Skipped under FLASK_ENV=testing so a developer's local .env can't leak
+    keys into the test suite."""
+    if os.environ.get("FLASK_ENV") == "testing" or not path.exists():
         return
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -88,7 +91,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
 
     from app.intake import bp as intake_bp
 
-    # intake first: its guided flow serves /new ahead of the catalog placeholder.
+    # intake serves /new (the guided flow).
     for bp in (intake_bp, catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
         app.register_blueprint(bp)
 
@@ -166,6 +169,8 @@ def _register_cli(app: Flask) -> None:
             sys.exit(1)
         names = seed_sample_stamps()
         print(f"SIMULATED dev stamps written for {len(names)} sample agents: {', '.join(names) or '-'}")
+
+    app.cli.add_command(__import__("app.demo_seed", fromlist=["seed_demo"]).seed_demo)
 
 
 def _init_database(app: Flask) -> None:

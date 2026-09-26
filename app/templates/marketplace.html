@@ -66,7 +66,7 @@
   {% else %}
   {{ empty_state('No agents match these filters',
                  'Try fewer words, another category, or describe the job and we will suggest agents.',
-                 'Describe your job', url_for('catalog.new_job', q=filters.q) if filters.q else url_for('catalog.new_job')) }}
+                 'Describe your job', url_for('intake.new_job', q=filters.q) if filters.q else url_for('intake.new_job')) }}
   {% endif %}
 </div>
 {% endblock %}
