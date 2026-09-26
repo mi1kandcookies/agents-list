@@ -41,7 +41,34 @@
     "uniform sampler2D uImg; uniform sampler2D uMask;\n" +
     "uniform vec2 uScale; uniform vec2 uOffset;   // canvas uv -> image uv (object-fit: cover)\n" +
     "uniform vec2 uCss;                           // element size in CSS px\n" +
-    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic;\n" +
+    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic; uniform float uSparkle;\n" +
+    "vec2 hash22(vec2 p){ p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }\n" +
+    "// Occasional star glints on the brightest water: each cell flashes briefly at its own random rhythm.\n" +
+    "float sparkle(vec2 px, float t){\n" +
+    "  const float cell = 46.0;\n" +
+    "  vec2 g = floor(px / cell);\n" +
+    "  float acc = 0.0;\n" +
+    "  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {\n" +
+    "    vec2 c = g + vec2(float(i), float(j));\n" +
+    "    vec2 r = hash22(c);\n" +
+    "    vec2 center = (c + 0.2 + 0.6 * r) * cell;\n" +
+    "    vec2 cuv = uOffset + (center / uCss) * uScale;\n" +
+    "    float lum = dot(texture(uImg, cuv).rgb, vec3(0.299, 0.587, 0.114));\n" +
+    "    float gate = smoothstep(0.84, 0.95, lum) * texture(uMask, cuv).r;\n" +
+    "    if (gate <= 0.0) continue;\n" +
+    "    float period = 7.0 + 9.0 * r.x;\n" +
+    "    float ph = fract(t / period + r.y);\n" +
+    "    float life = 0.6 / period;\n" +
+    "    float env = ph < life ? sin(3.14159265 * ph / life) : 0.0;\n" +
+    "    env *= env;\n" +
+    "    vec2 d = px - center;\n" +
+    "    float core = exp(-dot(d, d) / 2.5);\n" +
+    "    float len = 0.28 / (0.6 + 0.8 * r.y);\n" +
+    "    float rays = exp(-abs(d.x) * len) * exp(-d.y * d.y / 0.6) + exp(-abs(d.y) * len) * exp(-d.x * d.x / 0.6);\n" +
+    "    acc += gate * env * (core * 1.1 + rays * 0.55);\n" +
+    "  }\n" +
+    "  return acc;\n" +
+    "}\n" +
     "void main(){\n" +
     "  vec2 iuv = uOffset + vUv * uScale;\n" +
     "  vec4 m = texture(uMask, iuv);\n" +
@@ -68,11 +95,12 @@
     "  col += glint * pow(max(tw, 0.0), 3.0) * uGlint;\n" +
     "  // spray breathes very slightly\n" +
     "  col += s * 0.035 * snoise(vec3(p * 2.0, t * 0.50 + 5.0));\n" +
+    "  col += uSparkle * sparkle(vUv * uCss, t) * vec3(1.0, 0.97, 0.9);\n" +
     "  outColor = vec4(col, 1.0);\n" +
     "}";
 
   var PRESETS = {
-    hero:   { water: 3.2, spray: 0.0, glint: 0.22, caustic: 0.035 },
+    hero:   { water: 3.2, spray: 0.0, glint: 0.22, caustic: 0.035, sparkle: 0.9 },
     footer: { water: 2.0, spray: 4.0, glint: 0.14, caustic: 0.028 },
   };
 
@@ -141,11 +169,12 @@
       gl.activeTexture(gl.TEXTURE1); texture(gl, ims[1], false);
       var u = function (n) { return gl.getUniformLocation(prog, n); };
       self.u = { img: u("uImg"), mask: u("uMask"), scale: u("uScale"), offset: u("uOffset"), css: u("uCss"),
-                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic") };
+                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic"), sparkle: u("uSparkle") };
       gl.uniform1i(self.u.img, 0); gl.uniform1i(self.u.mask, 1);
       gl.uniform1f(self.u.water, self.preset.water); gl.uniform1f(self.u.spray, self.preset.spray);
       gl.uniform1f(self.u.glint, self.preset.glint);
       gl.uniform1f(self.u.caustic, self.preset.caustic || 0);
+      gl.uniform1f(self.u.sparkle, self.preset.sparkle || 0);
       self.natural = [ims[0].naturalWidth, ims[0].naturalHeight];
       img.insertAdjacentElement("afterend", canvas);
       self.resize();
