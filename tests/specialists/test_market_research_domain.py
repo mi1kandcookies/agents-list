@@ -214,3 +214,259 @@ def test_tool_defs_are_well_formed():
         assert set(d) == {"name", "description", "input_schema", "risk", "function"}
         assert d["input_schema"]["type"] == "object" and callable(d["function"])
         assert d["risk"] in {"read", "write", "exec", "network", "external"}
+
+
+# --- checks ----------------------------------------------------------------------
+
+from specialists.market_research import checks  # noqa: E402
+
+KIT_BUILTIN_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+                      "json_valid", "csv_columns", "command_succeeds", "ledger_verified",
+                      "citations_resolve", "disclaimer_present", "rubric_grader", "human_signoff"}
+KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+             "http_fetch", "web_search", "read_document", "record_source", "record_claim",
+             "ask_client", "post_progress", "submit_milestone"}
+
+REPORT = """# HVAC scheduling market
+
+## Executive summary
+Small contractors are numerous [C2] and incumbents price near $50 [C3][C4].
+
+## Traceability matrix
+| Question | Finding | Claims |
+|---|---|---|
+| Q1.1 | 91,200 small contractors | [C2] |
+| Q1.2 | 38% already use software | [C5] |
+| Q2.1 | unresolved: only two vendors priced | |
+"""
+
+
+def _evidence_ws(ws: Path) -> Path:
+    _save_tree(ws)
+    tools.map_claims(ws, mapping={"C1": ["Q1.1"], "C2": ["Q1.1"], "C5": ["Q1.2"], "C3": ["Q2.1"], "C4": ["Q2.1"]},
+                     notes={"Q1.2": "Insufficient evidence: one survey only", "Q2.1": "insufficient evidence"})
+    tools.export_evidence(ws)
+    return ws
+
+
+def _edit_ledger(ws: Path, fn) -> None:
+    path = ws / tools.LEDGER_PATH
+    ledger = json.loads(path.read_text(encoding="utf-8"))
+    fn(ledger)
+    path.write_text(json.dumps(ledger), encoding="utf-8")
+
+
+def test_question_tree_valid_check(ws):
+    _save_tree(ws)
+    assert checks.question_tree_valid(ws, {})["passed"] is True
+    tree = json.loads((ws / tools.QUESTIONS_PATH).read_text(encoding="utf-8"))
+    tree["questions"][0]["children"][0]["source_types"] = ["trade_press"]
+    (ws / tools.QUESTIONS_PATH).write_text(json.dumps(tree), encoding="utf-8")
+    res = checks.question_tree_valid(ws, {"min_source_types": 2})
+    assert res["passed"] is False and "Q1.1" in res["details"]
+    (ws / tools.QUESTIONS_PATH).write_text("{not json", encoding="utf-8")
+    assert checks.question_tree_valid(ws, {})["passed"] is False
+
+
+def test_evidence_export_matches_ledger(ws):
+    _evidence_ws(ws)
+    assert checks.evidence_export_matches_ledger(ws, {})["passed"] is True
+
+
+def test_evidence_export_rejects_edited_csv(ws):
+    _evidence_ws(ws)
+    path = ws / tools.CLAIMS_CSV_PATH
+    path.write_text(path.read_text(encoding="utf-8").replace("91,200", "191,200"), encoding="utf-8")
+    res = checks.evidence_export_matches_ledger(ws, {})
+    assert res["passed"] is False and "C2" in res["details"]
+
+
+def test_evidence_export_rejects_inflated_tier_and_forged_quote(ws):
+    _evidence_ws(ws)
+    path = ws / tools.CLAIMS_CSV_PATH
+    rows = list(csv.DictReader(path.open(encoding="utf-8")))
+    for r in rows:
+        if r["claim_id"] == "C6":
+            r["tier"] = "1"
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=tools.CLAIMS_CSV_COLUMNS)
+        w.writeheader()
+        w.writerows(rows)
+    assert "C6: tier" in checks.evidence_export_matches_ledger(ws, {})["details"]
+    # forge a quote in the ledger and re-export: the export is honest, the check still fails
+    _edit_ledger(ws, lambda led: led["claims"][6].update(quote="HVAC accounted for 42% of it"))
+    tools.export_evidence(ws)
+    res = checks.evidence_export_matches_ledger(ws, {})
+    assert res["passed"] is False and "C7: quote does not verify" in res["details"]
+
+
+def test_evidence_export_missing_file_or_empty_ledger(ws):
+    assert checks.evidence_export_matches_ledger(ws, {})["passed"] is False
+    _evidence_ws(ws)
+    _edit_ledger(ws, lambda led: led.update(claims=[]))
+    assert checks.evidence_export_matches_ledger(ws, {})["passed"] is False
+
+
+def test_question_coverage(ws):
+    _evidence_ws(ws)
+    res = checks.question_coverage(ws, {"min_claims": 2})
+    assert res["passed"] is True and res["score"] == 1.0
+    res = checks.question_coverage(ws, {"min_claims": 3})   # Q1.1 has 2 claims and no note
+    assert res["passed"] is False and "Q1.1" in res["details"]
+
+
+def test_question_coverage_ignores_forged_claims(ws):
+    _evidence_ws(ws)
+    _edit_ledger(ws, lambda led: led["claims"][0].update(quote="there were 999,999 establishments"))
+    res = checks.question_coverage(ws, {"min_claims": 2})
+    assert res["passed"] is False and "Q1.1: 1 verified" in res["details"]
+
+
+def test_source_tier_mix(ws):
+    # C1, C2 come from a government host (tier 1); the rest are undeclared (tier 3): 2/7
+    res = checks.source_tier_mix(ws, {"min_tier1_share": 0.6})
+    assert res["passed"] is False and res["score"] == pytest.approx(2 / 7, abs=1e-4)
+    for sid in ("S2", "S3"):
+        tools.classify_source(ws, uri=f"https://x.example.com/{sid}", source_id=sid, source_type="company")
+    assert checks.source_tier_mix(ws, {"min_tier1_share": 0.5})["passed"] is True
+
+
+def test_source_tier_mix_cannot_be_raised_by_declared_government(ws):
+    tools.classify_source(ws, uri="https://market-notes.example.org", source_id="S5", source_type="government")
+    tools.classify_source(ws, uri="https://fieldops-weekly.example.net", source_id="S4", source_type="filing")
+    assert checks.source_tier_mix(ws, {})["score"] == pytest.approx(2 / 7, abs=1e-4)
+
+
+def _matrix(ws: Path) -> None:
+    tools.build_competitor_matrix(ws, dimensions=["Entry price", "Scheduling"], competitors=[
+        {"name": "Brightwrench", "cells": {"Entry price": {"value": "$59", "claim": "C3", "as_of": "2026-09-01"}}},
+        {"name": "Tallyho Dispatch", "cells": {"Entry price": {"value": "$49", "claim": "C4", "as_of": "2026-09-01"}}},
+    ])
+
+
+def test_matrix_cells_cited(ws):
+    _matrix(ws)
+    assert checks.matrix_cells_cited(ws, {})["passed"] is True
+
+
+def test_matrix_cells_cited_rejects_hand_edits(ws):
+    _matrix(ws)
+    path = ws / tools.MATRIX_PATH
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("$49 (as of 2026-09-01) [C4]", "$39 [C9]")
+                        .replace(",\n", ",Drag-and-drop\n", 1), encoding="utf-8")
+    res = checks.matrix_cells_cited(ws, {})
+    assert res["passed"] is False
+    assert "C9 is not a verified" in res["details"] and "without a date" in res["details"]
+    assert "no [C#] citation" in res["details"]
+
+
+def test_sizing_model_consistent(ws):
+    tools.build_sizing_model(ws, **_sizing_args())
+    res = checks.sizing_model_consistent(ws, {"tolerance": 0.30})
+    assert res["passed"] is True and res["score"] == pytest.approx(3 / 7, abs=1e-4)
+
+
+def test_sizing_model_rejects_edited_outputs(ws):
+    tools.build_sizing_model(ws, **_sizing_args())
+    path = ws / tools.SIZING_PATH
+    model = json.loads(path.read_text(encoding="utf-8"))
+    model["outputs"]["som"] *= 3
+    model["bottom_up"]["units"]["claim"] = "C77"
+    path.write_text(json.dumps(model), encoding="utf-8")
+    res = checks.sizing_model_consistent(ws, {})
+    assert res["passed"] is False
+    assert "outputs.som" in res["details"] and "C77" in res["details"]
+
+
+def test_sizing_model_needs_reconciliation_for_large_gap(ws):
+    args = _sizing_args()
+    args["bottom_up"]["adoption"] = {"name": "adoption", "value": 0.38, "claim": "C5"}
+    tools.build_sizing_model(ws, **args)
+    res = checks.sizing_model_consistent(ws, {"tolerance": 0.30})
+    assert res["passed"] is False and "reconciliation" in res["details"]
+    args["reconciliation"] = ("The top-down base counts spend by all HVAC firms including large ones, "
+                              "while bottom-up counts only current adopters among small firms; we lean on bottom-up.")
+    tools.build_sizing_model(ws, **args)
+    assert checks.sizing_model_consistent(ws, {"tolerance": 0.30})["passed"] is True
+
+
+def test_sizing_model_unreadable(ws):
+    assert checks.sizing_model_consistent(ws, {})["passed"] is False
+    (ws / tools.SIZING_PATH).parent.mkdir(parents=True)
+    (ws / tools.SIZING_PATH).write_text(json.dumps({"top_down": {}}), encoding="utf-8")
+    assert "cannot be recomputed" in checks.sizing_model_consistent(ws, {})["details"]
+
+
+def _write_report(ws: Path, text: str = REPORT) -> None:
+    path = ws / "deliverables/m3-report/report.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_report_answers_questions(ws):
+    _evidence_ws(ws)
+    _write_report(ws)
+    res = checks.report_answers_questions(ws, {})
+    assert res["passed"] is True and res["score"] == pytest.approx(2 / 3, abs=1e-4)
+
+
+def test_report_answers_questions_negative(ws):
+    _evidence_ws(ws)
+    _write_report(ws, REPORT.replace("| Q2.1 | unresolved: only two vendors priced | |\n", "")
+                  .replace("| [C5] |", "| [C1] |"))
+    res = checks.report_answers_questions(ws, {})
+    assert res["passed"] is False
+    assert "Q2.1: no row" in res["details"] and "Q1.2: none of ['C1']" in res["details"]
+    _write_report(ws, REPORT.replace("[C2] |", "[C12] |"))
+    assert "C12" in checks.report_answers_questions(ws, {})["details"]
+    _write_report(ws, "# Report\n\nNo matrix here.\n")
+    assert "no 'Traceability matrix' section" in checks.report_answers_questions(ws, {})["details"]
+
+
+def test_check_defs_signature(ws):
+    assert set(checks.CHECK_DEFS) == {"question_tree_valid", "evidence_export_matches_ledger",
+                                      "question_coverage", "source_tier_mix", "matrix_cells_cited",
+                                      "sizing_model_consistent", "report_answers_questions"}
+    empty = ws.parent / "empty"
+    empty.mkdir()
+    for fn in checks.CHECK_DEFS.values():
+        res = fn(empty, {}, run=None)
+        assert set(res) == {"passed", "details", "score"} and res["passed"] is False
+
+
+# --- manifest --------------------------------------------------------------------
+
+def test_agent_yaml_parses_and_references_known_checks_and_tools():
+    import yaml
+
+    manifest = yaml.safe_load((PKG / "agent.yaml").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 1 and manifest["slug"] == "market-research"
+    assert manifest["human_gate"]["required"] is False
+    assert "Not investment" in manifest["human_gate"]["disclaimer"]
+    tool_names = {d["name"] for d in tools.TOOL_DEFS}
+    assert not set(manifest["tools"]) - KIT_TOOLS - tool_names
+    assert tool_names <= set(manifest["tools"])
+    assert [m["id"] for m in manifest["milestones"]] == ["m1-plan", "m2-evidence", "m3-report"]
+    used = set()
+    for m in manifest["milestones"]:
+        assert all(d.startswith(f"deliverables/{m['id']}/") for d in m["deliverables"])
+        for crit in m["acceptance"]:
+            used.add(crit["check"])
+            assert crit["check"] in KIT_BUILTIN_CHECKS | set(checks.CHECK_DEFS), crit["check"]
+            if crit["check"] == "rubric_grader":
+                assert (PKG / crit["params"]["rubric"]).is_file()
+    assert set(checks.CHECK_DEFS) <= used
+    for rel in [manifest["prompts"]["system"], *manifest["prompts"]["include"]]:
+        assert (PKG / rel).is_file(), rel
+
+
+def test_rubrics_are_well_formed():
+    import yaml
+
+    for path in (PKG / "rubrics").glob("*.yaml"):
+        rubric = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert set(rubric) == {"name", "criteria", "threshold"}
+        assert 0 < rubric["threshold"] <= 1
+        assert sum(c["weight"] for c in rubric["criteria"]) == pytest.approx(1.0)
+        assert len({c["id"] for c in rubric["criteria"]}) == len(rubric["criteria"])
