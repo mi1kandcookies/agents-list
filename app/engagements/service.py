@@ -27,7 +27,8 @@ from flask import current_app
 from sqlalchemy import select, update
 
 from app.approvals.actions import describe, format_usdc
-from app.approvals.executors import ExecutionResult, after_consume, executor
+from app.approvals.executors import (ExecutionResult, after_consume, before_consume, executor,
+                                     on_terminal)
 from app.common import agent_ids
 from app.common.ids import new_id
 from app.engagements import ledger
@@ -476,6 +477,44 @@ def execute_fund(approval, action: dict) -> ExecutionResult:
                            ledger_ids=[entry.id], redirect=f"/jobs/{eng.id}")
 
 
+@before_consume("engagement.fund")
+def _fund_still_hireable(approval, action: dict) -> None:
+    """The agent could have been un-stamped, edited or its operator banned
+    while the approval was open: re-check right before funding. Blocks the
+    approval with the NotHireable code."""
+    from app.approvals.errors import ApprovalError
+    from app.models import Engagement
+    from app.seller.stamp import NotHireable, assert_hireable
+    eng = db.session.get(Engagement, action.get("engagement_id") or "")
+    if eng is None or eng.agent is None:
+        return   # the executor reports a missing engagement
+    try:
+        assert_hireable(eng.agent)
+    except NotHireable as exc:
+        raise ApprovalError(exc.code, exc.message) from None
+
+
+@on_terminal("engagement.fund")
+def _fund_not_approved(approval, action: dict) -> None:
+    """A fund approval ended without executing (denied, expired, cancelled,
+    rejected, blocked): put the job back to ``scoped`` so it can be hired
+    again, unless it was funded meanwhile or another fund approval for it is
+    still open."""
+    from app.models import Approval, Engagement
+    eng = db.session.get(Engagement, action.get("engagement_id") or "")
+    if eng is None or eng.status != "awaiting_approval" or ledger.has_live_fund(eng.id):
+        return
+    still_open = Approval.query.filter(
+        Approval.engagement_id == eng.id, Approval.kind == "engagement.fund",
+        Approval.id != approval.id,
+        Approval.state.in_(("created", "pending", "approved"))).first()
+    if still_open is not None:
+        return
+    eng.status = "scoped"
+    log.info("engagement %s back to scoped: fund approval %s %s", eng.id, approval.id,
+             approval.state)
+
+
 @executor("milestone.release")
 def execute_release(approval, action: dict) -> ExecutionResult:
     target, problem = _load_target(action)
@@ -660,8 +699,43 @@ def _after_fund(approval, action: dict) -> None:
         log.warning("job name for %s not issued: %s", eng.id, str(exc)[:200])
 
 
+def retry_root_mandate(eng) -> str | None:
+    """Funding committed but minting the root mandate failed (the after-
+    consume hook only logs): try once more. Only for a funded root
+    engagement with no root mandate on record; ``ensure_root_mandate`` is
+    idempotent."""
+    from app.models import Mandate
+    if eng.status != "funded" or eng.mandate_id or eng.parent_engagement_id is not None:
+        return eng.mandate_id
+    if Mandate.query.filter_by(engagement_id=eng.id, parent_id=None).first() is not None:
+        return None
+    mandate_id = ensure_root_mandate(eng)
+    if mandate_id:
+        log.info("root mandate for %s issued on retry: %s", eng.id, mandate_id)
+    else:
+        log.warning("root mandate for %s still missing after retry", eng.id)
+    return mandate_id
+
+
+def _expire_due_approvals(eng) -> None:
+    """Expire this engagement's open approvals whose TTL has passed, so their
+    terminal hooks run even if nobody polls them. ``poll`` only expires an
+    approval past its TTL here; it never contacts the provider for one."""
+    from app.models import Approval
+    svc = importlib.import_module("app.approvals.service")
+    now = int(svc.clock())
+    due = [a for a in Approval.query.filter(Approval.engagement_id == eng.id,
+                                            Approval.state.in_(("created", "pending", "approved")))
+           if unix(a.expires_at) < now]
+    for approval in due:
+        svc.poll(approval)
+
+
 def refresh(eng) -> None:
     """Poll pending escrow receipts for this engagement (cheap no-op when
-    simulated) and commit any change."""
+    simulated), expire overdue approvals and retry a missing root mandate;
+    commits any change."""
     if ledger.refresh_receipts(eng, get_escrow()):
         db.session.commit()
+    _expire_due_approvals(eng)
+    retry_root_mandate(eng)

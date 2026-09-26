@@ -15,6 +15,12 @@ _HTTP = {
     "BANNED":            (403, "BANNED"),
     "CAP_EXCEEDED":      (403, "CAP_EXCEEDED"),
     "SCREENING_REFUSED": (403, "SCREENING_REFUSED"),
+    # The payee agent stopped being hireable while the approval was open
+    # (app.seller.stamp.assert_hireable, re-checked at consume).
+    "NOT_STAMPED":       (409, "NOT_STAMPED"),
+    "RESTAMP_REQUIRED":  (409, "RESTAMP_REQUIRED"),
+    "OPERATOR_BANNED":   (409, "OPERATOR_BANNED"),
+    "PAYEE_REFUSED":     (409, "PAYEE_REFUSED"),
 }
 APPROVAL_ERROR_CODES = frozenset(_HTTP)
 

@@ -10,8 +10,10 @@ root human's consumed ``engagement.fund`` approval. The request can only
 narrow that authority: the category must be one of the mandate's, the budget
 at most what it has left, and the new hop within the root's ``max_depth``.
 
-The payee is then screened server-side (hop ``subhire.hop``; anything a
-client sends as a verdict is ignored):
+The payee comes from ``resolve_payee`` (the agent's ENS payout record when
+it has one, else its profile; a mismatch is 403 PAYEE_MISMATCH, a failed
+lookup 503 PAYEE_UNRESOLVED) and is then screened server-side (hop
+``subhire.hop``; anything a client sends as a verdict is ignored):
 
     PAY        allocate the budget now                               → 201 child
     CAP        allocate min(budget, cap) now, recording the cap      → 201 child
@@ -24,7 +26,9 @@ creates a child mandate (``mandates.allocate``: charged to the parent's
 ``spent``), a child engagement (``parent_engagement_id``, ``depth``, the
 root human as buyer) and one ``subhire_alloc`` ledger row, in one
 transaction. The names hook ``on_subhire`` runs afterwards and is never
-fatal.
+fatal. If the root human's approval ends without executing (denied,
+expired, rejected, blocked), the waiting child ends ``refused``; if it is
+cancelled, ``cancelled``.
 """
 from __future__ import annotations
 
@@ -33,12 +37,13 @@ import time
 from datetime import datetime, timezone
 
 from app.approvals.actions import format_usdc
-from app.approvals.executors import ExecutionResult, after_consume, executor
+from app.approvals.executors import ExecutionResult, after_consume, executor, on_terminal
 from app.engagements import ledger
 from app.engagements.ledger import unix
 from app.engagements.service import (
     ACTIVE, EngagementError, _cap_of, _create_approval, _failed, _lock_engagement, _refuse,
-    _start, engagement_json, get_escrow, payee_address, resolve_agent, screen, screening_json,
+    _start, engagement_json, get_escrow, payee_address, resolve_agent, resolve_payee, screen,
+    screening_json,
 )
 from app.engagements.sow import SowError, build_sow, normalize_milestones, sow_hash, sow_json
 from app.extensions import db
@@ -117,7 +122,8 @@ def subhire(engagement_id: str, token: str, *, agent_ref, outcome, budget_micro:
                               "MANDATE_EXCEEDED", 403, "budget_usdc")
     from app.seller.stamp import assert_hireable
     assert_hireable(agent)  # 409: operator stamp valid, operator not banned, payee not refused
-    payee = payee_address(agent)
+    resolved = resolve_payee(agent)   # 403 PAYEE_MISMATCH / 503 PAYEE_UNRESOLVED
+    payee = resolved.address
     if payee is None:
         raise EngagementError("agent has no payout address", "PAYEE_ADDRESS_MISSING", 409)
 
@@ -130,11 +136,11 @@ def subhire(engagement_id: str, token: str, *, agent_ref, outcome, budget_micro:
     amount = _cap_of(verdict) if capped else budget_micro
     extra = {"requested_micro": budget_micro, "allocated_micro": amount, "capped": capped,
              "cap_micro": _cap_of(verdict) if verdict["verdict"] == "CAP" else None,
-             "screening": screening_json(verdict)}
+             "payee_source": resolved.source, "screening": screening_json(verdict)}
 
     child = _new_child(parent, parent_row, root_row, agent, outcome, amount, cat)
     if verdict["verdict"] == "ASK_HUMAN":
-        return 202, _ask_root_human(child, parent_row, payee, verdict, flow, extra)
+        return 202, _ask_root_human(child, parent_row, resolved, verdict, flow, extra)
 
     try:
         row, _ = _allocate(child, parent_row, amount, cat, approval_id=None,
@@ -174,14 +180,14 @@ def _new_child(parent, parent_row, root_row, agent, outcome, amount: int, catego
     return child
 
 
-def _ask_root_human(child, parent_row, payee: str, verdict: dict, flow: str, extra: dict) -> dict:
+def _ask_root_human(child, parent_row, payee, verdict: dict, flow: str, extra: dict) -> dict:
     child.status = "awaiting_approval"
     db.session.flush()
     try:
         approval = _create_approval(KIND, {
             "engagement_id": child.id, "sow_hash": child.sow_hash, "amount_micro": child.total_micro,
-            "payee_agent_id": child.agent.public_id, "payee_address": payee,
-            "parent_mandate_id": parent_row.id,
+            "payee_agent_id": child.agent.public_id, "payee_address": payee.address,
+            "payee_source": payee.source, "parent_mandate_id": parent_row.id,
             "screening_id": verdict["id"], "screening_ack": True,
         }, flow=flow, engagement=child, screening_id=verdict["id"])
     except EngagementError:
@@ -272,6 +278,20 @@ def _after_subhire(approval, action: dict) -> None:
     child = db.session.get(Engagement, action.get("engagement_id") or "")
     if child is not None:
         _name(child)
+
+
+@on_terminal(KIND)
+def _subhire_not_approved(approval, action: dict) -> None:
+    """The root human's approval ended without executing: the waiting child
+    will never be funded. Cancelled by request → ``cancelled``; denied,
+    expired, rejected or blocked → ``refused``."""
+    Engagement = _models()[0]
+    child = db.session.get(Engagement, action.get("engagement_id") or "")
+    if child is None or child.status != "awaiting_approval" or child.mandate_id:
+        return
+    child.status = "cancelled" if approval.state == "cancelled" else "refused"
+    log.info("sub-engagement %s %s: approval %s %s", child.id, child.status, approval.id,
+             approval.state)
 
 
 # ── chain view (/jobs/<id>/chain) ─────────────────────────────────────────
