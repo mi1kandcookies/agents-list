@@ -21,12 +21,16 @@ rejects the approval with REPLAYED_TOKEN. ``auth_time`` must be no earlier
 than the approval's creation and at most STEPUP_MAX_AGE_SECONDS old.
 
 ``consume()`` re-selects the row ``FOR UPDATE`` and re-checks state, expiry,
-action hash, ban, weekly cap, the engagement's claimed human and screening
+action hash, ban, weekly cap, the engagement's claimed human, the kind's
+``before_consume`` checks (e.g. the payee agent is still hireable) and screening
 (a fresh screen of the payee for money-moving kinds) in the same transaction
 that runs the executor, so an approval executes at most
 once. When a callback or poll reaches ``approved``, the executor runs at once.
 After a successful execution commits, the kind's after-consume hooks run
-(``executors.after_consume``); they never undo or fail the approval.
+(``executors.after_consume``); they never undo or fail the approval. When an
+approval ends denied / expired / cancelled / rejected / blocked, the kind's
+``executors.on_terminal`` hooks run in the same transaction (e.g. to return
+the engagement it would have funded to a retryable state).
 
 Every state change writes an ``approval_events`` row.
 """
@@ -46,7 +50,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.approvals import actions
 from app.approvals.errors import ApprovalError, ApprovalNotFound, ApprovalStateError
-from app.approvals.executors import EXECUTORS, ExecutionResult, run_after_consume
+from app.approvals.executors import (EXECUTORS, UNEXECUTED_TERMINAL, ExecutionResult,
+                                     run_after_consume, run_before_consume, run_on_terminal)
 from app.common.ids import new_id
 from app.extensions import db
 from app.humans import service as humans
@@ -142,6 +147,8 @@ def _transition(approval: Approval, state: str, *, code: Optional[str] = None,
             event_detail["detail"] = detail[:500]
     _event(approval, state, **{"from": current, **event_detail})
     log.info("approval %s %s -> %s%s", approval.id, current, state, f" ({code})" if code else "")
+    if state in UNEXECUTED_TERMINAL:
+        run_on_terminal(approval, approval.action)
 
 
 def _lock(approval_id: str) -> Approval:
@@ -564,6 +571,7 @@ def consume(approval_id: str, *, kind: str) -> ExecutionResult:
         buyer = _engagement_buyer(approval)
         if buyer is not None and buyer.id != human.id:
             raise ApprovalError("WRONG_HUMAN", "engagement is claimed by another human")
+        run_before_consume(approval, action)
         _check_screening(approval)
         _rescreen(approval, action)
     except ApprovalError as exc:
@@ -617,6 +625,10 @@ FAILURE_TEXT = {
     "MISSING_CLAIM": "The identity token was missing required information.",
     IDP_ERROR: "The identity provider returned an error.",
     EXECUTOR_ERROR: "The approved action could not be completed.",
+    "NOT_STAMPED": "The agent's configuration is no longer operator-stamped.",
+    "RESTAMP_REQUIRED": "The agent's configuration changed after it was stamped.",
+    "OPERATOR_BANNED": "The operator behind this agent is banned.",
+    "PAYEE_REFUSED": "The agent's payout address was refused at onboarding.",
 }
 
 
