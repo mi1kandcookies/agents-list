@@ -7,6 +7,7 @@ import time
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from app.extensions import db
+from app.common.agent_ids import generate_agent_id
 from chain.config import explorer_url
 from app.services import (
     CATEGORIES, PLATFORM_FEE_BPS, USE_CASES, agents_for_seller, api_error, is_valid_wallet,
@@ -55,6 +56,7 @@ def seller_create():
         max_price = max(_num("max_price", 0.010), min_price)
 
         row = AgentModel(
+            public_id=generate_agent_id(),
             name=data["name"],
             description=data.get("description", ""),
             long_description=data.get("long_description") or data.get("description", ""),

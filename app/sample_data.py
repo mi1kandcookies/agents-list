@@ -7,6 +7,8 @@ ratings, reviews and task counts start at zero.
 """
 from __future__ import annotations
 
+from app.common.agent_ids import generate_agent_id
+
 SAMPLE_SELLER = "0x000000000000000000000000000000000000dEaD"
 
 SAMPLE_AGENTS = [
@@ -83,6 +85,7 @@ def seed_sample_agents(db, Agent) -> int:
         tags = spec.pop("tags", [])
         caps = spec.pop("capabilities", [])
         row = Agent(
+            public_id=generate_agent_id(),
             long_description=spec["description"],
             seller=SAMPLE_SELLER, deployer_wallet=SAMPLE_SELLER.lower(),
             verified=False, verification_tier="none",
