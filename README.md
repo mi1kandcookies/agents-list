@@ -37,6 +37,8 @@ with World ID (`/seller/agents/<id>/manifest`). `--dev-stamp` writes
 simulated stamps for local development only; it is refused in production.
 
 Postgres: `docker compose up --build` (web on :8090, Postgres on :5433).
+Hosting on Vercel (Postgres, migrations, env vars, World ID callback
+registration): [docs/deploy/vercel.md](docs/deploy/vercel.md).
 
 ## Documentation
 
