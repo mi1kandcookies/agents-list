@@ -308,6 +308,26 @@ def test_login_logout(client, db, world_idp):
         assert "human_id" not in sess
 
 
+def test_login_required(app, world_idp):
+    from app.identity.session import current_human, login_required
+
+    @login_required
+    def private():
+        return current_human().world_sub
+
+    app.add_url_rule("/private-test", "private_test", private)
+    app.add_url_rule("/api/private-test", "api_private_test", private)
+    client = app.test_client()
+    resp = client.get("/private-test?x=1")
+    assert resp.status_code == 302 and "/login?next=/private-test" in resp.headers["Location"]
+    assert client.get("/api/private-test").status_code == 401
+
+    location = client.get("/login").headers["Location"]
+    params = {k: v[0] for k, v in parse_qs(urlsplit(location).query).items()}
+    _callback(client, params, code=world_idp.issue_code(nonce=params["nonce"]))
+    assert client.get("/private-test").data.decode() == "0x" + "5" * 64
+
+
 def test_login_rejects_open_redirect(client, world_idp):
     resp = client.get("/login?next=//evil.example/")
     params = {k: v[0] for k, v in parse_qs(urlsplit(resp.headers["Location"]).query).items()}
