@@ -33,7 +33,8 @@ def test_new_page_prefills_outcome_from_query(client):
     assert 'data-prefill="Map our top 20 competitors"' in html
 
 
-def test_new_page_preselects_agent_from_profile_link(client, agent):
+def test_new_page_preselects_agent_from_profile_link(client, db, agent):
+    _stamp(db, agent)
     html = client.get(f"/new?agent={agent}").get_data(as_text=True)
     m = re.search(r'<script type="application/json" id="flow-agent">(.*?)</script>', html, re.S)
     picked = json.loads(m.group(1))
@@ -60,8 +61,16 @@ def test_estimate_unknown_engagement_is_404(client):
     assert "No engagement ENG-DOESNOTEXIST exists" in res.get_data(as_text=True)
 
 
+def _stamp(db, agent_id):
+    from app.models import Agent
+    from app.seller.stamp import dev_stamp
+    dev_stamp(db.session.get(Agent, agent_id))
+    db.session.commit()
+
+
 def test_estimate_page_shows_contract_for_engagement(client, db, agent, human):
     from app.models import Engagement, Milestone
+    _stamp(db, agent)
     eng = Engagement(agent_id=agent, buyer_human_id=human.id, outcome="Competitor teardown",
                      category="Research", total_micro=500_000_000, sow_hash="0x" + "ab" * 32,
                      status="scoped", deadline_at=datetime(2030, 1, 15, tzinfo=timezone.utc))
@@ -81,6 +90,57 @@ def test_estimate_page_shows_contract_for_engagement(client, db, agent, human):
     assert eng.sow_hash in html
     assert "Each milestone is paid only when you approve it." in html
     assert 'id="estimate-approve"' in html
+
+
+def test_new_page_does_not_preselect_an_unstamped_agent(client, agent):
+    """An agent without a valid operator stamp can't be hired, so the flow
+    must not offer it even when linked from its profile."""
+    html = client.get(f"/new?agent={agent}").get_data(as_text=True)
+    assert '<script type="application/json" id="flow-agent">null</script>' in html
+
+
+def test_estimate_page_blocks_approval_for_unstamped_agent(client, db, agent):
+    from app.models import Engagement
+    eng = Engagement(agent_id=agent, outcome="x", total_micro=1, status="scoped")
+    db.session.add(eng)
+    db.session.commit()
+    html = client.get(f"/estimate/{eng.id}").get_data(as_text=True)
+    assert 'id="estimate-approve"' not in html
+    assert "This agent can't be hired right now." in html
+    assert "The operator has not stamped this agent" in html
+    _stamp(db, agent)
+    html = client.get(f"/estimate/{eng.id}").get_data(as_text=True)
+    assert 'id="estimate-approve"' in html and "can't be hired" not in html
+
+
+def test_matching_api_offers_only_hireable_agents(client, db, agent):
+    """The guided flow and MCP search ask /api/agents?hireable=1: unstamped
+    agents are left out, and total and pages count only hireable ones."""
+    from app.models import Agent
+    others = []
+    for n in range(3):
+        row = Agent(name=f"Stamped {n}", category="Development", billing="per_token",
+                    seller="0x" + "d" * 40, deployer_wallet="0x" + "d" * 40)
+        db.session.add(row)
+        others.append(row)
+    db.session.commit()
+    for row in others:
+        _stamp(db, row.id)
+    body = client.get("/api/agents?category=Development&hireable=1&per_page=2").get_json()
+    assert body["total"] == 3 and [a["name"] for a in body["agents"]] == ["Stamped 0", "Stamped 1"]
+    assert all(a["operator_stamped"] for a in body["agents"])
+    page2 = client.get("/api/agents?category=Development&hireable=1&per_page=2&page=2").get_json()
+    assert [a["name"] for a in page2["agents"]] == ["Stamped 2"]
+    assert agent not in {a["id"] for a in body["agents"] + page2["agents"]}
+    # Without the flag the catalog API still lists every visible agent.
+    assert client.get("/api/agents?category=Development").get_json()["total"] == 4
+
+
+def test_flow_and_mcp_ask_for_hireable_agents():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    assert '"/api/agents?hireable=1&"' in (root / "app/static/js/flow.js").read_text()
+    assert '"hireable": 1' in (root / "agentslist_mcp/client.py").read_text()
 
 
 def test_estimate_page_hides_approve_once_funded(client, db, agent):

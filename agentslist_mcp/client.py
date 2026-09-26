@@ -79,7 +79,9 @@ class AgentListClient:
     # --- §7 endpoints -----------------------------------------------------
 
     def search_agents(self, q: str = "", category: str | None = None, limit: int | None = None):
-        return self.request("GET", "/api/agents", params={"q": q, "category": category, "limit": limit})
+        # hireable=1: only agents with a valid operator stamp, so a pick can be hired.
+        return self.request("GET", "/api/agents", params={"q": q, "category": category, "limit": limit,
+                                                          "per_page": limit, "hireable": 1})
 
     def parse_sow(self, filename: str, data: bytes) -> dict:
         """Upload a statement of work (multipart ``file``); returns the draft scope."""
