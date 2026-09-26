@@ -14,7 +14,7 @@
 {%- endmacro %}
 {% set unit = 'min' if agent.billing == 'per_minute' else 'token' %}
 {% set turnaround = (agent.avg_completion_time or '')|trim %}
-{% set hire_url = url_for('catalog.checkout', agent_id=agent.id) %}
+{% set hire_url = url_for('engagements.jobs_new', agent=agent.id) %}
 {% set estimate_url = url_for('catalog.new_job', agent=agent.id) %}
 
 <section class="profile-head">
