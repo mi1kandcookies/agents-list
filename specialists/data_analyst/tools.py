@@ -16,9 +16,14 @@ agent's own deliverables. The tools:
     reconcile_metrics  metrics.yaml values vs the customer's reference totals
 
 Tools are plain `fn(workspace: Path, *, fetch=None, run=None, **args)`
-functions (agent.py wraps them as kit tools). None of them needs the network
-or a subprocess. checks.py reuses the loaders here so acceptance recomputes
-every number from inputs/ rather than trusting what the agent wrote.
+functions that the kit wraps from TOOL_DEFS. None of them needs the network
+or a subprocess. Tools that write files, or read a path the model chose,
+also take the kit's `resolve_path`: under the harness every such path goes
+through the PolicyGate (inputs/ read-only, .agentkit/ refused) and written
+files are marked agent-authored. Called directly (tests, checks) they fall
+back to resolve_in, the same lexical-then-resolved jail. checks.py reuses
+the loaders here so acceptance recomputes every number from inputs/ rather
+than trusting what the agent wrote.
 """
 from __future__ import annotations
 
@@ -30,11 +35,12 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
+from agentkit.policy import INTERNAL_DIR, jail_path
 
 INPUTS_DIR = "inputs"
 DELIVERABLES_DIR = "deliverables"
@@ -323,16 +329,42 @@ def _safe_name(value: str, what: str) -> str:
 
 
 def resolve_in(workspace: Path, rel: str) -> Path:
-    """Resolve a workspace-relative path; refuse anything that escapes the workspace."""
+    """Resolve a workspace-relative path with the kit's jail (checked lexically
+    before the filesystem is touched, then symlinks resolved); refuse anything
+    that escapes the workspace and the kit's internal .agentkit/ folder."""
     root = Path(workspace).resolve()
-    target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        raise ToolError(f"path escapes the workspace: {rel}")
+    try:
+        target = jail_path(root, rel)
+    except PolicyViolation as exc:
+        raise ToolError(f"path escapes the workspace: {rel} ({exc})") from None
+    parts = target.relative_to(root).parts
+    if parts and parts[0].lower() == INTERNAL_DIR:
+        raise ToolError(f"path is internal to the kit: {rel}")
     return target
 
 
+# resolve_path(rel, *, write=False) -> Path, as the kit hands it to domain tools.
+Resolver = Callable[..., Path]
+
+
+def resolver(workspace: Path, resolve_path: Resolver | None = None) -> Resolver:
+    """The kit's resolve_path when a tool runs under the harness, else resolve_in."""
+    if resolve_path is not None:
+        return resolve_path
+
+    def local(rel: str, *, write: bool = False) -> Path:
+        return resolve_in(workspace, rel)
+
+    return local
+
+
+def milestone_rel(milestone: str) -> str:
+    """deliverables/<milestone>, workspace-relative, for a safe milestone id."""
+    return f"{DELIVERABLES_DIR}/{_safe_name(milestone, 'milestone')}"
+
+
 def milestone_dir(workspace: Path, milestone: str) -> Path:
-    return Path(workspace) / DELIVERABLES_DIR / _safe_name(milestone, "milestone")
+    return Path(workspace) / milestone_rel(milestone)
 
 
 def _write(path: Path, text: str) -> None:
@@ -394,9 +426,10 @@ def profile_table(session: Session, table: str) -> dict:
             "duplicate_rows": duplicate_rows, "columns": columns}
 
 
-def profile_tables(workspace: Path, *, fetch=None, run=None, tables: list[str] | None = None,
-                   milestone: str = "m1-profile") -> dict:
+def profile_tables(workspace: Path, *, fetch=None, run=None, resolve_path: Resolver | None = None,
+                   tables: list[str] | None = None, milestone: str = "m1-profile") -> dict:
     """Profile tables (default: all) and merge them into deliverables/<milestone>/profile.json."""
+    out = resolver(workspace, resolve_path)(f"{milestone_rel(milestone)}/profile.json", write=True)
     session = open_session(workspace)
     try:
         wanted = list(tables) if tables else list(session.tables)
@@ -404,7 +437,6 @@ def profile_tables(workspace: Path, *, fetch=None, run=None, tables: list[str] |
         inputs = {rel: _sha256_file(Path(workspace) / rel) for rel in sorted(set(session.sources.values()))}
     finally:
         session.close()
-    out = milestone_dir(workspace, milestone) / "profile.json"
     doc = {"inputs": {}, "tables": {}}
     if out.exists():
         try:
@@ -439,19 +471,20 @@ def run_query(workspace: Path, *, fetch=None, run=None, sql: str, limit: int = P
             "sha256": result.sha256}
 
 
-def save_query(workspace: Path, *, fetch=None, run=None, name: str, sql: str,
-               milestone: str, description: str = "") -> dict:
+def save_query(workspace: Path, *, fetch=None, run=None, resolve_path: Resolver | None = None,
+               name: str, sql: str, milestone: str, description: str = "") -> dict:
     """Execute a read-only query and save it with its result so reviewers can re-run it."""
     _safe_name(name, "name")
+    path = resolver(workspace, resolve_path)
+    base = milestone_rel(milestone)
+    query_path = path(f"{base}/queries/{name}.sql", write=True)
+    result_path = path(f"{base}/results/{name}.csv", write=True)
     session = open_session(workspace)
     try:
         result = execute(session, sql)
     finally:
         session.close()
-    base = milestone_dir(workspace, milestone)
     header = "".join(f"-- {line}\n" for line in description.strip().splitlines()) if description.strip() else ""
-    query_path = base / "queries" / f"{name}.sql"
-    result_path = base / "results" / f"{name}.csv"
     _write(query_path, header + check_sql(sql) + ";\n")
     _write(result_path, result_csv(result))
     return {"query_path": _rel(workspace, query_path), "result_path": _rel(workspace, result_path),
@@ -492,9 +525,9 @@ def format_value(value: float, unit: str = "", decimals: int | None = None) -> s
 FIGURE_UNITS = ("", "usd", "pct", "count")
 
 
-def record_figure(workspace: Path, *, fetch=None, run=None, milestone: str, figure_id: str,
-                  query: str, column: str, row: int = 0, label: str = "", unit: str = "",
-                  decimals: int | None = None) -> dict:
+def record_figure(workspace: Path, *, fetch=None, run=None, resolve_path: Resolver | None = None,
+                  milestone: str, figure_id: str, query: str, column: str, row: int = 0,
+                  label: str = "", unit: str = "", decimals: int | None = None) -> dict:
     """Re-run a saved query, take one value from it and record it in figures.json.
 
     The report must cite it as [F:<figure_id>] on the same line as its display text.
@@ -514,7 +547,7 @@ def record_figure(workspace: Path, *, fetch=None, run=None, milestone: str, figu
     figure = {"id": figure_id, "label": label, "query": query, "column": column, "row": int(row),
               "value": value, "unit": unit, "decimals": decimals,
               "display": format_value(value, unit, decimals)}
-    path = milestone_dir(workspace, milestone) / "figures.json"
+    path = resolver(workspace, resolve_path)(f"{milestone_rel(milestone)}/figures.json", write=True)
     figures = load_figures(path) if path.exists() else []
     figures = [f for f in figures if f.get("id") != figure_id] + [figure]
     _write(path, json.dumps({"figures": figures}, indent=2) + "\n")
@@ -560,9 +593,11 @@ def load_reference(path: Path) -> dict[str, dict]:
     return ref
 
 
-def metric_value(workspace: Path, session: Session, base: Path, metric: dict) -> float:
+def metric_value(workspace: Path, session: Session, base: Path, metric: dict,
+                 resolve_path: Resolver | None = None) -> float:
     """Execute a metric's query file (relative to the milestone folder) and return its value."""
-    query_path = resolve_in(workspace, _rel(workspace, base) + "/" + str(metric.get("query", "")))
+    rel = _rel(workspace, base) + "/" + str(metric.get("query", ""))
+    query_path = resolver(workspace, resolve_path)(rel)
     if not query_path.is_file():
         raise ToolError(f"metric {metric.get('name')!r}: query file {metric.get('query')!r} not found")
     result = execute(session, query_path.read_text(encoding="utf-8"))
@@ -573,11 +608,11 @@ def metric_value(workspace: Path, session: Session, base: Path, metric: dict) ->
 
 
 def evaluate_metrics(workspace: Path, milestone: str, reference_path: str,
-                     tolerance_pct: float = 0.5) -> list[dict]:
+                     tolerance_pct: float = 0.5, *, resolve_path: Resolver | None = None) -> list[dict]:
     """Recompute every metric and compare it with the reference totals."""
     base = milestone_dir(workspace, milestone)
     metrics = load_metrics(base / "metrics.yaml")
-    reference = load_reference(resolve_in(workspace, reference_path))
+    reference = load_reference(resolver(workspace, resolve_path)(reference_path))
     rows = []
     session = open_session(workspace)
     try:
@@ -586,7 +621,7 @@ def evaluate_metrics(workspace: Path, milestone: str, reference_path: str,
             name = str(m.get("name", ""))
             names.add(name)
             try:
-                computed = metric_value(workspace, session, base, m)
+                computed = metric_value(workspace, session, base, m, resolve_path)
                 error = ""
             except ToolError as exc:
                 computed, error = None, str(exc)
@@ -622,18 +657,19 @@ def _diff_pct(computed: float, reference: float) -> float:
 RECONCILIATION_COLUMNS = ("metric", "computed", "reference", "diff_pct", "tolerance_pct", "status")
 
 
-def reconcile_metrics(workspace: Path, *, fetch=None, run=None, milestone: str = "m2-metrics",
+def reconcile_metrics(workspace: Path, *, fetch=None, run=None, resolve_path: Resolver | None = None,
+                      milestone: str = "m2-metrics",
                       reference_path: str = "inputs/reference_totals.csv",
                       tolerance_pct: float = 0.5) -> dict:
     """Recompute metrics.yaml and write reconciliation.csv against the reference totals."""
-    rows = evaluate_metrics(workspace, milestone, reference_path, tolerance_pct)
+    out = resolver(workspace, resolve_path)(f"{milestone_rel(milestone)}/reconciliation.csv", write=True)
+    rows = evaluate_metrics(workspace, milestone, reference_path, tolerance_pct, resolve_path=resolve_path)
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(RECONCILIATION_COLUMNS)
     for r in rows:
         writer.writerow(["" if r[k] is None else (cell(r[k]) if k == "computed" else r[k])
                          for k in RECONCILIATION_COLUMNS])
-    out = milestone_dir(workspace, milestone) / "reconciliation.csv"
     _write(out, buf.getvalue())
     return {"path": _rel(workspace, out), "rows": rows,
             "all_match": all(r["status"] in ("match", "no_reference") for r in rows)}

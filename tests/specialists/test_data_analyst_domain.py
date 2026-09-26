@@ -254,6 +254,43 @@ def test_metric_query_path_cannot_escape(ws):
     assert "escapes the workspace" in rows[0]["status"]
 
 
+@pytest.mark.parametrize("rel", ["../outside.csv", ".agentkit/ledger.json", "//host/share/x.csv",
+                                 "/etc/passwd", "inputs/../../outside.csv"])
+def test_resolve_in_refuses_escapes_and_kit_files(ws, rel):
+    with pytest.raises(ToolError):
+        tools.resolve_in(ws, rel)
+
+
+def test_reconcile_reference_must_stay_in_the_workspace(ws):
+    good_metrics(ws)
+    (ws / ".agentkit").mkdir()
+    shutil.copy(ws / "inputs/reference_totals.csv", ws / ".agentkit/reference_totals.csv")
+    for rel in ("../reference_totals.csv", ".agentkit/reference_totals.csv"):
+        with pytest.raises(ToolError):
+            tools.reconcile_metrics(ws, reference_path=rel)
+
+
+def test_tools_resolve_paths_through_the_kit_when_given(ws):
+    seen = []
+
+    def resolve_path(p, *, write=False):
+        seen.append((p, write))
+        return tools.resolve_in(ws, p)
+
+    tools.save_query(ws, resolve_path=resolve_path, name="aug_revenue", sql=AUG_REVENUE_SQL,
+                     milestone="m3-analysis")
+    tools.record_figure(ws, resolve_path=resolve_path, milestone="m3-analysis", figure_id="f1",
+                        query="aug_revenue", column="revenue", unit="usd")
+    good_metrics(ws)
+    tools.reconcile_metrics(ws, resolve_path=resolve_path)
+    assert seen[:3] == [("deliverables/m3-analysis/queries/aug_revenue.sql", True),
+                        ("deliverables/m3-analysis/results/aug_revenue.csv", True),
+                        ("deliverables/m3-analysis/figures.json", True)]
+    assert ("deliverables/m2-metrics/reconciliation.csv", True) in seen
+    assert ("inputs/reference_totals.csv", False) in seen                     # model-chosen read
+    assert ("deliverables/m2-metrics/queries/paid_revenue_2026_07.sql", False) in seen
+
+
 def test_tool_defs_are_well_formed():
     names = [d["name"] for d in tools.TOOL_DEFS]
     assert len(names) == len(set(names))
