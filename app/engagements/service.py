@@ -297,10 +297,12 @@ def _cap_of(verdict: dict) -> int:
 
 # ── scope ─────────────────────────────────────────────────────────────────
 def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, deadline=None,
-                      source_document=None):
+                      source_document=None, screen_payee: bool = True):
     """Build the SOW, persist the engagement as ``scoped`` and return
     ``(engagement, screening_preview)``. ``source_document`` ({filename,
-    sha256} of an uploaded SOW) goes into the SOW and so into sow_hash."""
+    sha256} of an uploaded SOW) goes into the SOW and so into sow_hash.
+    ``screen_payee=False`` skips the preview screening (demo seeding, which
+    must not call the screening provider)."""
     from app.models import Engagement, Milestone
     try:
         plan = normalize_milestones(milestones, budget_micro)
@@ -323,7 +325,7 @@ def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, dea
     db.session.flush()
     preview = None
     payee = payee_address(agent)
-    if payee:
+    if payee and screen_payee:
         preview = screen("engagement.fund", chain_address=payee, amount_micro=budget_micro,
                          engagement=eng, agent=agent)
     db.session.commit()

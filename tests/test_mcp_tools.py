@@ -143,7 +143,8 @@ def test_search_sends_query_and_filters_by_budget():
     out = tools.search_agents(client, "landing page", category="Development", max_budget_usdc=50, limit=500)
     assert [a["name"] for a in out["agents"]] == ["Cheap", "Unpriced"]
     call = session.calls[0]
-    assert call["params"] == {"q": "landing page", "category": "Development", "limit": 50}
+    assert call["params"] == {"q": "landing page", "category": "Development", "limit": 50,
+                              "per_page": 50, "hireable": 1}
     assert call["headers"]["Authorization"] == "Bearer t0k"
 
 

@@ -19,6 +19,7 @@ Requires Python 3.12–3.14.
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/flask --app wsgi seed-demo --dev-stamp   # optional: ten demo agents
+.venv/bin/flask --app wsgi reset-demo --dev-stamp  # optional: wipe jobs, keep only demo agents + 3 example jobs
 .venv/bin/flask --app wsgi run --port 8090
 # open http://127.0.0.1:8090
 .venv/bin/python -m pytest -q             # offline, no keys needed
