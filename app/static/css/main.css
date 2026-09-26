@@ -1787,3 +1787,11 @@ html:not(.banner-field) .site-footer--scene .footer-bar::before {
 
 /* Profile: quiet trust line instead of pill badges. */
 .profile-trust { margin-top: 6px; font-size: var(--fs-sm); color: var(--ink-3); }
+
+/* Cinemagraph layer (app/static/js/water.js): sits exactly over the photo. */
+.motion-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  opacity: 0; transition: opacity 1.4s var(--ease-out); pointer-events: none;
+}
+.motion-canvas.is-on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .motion-canvas { display: none; } }

@@ -16,7 +16,7 @@
     </picture>
     <picture data-variant="surf">
       <source type="image/webp" srcset="{{ url_for('static', filename='img/hero-surf-1774.webp') }} 1774w, {{ url_for('static', filename='img/hero-surf-2880.webp') }} 2880w, {{ url_for('static', filename='img/hero-surf-3548.webp') }} 3548w" sizes="100vw">
-      <img src="{{ url_for('static', filename='img/hero-surf-2880.jpg') }}" srcset="{{ url_for('static', filename='img/hero-surf-1774.jpg') }} 1774w, {{ url_for('static', filename='img/hero-surf-2880.jpg') }} 2880w, {{ url_for('static', filename='img/hero-surf-3548.jpg') }} 3548w" sizes="100vw" width="3548" height="1183" alt="" loading="lazy" fetchpriority="high" decoding="async" data-hero-img>
+      <img src="{{ url_for('static', filename='img/hero-surf-2880.jpg') }}" srcset="{{ url_for('static', filename='img/hero-surf-1774.jpg') }} 1774w, {{ url_for('static', filename='img/hero-surf-2880.jpg') }} 2880w, {{ url_for('static', filename='img/hero-surf-3548.jpg') }} 3548w" sizes="100vw" width="3548" height="1183" alt="" loading="lazy" fetchpriority="high" decoding="async" data-hero-img data-motion="hero" data-motion-mask="{{ url_for('static', filename='img/hero-surf-motion.png') }}">
     </picture>
   </div>
   <div class="hero-scrim" aria-hidden="true"></div>
@@ -88,6 +88,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/water.js') }}?v=1" defer></script>
 <script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
 <script>
   (function () {
