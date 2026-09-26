@@ -16,9 +16,8 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 @bp.route("/dashboard")
 def admin_dashboard():
-    # Default to live-on-chain view so reviewers first-impression isn't 4k+
-    # "active orders" from seeded sim ticks. Explicit ?all=1 flips to the
-    # full aggregate; ?live_only=0 also respected for backwards compat.
+    # Default to transactions the platform actually submitted on-chain.
+    # ?all=1 includes every ChainTransaction row; ?live_only=0 is also accepted.
     all_flag  = request.args.get("all", "").lower() in ("1", "true", "yes")
     live_raw  = request.args.get("live_only", "").lower()
     live_only = not all_flag if live_raw == "" else (live_raw in ("1", "true", "yes"))

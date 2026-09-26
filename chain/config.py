@@ -45,7 +45,7 @@ CONTRACTS: dict[str, dict] = {
     "ReputationRegistry": {"env": "ERC8004_REPUTATION_REGISTRY",
                            "default": "0x8004B663056A597Dffe9eCcC1965A193B7388713"},
     # Legacy AgentHire contracts. They were only deployed on the upstream
-    # prototype testnet and are superseded by ERC-8004 + EngagementEscrow
+    # prototype's testnet and are superseded by ERC-8004 + EngagementEscrow
     # (roadmap), so there is no Sepolia default. Set the env var to point at
     # a redeploy.
     "AgentRegistry":      {"env": "AGENT_REGISTRY_ADDRESS", "default": None},
