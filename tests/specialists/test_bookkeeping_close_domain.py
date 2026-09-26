@@ -194,3 +194,208 @@ def test_tool_defs_are_well_formed():
     for d in t.TOOL_DEFS:
         assert callable(d["function"]) and d["risk"] in ("read", "write")
         assert d["input_schema"]["type"] == "object" and d["description"]
+
+
+# --- checks ----------------------------------------------------------------------
+
+from specialists.bookkeeping_close.checks import CHECK_DEFS  # noqa: E402
+
+KIT_BUILTIN_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+                      "json_valid", "csv_columns", "command_succeeds", "ledger_verified", "citations_resolve",
+                      "disclaimer_present", "rubric_grader", "human_signoff"}
+KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+             "http_fetch", "web_search", "read_document", "record_source", "record_claim", "ask_client",
+             "post_progress", "submit_milestone"}
+
+
+def _manifest():
+    return yaml.safe_load((PACK / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def _params(check, milestone):
+    m = next(m for m in _manifest()["milestones"] if m["id"] == milestone)
+    return next(a["params"] for a in m["acceptance"] if a["check"] == check)
+
+
+def _run(ws, check, milestone):
+    return CHECK_DEFS[check](ws, _params(check, milestone))
+
+
+@pytest.fixture
+def closed(ws):
+    _close_period(ws)
+    flux_path = ws / "deliverables/m3-close-package/flux.csv"
+    rows = _rows(flux_path)
+    for r in rows:
+        if r["flagged"] == "yes":
+            r["commentary"] = f"Movement of {r['change']} traced to August activity and schedules"
+    _write_rows(flux_path, rows)
+    return ws
+
+
+DOMAIN_CHECKS = [("bank_rec_ties", "m2-period-close"), ("categorization_complete", "m2-period-close"),
+                 ("journal_entries_balanced", "m2-period-close"), ("trial_balance_ties", "m2-period-close"),
+                 ("no_plugs", "m2-period-close"), ("flux_commentary_complete", "m3-close-package"),
+                 ("financial_statements_tie", "m3-close-package"), ("opening_balances_tie", "m1-onboarding"),
+                 ("account_map_complete", "m1-onboarding")]
+
+
+@pytest.mark.parametrize("check,milestone", DOMAIN_CHECKS)
+def test_every_domain_check_passes_on_an_honest_close(closed, check, milestone):
+    out = _run(closed, check, milestone)
+    assert out["passed"] is True, out["details"]
+    assert out["score"] == 1.0
+
+
+@pytest.mark.parametrize("check,milestone", DOMAIN_CHECKS)
+def test_checks_fail_cleanly_when_deliverables_are_missing(ws, check, milestone):
+    out = _run(ws, check, milestone)
+    assert out["passed"] is False and out["details"]
+
+
+def test_bank_rec_forged_tie_fails(closed):
+    path = closed / M2 / "bank_reconciliation.json"
+    rec = json.loads(path.read_text())
+    rec["gl_ending_balance"] = "36945.58"          # claims the books equal the bank
+    rec["outstanding_items"] = []
+    path.write_text(json.dumps(rec))
+    out = _run(closed, "bank_rec_ties", "m2-period-close")
+    assert out["passed"] is False and "gl_ending_balance" in out["details"]
+
+
+def test_bank_rec_fails_when_books_do_not_tie(closed):
+    rows = _rows(closed / "inputs/gl_detail.csv")
+    rows[0]["debit"] = "42300.00"                  # opening cash off by 50
+    rows[9]["credit"] = "26950.00"                 # retained earnings keeps the GL balanced
+    _write_rows(closed / "inputs/gl_detail.csv", rows)
+    t.reconcile_bank(closed, cash_account="1000", period="2026-08")
+    out = _run(closed, "bank_rec_ties", "m2-period-close")
+    assert out["passed"] is False and "unexplained difference 50.00" in out["details"]
+
+
+def test_bank_rec_requires_entries_for_bank_only_items(closed):
+    je = [r for r in _rows(closed / M2 / "journal_entries.csv") if r["entry_id"] != "ADJ-202608-BANK"]
+    _write_rows(closed / M2 / "journal_entries.csv", je)
+    out = _run(closed, "bank_rec_ties", "m2-period-close")
+    assert out["passed"] is False and "MONTHLY SERVICE FEE" in out["details"]
+
+
+def test_bank_rec_catches_stated_balance_mismatch(closed):
+    params = json.loads((closed / "inputs/close_parameters.json").read_text())
+    params["statement_ending_balance"] = "36945.00"
+    (closed / "inputs/close_parameters.json").write_text(json.dumps(params))
+    assert _run(closed, "bank_rec_ties", "m2-period-close")["passed"] is False
+
+
+def test_categorization_dropped_or_unqueued_rows_fail(closed):
+    path = closed / M2 / "categorized.csv"
+    rows = _rows(path)
+    _write_rows(path, rows[:-1])
+    assert _run(closed, "categorization_complete", "m2-period-close")["passed"] is False
+    _write_rows(path, rows)
+    ex = [r for r in _rows(closed / M2 / "exceptions.csv") if "VENMO" not in r["description"].upper()]
+    _write_rows(closed / M2 / "exceptions.csv", ex)
+    out = _run(closed, "categorization_complete", "m2-period-close")
+    assert out["passed"] is False and "VENMO" in out["details"]
+
+
+def test_unbalanced_or_unsupported_entry_fails(closed):
+    path = closed / M2 / "journal_entries.csv"
+    rows = _rows(path)
+    rows[0]["debit"] = "999.00"
+    _write_rows(path, rows)
+    assert _run(closed, "journal_entries_balanced", "m2-period-close")["passed"] is False
+    rows = _rows(path)
+    rows[0]["debit"], rows[1]["support"], rows[2]["status"] = "1000.00", "", "posted"
+    _write_rows(path, rows)
+    out = _run(closed, "journal_entries_balanced", "m2-period-close")
+    assert out["passed"] is False and "no support" in out["details"] and "not marked draft" in out["details"]
+
+
+def test_trial_balance_edited_number_fails(closed):
+    path = closed / M2 / "trial_balance.csv"
+    rows = _rows(path)
+    next(r for r in rows if r["account"] == "1000")["debit"] = "36945.58"
+    re_row = next(r for r in rows if r["account"] == "3900")
+    re_row["credit"] = t.fmt(t.money(re_row["credit"]) + t.money("156.40"))   # still "balances"
+    _write_rows(path, rows)
+    out = _run(closed, "trial_balance_ties", "m2-period-close")
+    assert out["passed"] is False and "1000" in out["details"] and "debits" not in out["details"]
+
+
+def test_plug_into_suspense_or_unitemized_suspense_fails(closed):
+    path = closed / M2 / "journal_entries.csv"
+    rows = _rows(path)
+    rows += [dict(rows[0], entry_id="ADJ-X", account="1999", debit="12.34", credit="", description="Plug to balance"),
+             dict(rows[0], entry_id="ADJ-X", account="1000", debit="", credit="12.34", description="Plug to balance")]
+    _write_rows(path, rows)
+    out = _run(closed, "no_plugs", "m2-period-close")
+    assert out["passed"] is False and "1999" in out["details"] and "plug" in out["details"]
+    _write_rows(path, rows[:-2])
+    ex = [r for r in _rows(closed / M2 / "exceptions.csv") if r["account"] != "6999"]
+    _write_rows(closed / M2 / "exceptions.csv", ex)
+    out = _run(closed, "no_plugs", "m2-period-close")
+    assert out["passed"] is False and "6999" in out["details"]
+
+
+def test_flux_missing_or_forged_commentary_fails(closed):
+    path = closed / "deliverables/m3-close-package/flux.csv"
+    rows = _rows(path)
+    target = next(r for r in rows if r["account"] == "4000")
+    target["commentary"] = "n/a"
+    _write_rows(path, rows)
+    out = _run(closed, "flux_commentary_complete", "m3-close-package")
+    assert out["passed"] is False and 0 < out["score"] < 1
+    target["commentary"] = "Sales up on subscription release and more deposits"
+    target["change"] = "-100.00"
+    _write_rows(path, rows)
+    assert _run(closed, "flux_commentary_complete", "m3-close-package")["passed"] is False
+
+
+def test_opening_difference_needs_explanation(closed):
+    rows = _rows(closed / "inputs/prior_trial_balance.csv")
+    rows[1]["debit"] = "8250.00"
+    _write_rows(closed / "inputs/prior_trial_balance.csv", rows)
+    t.tie_opening_balances(closed, period="2026-08")
+    assert _run(closed, "opening_balances_tie", "m1-onboarding")["passed"] is False
+    path = closed / "deliverables/m1-onboarding/opening_balance_tieout.csv"
+    tie = _rows(path)
+    next(r for r in tie if r["account"] == "1100")["explanation"] = "Invoice 2199 credit memo posted after TB export"
+    _write_rows(path, tie)
+    assert _run(closed, "opening_balances_tie", "m1-onboarding")["passed"] is True
+
+
+def test_account_map_wrong_statement_fails(closed):
+    path = closed / "deliverables/m1-onboarding/account_map.csv"
+    rows = _rows(path)
+    next(r for r in rows if r["account"] == "6999")["statement"] = "balance_sheet"
+    _write_rows(path, [r for r in rows if r["account"] != "6200"])
+    out = _run(closed, "account_map_complete", "m1-onboarding")
+    assert out["passed"] is False and "6200 is not mapped" in out["details"] and "6999" in out["details"]
+
+
+def test_financial_statements_forged_total_fails(closed):
+    path = closed / "deliverables/m3-close-package/financial_statements.json"
+    data = json.loads(path.read_text())
+    data["income_statement"]["net_income"] = "1500.00"
+    path.write_text(json.dumps(data))
+    out = _run(closed, "financial_statements_tie", "m3-close-package")
+    assert out["passed"] is False and "net_income" in out["details"]
+
+
+# --- manifest ----------------------------------------------------------------------
+
+def test_manifest_parses_and_references_known_tools_and_checks():
+    m = _manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "bookkeeping-close"
+    assert m["human_gate"]["required"] is True and "CPA" in m["human_gate"]["reviewer_role"]
+    assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
+    domain_tools = {d["name"] for d in t.TOOL_DEFS}
+    assert set(m["tools"]) <= KIT_TOOLS | domain_tools
+    assert domain_tools <= set(m["tools"])
+    assert [ms["id"] for ms in m["milestones"]] == ["m1-onboarding", "m2-period-close", "m3-close-package"]
+    for ms in m["milestones"]:
+        assert all(d.startswith(f"deliverables/{ms['id']}/") for d in ms["deliverables"])
+        assert "human" in [a.get("kind", "automated") for a in ms["acceptance"]]
+        for a in ms["acceptance"]:
+            assert a["check"] in KIT_BUILTIN_CHECKS | set(CHECK_DEFS), a["check"]
