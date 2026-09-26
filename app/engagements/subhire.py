@@ -115,6 +115,8 @@ def subhire(engagement_id: str, token: str, *, agent_ref, outcome, budget_micro:
     if budget_micro > remaining:
         raise EngagementError(f"budget exceeds what the mandate has left ({format_usdc(remaining)})",
                               "MANDATE_EXCEEDED", 403, "budget_usdc")
+    from app.seller.stamp import assert_hireable
+    assert_hireable(agent)  # 409: operator stamp valid, operator not banned, payee not refused
     payee = payee_address(agent)
     if payee is None:
         raise EngagementError("agent has no payout address", "PAYEE_ADDRESS_MISSING", 409)
