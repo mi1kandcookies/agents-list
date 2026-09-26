@@ -42,7 +42,8 @@ from app.screening.intercepta import MAINNET_CHAIN_ID, InterceptaClient, Interce
 
 HOPS = frozenset({"payee.onboard", "payer.check", "engagement.fund", "milestone.release",
                   "subhire.hop", "signature"})
-MONEY_HOPS = frozenset({"engagement.fund", "milestone.release", "subhire.hop", "signature"})
+MONEY_HOPS = frozenset({"payer.check", "engagement.fund", "milestone.release", "subhire.hop",
+                        "signature"})
 PROVIDER = "intercepta"
 NETWORK = f"eip155:{MAINNET_CHAIN_ID}"
 MAINNET_USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
@@ -270,7 +271,10 @@ class InterceptaScreener:
         state["screened"] = screened
 
         try:
-            source = "deep-scan" if hop == "payee.onboard" else "quick-scan"
+            # A specialist deep-scans a payer before accepting its work. The
+            # payee-onboarding path has always used Deep Scan; all payment
+            # hops still keep their own fresh verdict and local policy pass.
+            source = "deep-scan" if hop in {"payee.onboard", "payer.check"} else "quick-scan"
             body = _cached_address_scan(client, source, screened)
             raw[source] = body
             state["signals"]["toxic_score"] = body["toxicScore"]

@@ -35,7 +35,7 @@
       <h1>Integration notes: Payment screening</h1>
       <p class="lede">Working notes on the Intercepta payment-screening integration: where it is called, what the docs told us, and what live use shows.</p>
 
-      <p class="note">The provider is called from the payer before signing and again by the resource server before settlement. Credentials stay outside the repository.</p>
+      <p class="note">The provider is called from the payer before signing, then by the resource server to screen the payer and payee before settlement. Credentials stay outside the repository.</p>
       <section>
         <h2 id="files">Which files call the API</h2>
         <ul>
@@ -50,7 +50,7 @@
       <section>
         <h2 id="learned">What we learned from the docs</h2>
         <ul>
-          <li><strong>Mainnet-only data.</strong> Risk data covers mainnet, while our payments settle on Sepolia. Each Sepolia payee is screened as a mapped mainnet address (<code>agents.screening_address</code>, else <code>SCREENING_ADDRESS_MAP</code>). An unmapped payee is refused.</li>
+          <li><strong>Mainnet-only data.</strong> Risk data covers mainnet, while our payments settle on Sepolia. Each Sepolia payer and payee is screened as a mapped mainnet address (<code>agents.screening_address</code>, else <code>SCREENING_ADDRESS_MAP</code>). An unmapped address is refused.</li>
           <li><strong><code>riskGroup</code> values.</strong> Scan Message returns <code>Low</code>, <code>Medium</code> or <code>High</code>. We map <code>High</code> to <code>ASK_HUMAN</code> and <code>Medium</code> to <code>CAP</code>; drainer or malicious detectors refuse.</li>
           <li><strong>No score threshold is published.</strong> Traits drive our decisions; the toxic-score thresholds (refuse ≥ 80, ask ≥ 60, cap ≥ 30) are our own and configurable.</li>
           <li><strong>Fail closed.</strong> No key, timeout (4 s by default), non-2xx status or an unexpected body all mean <code>REFUSE</code>.</li>

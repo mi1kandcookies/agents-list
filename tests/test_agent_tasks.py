@@ -147,13 +147,16 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     assert pay["simulated"] is True and pay["tx_hash"].startswith("sim-")
     assert pay["amount_micro"] == PRICE and pay["to"] == PAYEE and pay["payee_source"] == "profile"
     assert pay["from"] == payer_key.address.lower()
-    # Screened as a sub-hire hop, charged to the mandate, ledgered under its engagement.
-    assert [c["hop"] for c in screener.calls] == ["subhire.hop"]
-    assert screener.calls[0]["chain_address"] == PAYEE
+    # The specialist screens the payer before accepting the sub-hire, then
+    # screens its own payee hop and exact authorization.
+    assert [c["hop"] for c in screener.calls] == ["payer.check", "subhire.hop"]
+    assert screener.calls[0]["chain_address"] == payer_key.address.lower()
+    assert screener.calls[1]["chain_address"] == PAYEE
     assert _spent(db, mandate) == PRICE
     (entry,) = _ledger(mandate.engagement_id)
     assert entry.id == body["receipt_id"] and entry.kind == "subhire_alloc"
     assert entry.approval_id == mandate.approval_id and entry.screening_id == body["screening"]["id"]
+    assert body["payer_screening"]["hop"] == "payer.check"
     settle = x402_v2.decode_header(resp.headers["PAYMENT-RESPONSE"])
     assert settle == {"success": True, "transaction": pay["tx_hash"], "network": "eip155:11155111",
                       "payer": payer_key.address.lower()}
@@ -218,6 +221,16 @@ def test_screening_refusal_fails_closed(client, db, callee, payer_key, mandate, 
     screener.set(PAYEE, "ASK_HUMAN")
     resp, _ = _pay(client, callee, payer_key, mandate)
     assert resp.status_code == 403 and resp.get_json()["code"] == "SCREENING_REFUSED"
+
+
+def test_payer_screening_refusal_stops_before_payee_screen(client, db, callee, payer_key,
+                                                            mandate, screener):
+    screener.set(payer_key.address, "REFUSE")
+    resp, _ = _pay(client, callee, payer_key, mandate)
+    assert resp.status_code == 403 and resp.get_json()["code"] == "SCREENING_REFUSED"
+    assert resp.get_json()["screening"]["hop"] == "payer.check"
+    assert [call["hop"] for call in screener.calls] == ["payer.check"]
+    assert _spent(db, mandate) == 0 and _ledger(mandate.engagement_id) == []
 
 
 def test_amount_over_per_tx_cap_refused(client, db, app, callee, payer_key, mandate, screener):

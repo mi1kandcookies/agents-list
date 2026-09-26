@@ -10,7 +10,8 @@ payment still traces back to one human approval. In order: the payment is
 verified against this server's requirements and the token's EIP-712 domain;
 the mandate chain is re-verified and the payer's wallet must belong to the
 mandate's grantee; the payment policy caps the amount (per-transaction cap,
-remaining budget, X402_MAX_PAYMENT_USDC) and the payees; the payee is
+remaining budget, X402_MAX_PAYMENT_USDC) and the payees; the payer is deep-
+screened (hop ``payer.check``) before the payee and exact authorization are
 screened (hop ``subhire.hop``, fail closed); the nonce is burned; the
 mandate is charged; then the authorization is settled through the escrow
 service's facilitator path (simulated without keys) and recorded in the
@@ -207,6 +208,24 @@ def api_agent_task(agent_ref):
         return api_error(exc.message, 403, code=exc.code)
 
     engagement = db.session.get(Engagement, row.engagement_id)
+
+    # The specialist is also a payee-side gatekeeper: before accepting a
+    # sub-hire, it deep-scans the payer wallet. This is distinct from the
+    # payer-side pre-sign hook, which screens the payee before the buyer's
+    # signer is invoked.
+    payer_verdict = eng_svc.screen("payer.check", chain_address=verified.payer,
+                                   amount_micro=amount, engagement=engagement,
+                                   agent=payer_agent, typed_data=verified.typed_data)
+    try:
+        screening_policy.enforce_verdict(payer_verdict, amount)
+    except screening_policy.ScreeningBlocked as exc:
+        db.session.commit()
+        return jsonify({"error": f"payer refused by risk screening ({exc.code})",
+                        "code": "SCREENING_REFUSED",
+                        "screening": eng_svc.screening_json(payer_verdict)}), 403
+
+    # Screen the destination and exact EIP-712 authorization on the
+    # specialist hop as well. Both verdicts must allow the transfer.
     verdict = eng_svc.screen(HOP, chain_address=verified.pay_to, amount_micro=amount,
                              engagement=engagement, agent=agent,
                              typed_data=verified.typed_data)
@@ -258,6 +277,7 @@ def api_agent_task(agent_ref):
                     "payer": verified.payer, "pay_to": verified.pay_to,
                     "payee_source": payee.source, "nonce": verified.nonce},
         "screening": eng_svc.screening_json(verdict),
+        "payer_screening": eng_svc.screening_json(payer_verdict),
     })
     encoded = x402_v2.encode_header(settle)
     for name in x402_v2.RESPONSE_HEADERS:
