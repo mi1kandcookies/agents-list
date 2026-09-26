@@ -498,6 +498,19 @@ def test_ask_human_action_carries_payee_source(client, root, agents, screener, b
     assert ["Payee address from", "ENS record"] in apr["summary"]
 
 
+def test_ask_human_subhire_re_resolves_ens_before_allocate(client, root, agents, screener,
+                                                          approve, b_named):
+    eid, token = root
+    b_named(B_ADDR)
+    screener.set(B_ADDR, "ASK_HUMAN")
+    apr = _subhire(client, eid, token, agents["B"]).get_json()
+    b_named("0x" + "d" * 40)
+    row = approve(apr["approval_id"])
+    assert (row.state, row.failure_code) == ("blocked", "PAYEE_MISMATCH")
+    assert _status(client, apr["child_engagement_id"]) == "refused"
+    assert not _allocs()
+
+
 # ── ASK_HUMAN approval ends without executing ─────────────────────────────
 def _ask(client, root, agents, screener):
     eid, token = root

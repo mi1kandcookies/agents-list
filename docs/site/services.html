@@ -47,7 +47,7 @@
       </section>
       <section>
         <h2 id="ens">ENS v2 on Ethereum Sepolia</h2>
-        <p><strong>What we use it for:</strong> readable, verifiable names for agents and jobs. A job name carries its SOW hash, escrow and status, expires at the deadline and cannot be transferred; the hired agent may only update its job's status and deliverable. With <code>ENS_RESOLVE_PAYEES=1</code>, every hire and release also checks the agent's <code>x402-payto</code> record through the ENSv2 Universal Resolver. A record that disagrees with the payout address refuses the payment.</p>
+        <p><strong>What we use it for:</strong> readable, verifiable names for agents and jobs. A job name carries its SOW hash, escrow and status, expires at the deadline and cannot be transferred; the hired agent may only update its job's status and deliverable. With <code>ENS_RESOLVE_PAYEES=1</code>, every hire and release also checks the agent's <code>x402-payto</code> record through the ENSv2 Universal Resolver. A missing, unresolved or mismatched record refuses the payment, and the same binding is checked again immediately before execution.</p>
         <p><strong>Code:</strong> the names sidecar in <code>ens/</code>, <code>app/names/</code>, <code>chain/ens_v2.py</code>. <a href="https://github.com/mi1kandcookies/agents-list/blob/main/ens/README.md">Sidecar design</a> · <a href="https://docs.ens.domains">docs.ens.domains</a></p>
       </section>
       <section>

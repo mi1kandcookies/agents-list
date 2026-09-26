@@ -37,7 +37,8 @@ import time
 from datetime import datetime, timezone
 
 from app.approvals.actions import format_usdc
-from app.approvals.executors import ExecutionResult, after_consume, executor, on_terminal
+from app.approvals.executors import (ExecutionResult, after_consume, before_consume, executor,
+                                     on_terminal)
 from app.engagements import ledger
 from app.engagements.ledger import unix
 from app.engagements.service import (
@@ -187,7 +188,8 @@ def _ask_root_human(child, parent_row, payee, verdict: dict, flow: str, extra: d
         approval = _create_approval(KIND, {
             "engagement_id": child.id, "sow_hash": child.sow_hash, "amount_micro": child.total_micro,
             "payee_agent_id": child.agent.public_id, "payee_address": payee.address,
-            "payee_source": payee.source, "parent_mandate_id": parent_row.id,
+            "payee_source": payee.source, "payee_name": payee.ens_name,
+            "parent_mandate_id": parent_row.id,
             "screening_id": verdict["id"], "screening_ack": True,
         }, flow=flow, engagement=child, screening_id=verdict["id"])
     except EngagementError:
@@ -244,11 +246,16 @@ def execute_subhire(approval, action: dict) -> ExecutionResult:
     if child.status != "awaiting_approval" or child.mandate_id or ledger.entries(child.id):
         return _failed(f"sub-engagement is {child.status}")
     problem = None
-    payee = payee_address(child.agent)
+    resolved = resolve_payee(child.agent)
+    payee = resolved.address
     if action.get("sow_hash") != child.sow_hash:
         problem = "statement of work changed since approval"
     elif payee is None or action.get("payee_address") != payee:
         problem = "payee address changed since approval"
+    elif action.get("payee_source") != resolved.source:
+        problem = "payee source changed since approval"
+    elif action.get("payee_name") != resolved.ens_name:
+        problem = "ENS name changed since approval"
     elif action.get("payee_agent_id") != child.agent.public_id:
         problem = "payee agent does not match"
     elif action.get("amount_micro") != child.total_micro:
@@ -270,6 +277,25 @@ def execute_subhire(approval, action: dict) -> ExecutionResult:
     return ExecutionResult(ok=True, summary=f"Allocated {format_usdc(child.total_micro)} "
                                             f"to sub-hire {child.id}",
                            ledger_ids=[entry.id], redirect=f"/jobs/{child.id}")
+
+
+@before_consume(KIND)
+def _subhire_payee_still_bound(approval, action: dict) -> None:
+    """Re-resolve the child's ENS/profile payee before allocating authority."""
+    from app.approvals.errors import ApprovalError
+    child = db.session.get(_models()[0], action.get("engagement_id") or "")
+    if child is None:
+        return
+    try:
+        resolved = resolve_payee(child.agent)
+    except EngagementError as exc:
+        raise ApprovalError(exc.code, exc.message) from None
+    if resolved.address is None or action.get("payee_address") != resolved.address:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee address changed since approval")
+    if action.get("payee_source") != resolved.source:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee source changed since approval")
+    if action.get("payee_name") != resolved.ens_name:
+        raise ApprovalError("PAYEE_MISMATCH", "the ENS name changed since approval")
 
 
 @after_consume(KIND)

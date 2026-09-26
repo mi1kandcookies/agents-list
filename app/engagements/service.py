@@ -334,6 +334,7 @@ def hire(eng, *, flow: str, confirm_micro: int):
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": eng.total_micro,
         "payee_agent_id": agent.public_id, "payee_address": payee,
         "payee_source": resolved.source,
+        "payee_name": resolved.ens_name,
         "milestones": [{"idx": m.idx, "amount_micro": m.amount_micro, "title_hash": title_hash(m.title)}
                        for m in eng.milestones],
         "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
@@ -384,7 +385,7 @@ def request_release(eng, idx, *, flow: str):
     approval = _create_approval("milestone.release", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": amount,
         "payee_agent_id": agent.public_id, "payee_address": payee,
-        "payee_source": resolved.source, "milestone_idx": m.idx,
+        "payee_source": resolved.source, "payee_name": resolved.ens_name, "milestone_idx": m.idx,
         "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
     }, flow=flow, engagement=eng, milestone=m, screening_id=verdict["id"])
     db.session.commit()
@@ -406,9 +407,17 @@ def _load_target(action: dict):
         return None, "engagement not found"
     if action.get("sow_hash") != eng.sow_hash:
         return None, "statement of work changed since approval"
-    payee = payee_address(eng.agent)
+    try:
+        resolved = resolve_payee(eng.agent)
+    except EngagementError as exc:
+        return None, f"payee resolution failed since approval: {exc.code}"
+    payee = resolved.address
     if payee is None or action.get("payee_address") != payee:
         return None, "payee address changed since approval"
+    if "payee_source" in action and action.get("payee_source") != resolved.source:
+        return None, "payee source changed since approval"
+    if "payee_name" in action and action.get("payee_name") != resolved.ens_name:
+        return None, "ENS name changed since approval"
     if action.get("payee_agent_id") != eng.agent.public_id:
         return None, "payee agent does not match"
     return _Target(eng, payee), None
@@ -494,6 +503,30 @@ def _fund_still_hireable(approval, action: dict) -> None:
         assert_hireable(eng.agent)
     except NotHireable as exc:
         raise ApprovalError(exc.code, exc.message) from None
+    _assert_payee_binding(eng, action)
+
+
+def _assert_payee_binding(eng, action: dict) -> None:
+    """Re-resolve ENS/profile payee state before an approved payment."""
+    from app.approvals.errors import ApprovalError
+    try:
+        resolved = resolve_payee(eng.agent)
+    except EngagementError as exc:
+        raise ApprovalError(exc.code, exc.message) from None
+    if resolved.address is None or action.get("payee_address") != resolved.address:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee address changed since approval")
+    if "payee_source" in action and action.get("payee_source") != resolved.source:
+        raise ApprovalError("PAYEE_MISMATCH", "the payee source changed since approval")
+    if "payee_name" in action and action.get("payee_name") != resolved.ens_name:
+        raise ApprovalError("PAYEE_MISMATCH", "the ENS name changed since approval")
+
+
+@before_consume("milestone.release")
+def _release_payee_still_bound(approval, action: dict) -> None:
+    from app.models import Engagement
+    eng = db.session.get(Engagement, action.get("engagement_id") or "")
+    if eng is not None:
+        _assert_payee_binding(eng, action)
 
 
 @on_terminal("engagement.fund")
