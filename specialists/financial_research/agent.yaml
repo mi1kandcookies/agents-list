@@ -55,6 +55,7 @@ tools:
   - post_progress
   - submit_milestone
   # domain tools (tools.py)
+  - sec_company_lookup
   - edgar_submissions
   - edgar_companyfacts
   - edgar_filing_text
@@ -113,9 +114,9 @@ intake:
   - field: market_data
     question: >-
       For valuation multiples, upload inputs/market_data.csv with columns
-      cik, ticker, price, price_as_of (plus minority_interest and preferred if
-      relevant) from your licensed price source. Without it we deliver spreads
-      and operating metrics only.
+      cik, ticker, price, price_as_of (plus shares_outstanding,
+      minority_interest and preferred if relevant) from your licensed price
+      source. Without it we deliver spreads and operating metrics only.
     required: false
   - field: dataroom
     question: >-
@@ -129,6 +130,8 @@ intake:
       licensed person before it goes out.
     required: false
 
+# Each milestone's high estimate fits one run: 4 hours x $8 is under both
+# max_usd and max_wall_minutes above.
 estimate: {usd_per_hour: 8.0}
 
 milestones:
@@ -143,7 +146,7 @@ milestones:
       - deliverables/m1-plan-sources/research_plan.md
       - deliverables/m1-plan-sources/source_inventory.csv
       - deliverables/m1-plan-sources/dataroom_index.csv
-    hours: [2, 6]
+    hours: [1, 3]
     acceptance:
       - check: files_exist
         params:
@@ -188,7 +191,7 @@ milestones:
       - deliverables/m2-spreads-comps/facts.csv
       - deliverables/m2-spreads-comps/comps.csv
       - deliverables/m2-spreads-comps/spreads_notes.md
-    hours: [3, 10]
+    hours: [2, 4]
     acceptance:
       - check: files_exist
         params:
@@ -210,7 +213,7 @@ milestones:
         description: At least 98% of spreads rows match an XBRL fact exactly; every other row carries a written explanation
         params: {path: deliverables/m2-spreads-comps/facts.csv, min_match_ratio: 0.98}
       - check: comps_tie_to_xbrl
-        description: Every sourced figure in comps.csv ties to an XBRL fact (tag, period, value) or to the client's market data
+        description: Every sourced figure in comps.csv ties to an XBRL fact (tag, period, value) or to the client's market data; nothing the SEC reports is left blank
         params:
           comps: deliverables/m2-spreads-comps/comps.csv
           spreads: deliverables/m2-spreads-comps/facts.csv
@@ -241,7 +244,7 @@ milestones:
       - deliverables/m3-diligence-memo/memo.md
       - deliverables/m3-diligence-memo/red_flags.md
       - deliverables/m3-diligence-memo/questions.md
-    hours: [4, 12]
+    hours: [2, 4]
     acceptance:
       - check: files_exist
         params:
@@ -264,7 +267,7 @@ milestones:
             - deliverables/m3-diligence-memo/red_flags.md
             - deliverables/m3-diligence-memo/questions.md
       - check: memo_figures_match
-        description: Every figure is cited, and figure tags match comps.csv at the precision shown
+        description: Every figure is cited; figure tags match comps.csv at the precision shown and [C#] quotes contain the figures
         params:
           path: deliverables/m3-diligence-memo/memo.md
           comps: deliverables/m2-spreads-comps/comps.csv
@@ -273,16 +276,22 @@ milestones:
         params:
           paths:
             - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/red_flags.md
             - deliverables/m3-diligence-memo/questions.md
       - check: red_flag_checklist
-        description: RF01-RF10 answered per company; filing-index events are not missed
+        description: RF01-RF10 answered per company; filing-index events in the last three years are not missed
         params:
           path: deliverables/m3-diligence-memo/red_flags.md
           comps: deliverables/m2-spreads-comps/comps.csv
+          lookback_years: 3
       - check: ledger_verified
         description: Every recorded claim quotes its source snapshot verbatim
       - check: citations_resolve
-        params: {paths: [deliverables/m3-diligence-memo/memo.md]}
+        params:
+          paths:
+            - deliverables/m3-diligence-memo/memo.md
+            - deliverables/m3-diligence-memo/red_flags.md
+            - deliverables/m3-diligence-memo/questions.md
       - check: rubric_grader
         kind: rubric
         params:

@@ -14,5 +14,5 @@
       "market_data": "inputs/market_data.csv"
     }
   },
-  "notes": "Expected FY2024 values: Coldharbor EV 1,442,710,000 (includes 12,000,000 minority interest), EV/Revenue 2.0543, revenue growth 4.54% against the FY2023 value as originally reported (671.8m). Coldharbor's FY2022 revenue was restated in the FY2023 10-K (690.4m to 684.9m); a strong run mentions it in the Exceptions section. xbrl_tieout, comps_tie_to_xbrl and comps_recompute must pass."
+  "notes": "Expected FY2024 values: Coldharbor total debt 543,000,000 (noncurrent 498m + current portion 45m), EV 1,442,710,000 (includes 12,000,000 minority interest), EV/Revenue 2.0543, revenue growth 4.54% against the FY2023 figure in the FY2024 10-K (671.8m). Every period carries its latest 10-K figure, so Coldharbor's FY2022 revenue is the restated 684.9m (690.4m as first reported); a strong run mentions the restatement in the Exceptions section. xbrl_tieout, comps_tie_to_xbrl and comps_recompute must pass."
 }

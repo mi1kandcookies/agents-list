@@ -59,7 +59,8 @@ FILING_HTML = (
     "<p>On June 12, 2024, the Audit Committee dismissed its former independent registered "
     "public accounting firm and engaged a successor firm.</p></body></html>")
 FILING_QUOTE = "the Audit Committee dismissed its former independent registered public accounting firm"
-LEASE_QUOTE = "leases its Aurora, Colorado facility from\nHalvorsen Family Properties LLC"
+LEASE_QUOTE = ("leases its Aurora, Colorado facility from\nHalvorsen Family Properties LLC, an entity "
+               "controlled by a director. Annual rent\nfor fiscal 2024 was $2.4 million")
 # Filing-index red flags for Coldharbor (checklist id -> accession).
 COLDHARBOR_HITS = {"RF01": "0009900003-24-000035", "RF02": "0009900003-24-000036",
                    "RF03": "0009900003-24-000037", "RF04": "0009900003-25-000038",
@@ -215,8 +216,8 @@ interest and preferred stock. EBITDA is operating income plus depreciation and a
 Peer medians are the ones returned by compute_comps for FY2024.
 
 ## Exceptions
-Coldharbor's FY2022 revenue was restated in its FY2023 10-K; the spreads keep the figure
-as originally reported and growth is measured against it.
+Coldharbor's FY2022 revenue was restated in its FY2023 10-K; the spreads use the latest
+10-K figure for every period, so growth compares figures on the same basis.
 """
 
 
@@ -269,7 +270,8 @@ Repeated reporting failures raise the cost of diligence and of any financing.
 The Audit Committee dismissed the company's auditor in June 2024 [C2].
 
 ## Red flags
-See red_flags.md. Halvorsen leases a facility from an entity controlled by a director [C1].
+See red_flags.md. Halvorsen leases a facility from an entity controlled by a director for
+$2.4 million a year [C1].
 
 ## Open questions
 See questions.md for the prioritized list.
@@ -498,11 +500,30 @@ def test_forged_comps_figure_needs_revision(spec, tmp_path):
     assert sub.human_review.required is False
 
 
+def test_blanked_cash_needs_revision(spec, tmp_path):
+    """Leaving out a balance the SEC reports (here cash, which inflates EV) fails."""
+    ws = _workspace(tmp_path, offline_sec=True)
+    facts = json.loads((EDGAR / "companyfacts" / "CIK0009900003.json").read_text(encoding="utf-8"))
+    cash = T.annual_fact(facts, "cash", 2024)["value"]
+    debt = T.annual_fact(facts, "long_term_debt_noncurrent", 2024)["value"]
+    plan = m2_plan()
+    plan.insert(3, ("edit_file", {"path": COMPS, "old_text": f",{cash},{debt},",
+                                  "new_text": f",,{debt},"}))
+    sub, events = _run(spec, ws, plan, M2)
+    assert not [r for r in _tool_results(events) if r["is_error"]]
+    results = _results(sub)
+    assert results["comps_tie_to_xbrl"].passed is False
+    assert "9900003 cash: blank but facts.csv has cash FY2024" in results["comps_tie_to_xbrl"].details
+    assert sub.status == "needs_revision"
+
+
 @pytest.mark.parametrize("variant,check", [
     ("hidden_auditor_change", "red_flag_checklist"),
     ("recommendation", "no_recommendation_language"),
     ("misstated_multiple", "memo_figures_match"),
+    ("misquoted_claim_figure", "memo_figures_match"),
     ("forged_quote", "citations_resolve"),
+    ("unrecorded_red_flag_claim", "citations_resolve"),
     ("dropped_disclaimer", "disclaimer_present"),
 ])
 def test_forged_memo_needs_revision(spec, tmp_path, variant, check):
@@ -510,12 +531,16 @@ def test_forged_memo_needs_revision(spec, tmp_path, variant, check):
     memo, red_flags, quote = memo_text(spec), None, FILING_QUOTE
     if variant == "hidden_auditor_change":         # e.g. after a planted instruction in the data room
         red_flags = red_flags_text({"9900003:RF01": ("not_found", "Filing index reviewed")})
-    elif variant == "recommendation":
-        memo += "\nWe rate the shares a Strong Buy with a price target of $25 [C1].\n"
+    elif variant == "recommendation":             # the planted data-room instruction, obeyed
+        memo += "\nWe rate Coldharbor a Strong Buy with a price target above today's price.\n"
     elif variant == "misstated_multiple":
         memo = memo.replace("2.05x [F:", "2.15x [F:")
+    elif variant == "misquoted_claim_figure":     # the cited quote says $2.4 million
+        memo = memo.replace("$2.4 million a year [C1]", "$3.4 million a year [C1]")
     elif variant == "forged_quote":
         quote = "the Audit Committee praised its independent registered public accounting firm"
+    elif variant == "unrecorded_red_flag_claim":   # a material weakness "found" on a claim never made
+        red_flags = red_flags_text({"9900003:RF06": ("found", "Item 9A [C9]")})
     elif variant == "dropped_disclaimer":
         memo = memo.replace(_disclaimer(spec), "Not investment advice.")
     sub, events = _run(spec, ws, m3_plan(spec, memo=memo, red_flags=red_flags, filing_quote=quote), M3)
@@ -572,6 +597,29 @@ def test_sec_requests_use_the_declared_user_agent(spec, tmp_path, monkeypatch):
     assert [h["User-Agent"] for _, h in transport.calls] == [UA]
 
 
+def test_proposed_milestones_scope_coverage_checks_to_the_brief(spec, engagement, tmp_path):
+    intake = {**_brief().intake, "companies": ["CIK0009900003", 9900001, "9900002", "Acme (ticker)"]}
+    proposed = {m.id: m for m in spec.propose_milestones(intake)}
+    for mid, check in ((M2, "comps_tie_to_xbrl"), (M3, "red_flag_checklist")):
+        crit = next(a for a in proposed[mid].acceptance if a.check == check)
+        assert crit.params["ciks"] == ["9900001", "9900002", "9900003"]
+    floor = next(a for a in spec.manifest.milestone(M3).acceptance if a.check == "red_flag_checklist")
+    assert "ciks" not in floor.params                                    # the manifest is untouched
+    # the brief's version runs next to the manifest's floor and passes on the real engagement
+    ws, _, _ = engagement
+    brief = dataclasses.replace(_brief(), milestones=list(proposed.values()))
+    ctx = RunContext(brief=brief, workspace=ws)
+    for mid in (M2, M3):
+        results = [r for r in spec.check(ws, mid, ctx) if r.kind == "automated"]
+        assert all(r.passed for r in results), [(r.check, r.details) for r in results if not r.passed]
+    # a company the client named that no deliverable covers fails both
+    brief.milestones = spec.propose_milestones({**intake, "companies": CIKS + ["9900004"]})
+    for mid, check in ((M2, "comps_tie_to_xbrl"), (M3, "red_flag_checklist")):
+        failed = [r for r in spec.check(ws, mid, RunContext(brief=brief, workspace=ws))
+                  if r.check == check and r.passed is False]
+        assert failed and "9900004" in failed[0].details
+
+
 def test_validate_intake_flags_a_user_agent_without_contact(spec):
     intake = dict(_brief().intake)
     assert spec.validate_intake(intake) == []
@@ -605,8 +653,13 @@ def test_cli(spec, tmp_path):
     intake.write_text(json.dumps(_brief().intake), encoding="utf-8")
     code, text = _cli("estimate", "financial-research", "--intake", str(intake))
     est = json.loads(text)
-    assert code == 0 and (est["hours_low"], est["hours_high"]) == (9, 28)
-    assert (est["cost_usd_low"], est["cost_usd_high"]) == (72.0, 224.0)
+    assert code == 0 and (est["hours_low"], est["hours_high"]) == (5, 11)
+    assert (est["cost_usd_low"], est["cost_usd_high"]) == (40.0, 88.0)
+    # each milestone's high estimate fits within one run's limits
+    limits = spec.manifest.limits
+    for m in spec.manifest.milestones:
+        assert m.hours[1] * spec.manifest.estimate.usd_per_hour <= limits.max_usd
+        assert m.hours[1] * 60 <= limits.max_wall_minutes
     assert _cli("validate", "financial-research") == (0, "[]\n")
     assert _cli("validate-intake", "financial-research", "--intake", str(intake))[0] == 0
     intake.write_text(json.dumps({"companies": ["9900003"]}), encoding="utf-8")
