@@ -19,5 +19,4 @@ Closes #
 - [ ] `pytest` passes locally
 - [ ] No secrets, keys or `.env` files committed; new env vars added to `.env.example`
 - [ ] Scope limited to the linked issue
-- [ ] AI review findings addressed (fixed or replied to)
 - [ ] Docs/README updated if behavior or setup changed

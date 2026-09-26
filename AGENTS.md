@@ -104,13 +104,10 @@ Every PR to `main` requires **all** of:
 |---|---|
 | ✅ CI (`test`) passes | required status check |
 | ✅ `content-policy` passes (rule 7) | required status check |
-| 🤖 AI review ran (`claude-review`) | required status check — automatic on every PR push |
 | 👤 **1 approval from a code owner** (not the author) | branch protection + `.github/CODEOWNERS` |
 
-- The AI review posts a summary comment and inline comments. **Address every 🔴 blocking finding** (fix it, or reply explaining why it isn't a problem) before requesting human review.
 - New commits dismiss stale approvals — re-request review after pushing changes.
 - Reviewers: aim to respond within 1 business day. Use "Request changes" only for real blockers; prefix nits with `nit:`.
-- You can ask the AI reviewer follow-up questions by commenting `@claude …` on the PR.
 - **Contracts (`contracts/`)** and **wallet/payment code (`chain/`)**: reviewer must actually run the tests locally, not just read the diff.
 
 ---
@@ -120,7 +117,7 @@ Every PR to `main` requires **all** of:
 - **Squash and merge only** (enforced in repo settings). The PR title becomes the commit on `main`.
 - The **author** merges once all gates are green (not the reviewer), so the author owns the timing.
 - Linear history: no merge commits on `main`.
-- If `main` moved and the PR is out of date, rebase and push again (CI + AI review re-run).
+- If `main` moved and the PR is out of date, rebase and push again (CI re-runs).
 - Something broke `main`? Revert first (`git revert` via a PR), fix after.
 
 ---
