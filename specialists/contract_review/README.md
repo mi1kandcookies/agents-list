@@ -53,15 +53,38 @@ reviewing attorney. Optional: existing playbook or guidelines, templates,
 previously negotiated agreements, governing jurisdiction, deal context and
 the escalation contact.
 
+`agent.py` (`ContractReview`) adds two blocking intake rules: the side must
+name exactly one of customer or vendor, and every contract file must be
+`.docx`, `.txt` or `.md`. A sample intake lives in
+`evals/fixtures/northwind_intake.json`.
+
 ## Tools
 
 Kit tools: `read_document`, `read_file`, `write_file`, `edit_file`,
 `list_files`, `search_files`, `ask_client`, `post_progress`,
 `submit_milestone`.
 
-Domain tools (`tools.py`, stdlib only, no network or subprocess):
-`read_contract`, `segment_clauses`, `scan_hidden_content`, `locate_quote`,
-`check_references`, `validate_playbook`, `record_issues`, `build_redline`.
+Domain tools (`tools.py`, stdlib and PyYAML only, no network or
+subprocess): `read_contract`, `segment_clauses`, `scan_hidden_content`,
+`locate_quote`, `check_references`, `validate_playbook`, `record_issues`,
+`build_redline`. They resolve paths through the kit's policy (no
+`.agentkit/`, `inputs/` read-only) and every file they write is recorded as
+agent-authored. Domain checks are registered as `automated`, so no brief can
+turn one into a pending check.
+
+## Running
+
+```bash
+python -m agentkit validate contract-review
+python -m agentkit estimate contract-review --intake specialists/contract_review/evals/fixtures/northwind_intake.json
+python -m agentkit run contract-review --brief brief.json --milestone m1-playbook --workspace WORKDIR
+python -m agentkit check contract-review --milestone m1-playbook --workspace WORKDIR
+```
+
+Milestones run in order on one workspace: m2 reviews against the approved
+`deliverables/m1-playbook/playbook.yaml`, m3 redlines the issues in
+`deliverables/m2-issues/issues.json`. Offline end-to-end runs with a
+scripted model are in `tests/specialists/test_contract_review_e2e.py`.
 
 ## Human gate
 
