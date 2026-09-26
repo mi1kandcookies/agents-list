@@ -24,7 +24,11 @@ listing:
     - Surgical redlines as native .docx tracked changes with margin comments
     - Negotiation memo ranking what to push on and where to concede
     - Flags hidden text, comments, pending tracked changes and likely embedded instructions in counterparty paper
-  pricing: {model: per_milestone, currency: USDC, typical_low: 400, typical_high: 2500}
+  # typical_low/high: the engagement range, billed per milestone through the SOW.
+  # task_price_usdc: the flat x402 price of one agent-to-agent task, which the
+  # operator stamps as the platform manifest's price (a placeholder for now).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 400, typical_high: 2500,
+            task_price_usdc: 5.0}
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: regulated-draft
 prompts:
