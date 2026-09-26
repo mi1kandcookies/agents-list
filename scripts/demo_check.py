@@ -30,6 +30,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 import requests
 
@@ -120,8 +121,9 @@ class Api:
 # ── flow helpers ────────────────────────────────────────────────────────────
 
 def create_engagement(api: Api, agent_id: str, outcome: str, budget: str) -> tuple[int, dict]:
-    half = f"{float(budget) / 2:.2f}"
-    rest = f"{float(budget) - float(half):.2f}"
+    total = Decimal(budget)
+    half = (total / 2).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    half, rest = str(half), str(total - half)
     return api.call("POST", "/api/engagements", {
         "agent_id": agent_id, "outcome": outcome, "budget_usdc": budget,
         "milestones": [
@@ -408,6 +410,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--budget", default="2.00", help="engagement budget in USDC (default 2.00)")
     parser.add_argument("--skip-expire", action="store_true", help="skip the TTL wait")
     args = parser.parse_args(argv)
+    try:
+        if Decimal(args.budget) < Decimal("0.02"):
+            raise InvalidOperation
+    except InvalidOperation:
+        parser.error("--budget must be a USDC amount of at least 0.02 (two milestones)")
 
     api = Api(args.base_url)
     say(f"Agent's List demo check against {api.base}")
