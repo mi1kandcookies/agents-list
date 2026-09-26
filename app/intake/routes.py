@@ -32,7 +32,9 @@ def new_job():
     prefill = (request.args.get("q") or "").strip()[:MAX_PREFILL]
     agent = get_agent(request.args.get("agent")) if request.args.get("agent") else None
     preselect = None
-    if agent:
+    # Only an agent that can be hired right now is preselected; the flow
+    # would otherwise offer it and fail at approval.
+    if agent and agent.get("operator_stamped"):
         cat = category_for(agent["category"])
         preselect = dict(agent, category_key=cat["key"] if cat else None)
     return render_template("intake/new.html", prefill=prefill, config=flow_config(),
@@ -60,10 +62,16 @@ def engagement_estimate(engagement_id: str):
                    deadline=eng.deadline_at.date() if eng.deadline_at else None,
                    input_price_per_1m=eng.agent.input_price_per_1m if eng.agent else 0,
                    output_price_per_1m=eng.agent.output_price_per_1m if eng.agent else 0)
+    from app.seller.stamp import stamp_status
+    stamp = stamp_status(eng.agent) if eng.agent else None
+    open_for_approval = eng.status in ("draft", "scoped")
+    hireable = stamp is not None and stamp.ok
     return render_template("intake/estimate.html", eng=eng, milestones=milestones, est=est,
                            est_text=estimate_text(est),
                            total_cents=(eng.total_micro or 0) // 10_000,
-                           can_approve=eng.status in ("draft", "scoped"),
+                           can_approve=open_for_approval and hireable,
+                           not_hireable=(stamp.reason if stamp else "This agent is no longer listed.")
+                           if open_for_approval and not hireable else None,
                            source=json.loads(eng.sow_json or "{}").get("source_document"),
                            auto_release_days=AUTO_RELEASE_DAYS)
 

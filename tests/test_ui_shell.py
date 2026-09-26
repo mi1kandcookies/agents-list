@@ -103,11 +103,12 @@ def test_home_leads_with_banner_then_search(client, db):
     assert "Funds held in escrow" not in html
 
 
-def test_new_serves_the_guided_flow(client, agent):
+def test_new_serves_the_guided_flow(client, db, agent):
     # /new is the guided flow (app/intake); agent matching happens in its
     # estimate step. Detailed coverage lives in tests/test_intake.py.
     html = client.get("/new?q=I+need+someone+to+write+tests").get_data(as_text=True)
     assert 'id="flow-form"' in html and "I need someone to write tests" in html
+    _stamp(db, agent)   # only a hireable agent is preselected
     html = client.get(f"/new?agent={agent}").get_data(as_text=True)
     assert "Test Agent" in html
 

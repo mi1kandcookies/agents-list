@@ -631,7 +631,8 @@
   var agentsFor = null;
   function agentList(data) { return Array.isArray(data) ? data : (data && data.agents) || []; }
   function fetchAgents(params) {
-    return fetch("/api/agents?" + params, { headers: { Accept: "application/json" } })
+    // Only agents that can be hired right now; others would fail at approval.
+    return fetch("/api/agents?hireable=1&" + params, { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : []; }).then(agentList).catch(function () { return []; });
   }
   function agentKey(a) { return String(a.agent_id || a.public_id || a.id); }
