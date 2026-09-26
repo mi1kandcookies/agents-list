@@ -73,7 +73,7 @@ class ERC8004Identity:
         from web3 import Web3
         return int(self.contract.functions.balanceOf(Web3.to_checksum_address(owner)).call())
 
-    def register(self, signer, agent_uri: str, *, wait: bool = True) -> dict:
+    def register(self, signer, agent_uri: str, *, nonce: int | None = None, wait: bool = True) -> dict:
         """Mint one identity NFT from the canonical registry.
 
         This is intentionally a small signer adapter. The caller must opt into
@@ -88,7 +88,8 @@ class ERC8004Identity:
         chain = get_chain_config()
         tx = self.contract.functions.register(agent_uri).build_transaction({
             "from": Web3.to_checksum_address(signer.address),
-            "nonce": self.w3.eth.get_transaction_count(signer.address, "pending"),
+            "nonce": (nonce if nonce is not None else
+                       self.w3.eth.get_transaction_count(signer.address, "pending")),
             "chainId": chain.chain_id,
             **eip1559_fees(self.w3),
         })
@@ -110,11 +111,16 @@ class ERC8004Identity:
             "name": "Registered", "type": "event",
         }
         event = self.w3.eth.contract(address=self.address, abi=[event_abi]).events.Registered()
-        decoded = event.process_receipt(receipt)
+        topic = self.w3.keccak(text="Registered(uint256,string,address)")
+        matching_logs = [log for log in receipt["logs"]
+                         if log["address"].lower() == self.address.lower()
+                         and log["topics"] and log["topics"][0] == topic]
+        decoded = [event.process_log(log) for log in matching_logs]
         agent_id = int(decoded[0]["args"]["agentId"]) if decoded else None
         return {"tx_hash": tx_hash.hex(), "agent_id": agent_id}
 
-    def set_agent_uri(self, signer, agent_id: int, agent_uri: str, *, wait: bool = True) -> str:
+    def set_agent_uri(self, signer, agent_id: int, agent_uri: str, *, nonce: int | None = None,
+                      wait: bool = True) -> str:
         """Update an identity URI owned by ``signer`` and return its tx hash."""
         from chain.client import eip1559_fees
         from chain.config import get_chain_config
@@ -122,7 +128,8 @@ class ERC8004Identity:
         chain = get_chain_config()
         tx = self.contract.functions.setAgentURI(int(agent_id), agent_uri).build_transaction({
             "from": Web3.to_checksum_address(signer.address),
-            "nonce": self.w3.eth.get_transaction_count(signer.address, "pending"),
+            "nonce": (nonce if nonce is not None else
+                       self.w3.eth.get_transaction_count(signer.address, "pending")),
             "chainId": chain.chain_id,
             **eip1559_fees(self.w3),
         })

@@ -287,7 +287,11 @@ def _agent_row(agent: Agent, *, refresh_records: bool = False) -> EnsName:
         "context": (agent.description or "")[:1000],
         "mcp": manifest.get("mcp_endpoint") or endpoints.get("mcp"),
         "payout": payout,
-        "erc8004_agent_id": manifest.get("erc8004_agent_id"),
+        # The registry token is authoritative in the dedicated columns. Keep
+        # the manifest fallback for older profiles that predate the columns.
+        "erc8004_agent_id": (str(agent.erc8004_agent_id)
+                              if agent.erc8004_agent_id is not None
+                              else manifest.get("erc8004_agent_id")),
     })
     if existing is not None:
         if refresh_records and existing.records != records:

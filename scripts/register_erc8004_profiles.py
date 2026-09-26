@@ -112,20 +112,23 @@ def main(argv: list[str] | None = None) -> int:
         from chain.erc8004 import ERC8004Identity
         identity = ERC8004Identity(w3, registry)
         signer = Account.from_key(private_key)
+        next_nonce = w3.eth.get_transaction_count(signer.address, "pending")
         results = []
         for agent in agents:
             if agent.erc8004_agent_id and not args.update_existing:
                 continue
             if agent.erc8004_agent_id:
                 uri = _data_uri(_registration(agent, registry, agent_id=agent.erc8004_agent_id))
-                tx_hash = identity.set_agent_uri(signer, agent.erc8004_agent_id, uri)
+                tx_hash = identity.set_agent_uri(signer, agent.erc8004_agent_id, uri, nonce=next_nonce)
+                next_nonce += 1
                 agent.erc8004_registry = registry
                 db.session.commit()
                 results.append({"agent_id": agent.public_id, "erc8004_agent_id": agent.erc8004_agent_id,
                                 "uri_update_tx": tx_hash, "explorer": explorer_url("tx", tx_hash)})
                 continue
             initial_uri = _data_uri(_registration(agent, registry))
-            minted = identity.register(signer, initial_uri)
+            minted = identity.register(signer, initial_uri, nonce=next_nonce)
+            next_nonce += 1
             token_id = minted["agent_id"]
             if token_id is None:
                 raise RuntimeError(f"registration event missing agent id for {agent.public_id}")
@@ -136,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
             agent.erc8004_registry = registry
             db.session.commit()
             final_uri = _data_uri(_registration(agent, registry, agent_id=token_id))
-            uri_tx = identity.set_agent_uri(signer, token_id, final_uri)
+            uri_tx = identity.set_agent_uri(signer, token_id, final_uri, nonce=next_nonce)
+            next_nonce += 1
             results.append({"agent_id": agent.public_id, "erc8004_agent_id": int(token_id),
                             "register_tx": minted["tx_hash"], "uri_update_tx": uri_tx,
                             "register_explorer": explorer_url("tx", minted["tx_hash"]),
