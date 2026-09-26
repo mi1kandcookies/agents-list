@@ -104,8 +104,8 @@ def test_sow_hash_is_stable_and_binds_every_term():
                 deadline=1_900_000_000, category="Development")
     first = sow_hash(build_sow(**args))
     assert first == sow_hash(build_sow(**dict(reversed(list(args.items())))))
-    assert build_sow(**args)["outcome"] == "Ship the export"   # whitespace-normalized
-    assert first == sow_hash(build_sow(**{**args, "outcome": "Ship the export"}))
+    assert build_sow(**args)["outcome"] == "Ship the\nexport"   # whitespace-normalized
+    assert first == sow_hash(build_sow(**{**args, "outcome": " Ship the \n\n export "}))
     for change in ({"budget_micro": 25_000_001}, {"deadline": 1_900_000_001},
                    {"milestones": [{"title": "B", "acceptance": "a", "amount_micro": 25_000_000}]}):
         assert sow_hash(build_sow(**{**args, **change})) != first
@@ -140,6 +140,24 @@ def test_create_validation(client, screener, agent_public_id, overrides, code, f
     resp = _create(client, agent_public_id, **overrides)
     assert resp.status_code == 400
     assert (resp.get_json()["code"], resp.get_json()["field"]) == (code, field)
+
+
+def test_numeric_agent_id_and_date_deadline(client, screener, agent, agent_public_id):
+    import time
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    body = _engagement(client, agent_public_id, agent_id=agent, deadline=today,
+                       milestones=[{"title": "All", "acceptance": "- one\n- two", "amount_usdc": 25}])
+    assert body["agent_id"] == agent_public_id
+    assert time.time() < body["deadline_at"] <= time.time() + 86_400   # end of today, UTC
+    assert body["milestones"][0]["acceptance"] == "- one\n- two"
+    assert _create(client, agent_public_id, agent_id=str(agent)).status_code == 201
+    assert _create(client, agent_public_id, agent_id=agent + 999).status_code == 404
+
+
+def test_api_agents_lists_agt_ids(client, agent, agent_public_id):
+    [row] = client.get("/api/agents").get_json()["agents"]
+    assert row["agent_id"] == agent_public_id and row["id"] == agent
 
 
 def test_unknown_agent_is_404(client, screener, db, agent):

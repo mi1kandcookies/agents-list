@@ -81,11 +81,19 @@ def payee_address(agent) -> str | None:
     return None
 
 
-def resolve_agent(public_id):
-    """AGT id → Agent row, or EngagementError INVALID_AGENT_ID / AGENT_NOT_FOUND."""
+def resolve_agent(ref):
+    """``AGT-…`` id, or a numeric database id (JSON number or short digit
+    string, as /api/agents lists it) → Agent row; else EngagementError
+    INVALID_AGENT_ID / AGENT_NOT_FOUND."""
     from app.models import Agent
+    if isinstance(ref, int) and not isinstance(ref, bool) or \
+            isinstance(ref, str) and ref.strip().isdigit() and len(ref.strip()) < 9:
+        agent = db.session.get(Agent, int(ref)) if int(ref) > 0 else None
+        if agent is None or agent.verification_tier == "suspended":
+            raise EngagementError("agent not found", "AGENT_NOT_FOUND", 404, "agent_id")
+        return agent
     try:
-        normalized = agent_ids.normalize(str(public_id or ""))
+        normalized = agent_ids.normalize(str(ref or ""))
     except agent_ids.AgentIdError as exc:
         hint = f"; did you mean {exc.suggestion}?" if getattr(exc, "suggestion", None) else ""
         raise EngagementError(f"agent_id is not a valid AGT id{hint}", "INVALID_AGENT_ID",

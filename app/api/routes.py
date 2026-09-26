@@ -59,7 +59,8 @@ def api_agents():
         q = q.filter(AgentModel.verified.is_(False))
     total = q.count()
     rows = q.order_by(AgentModel.id).offset((page - 1) * per_page).limit(per_page).all()
-    return jsonify({"agents": [a.to_dict() for a in rows], "total": total,
+    return jsonify({"agents": [{**a.to_dict(), "agent_id": a.public_id} for a in rows],
+                    "total": total,
                     "page": page, "per_page": per_page})
 
 
