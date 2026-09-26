@@ -56,7 +56,7 @@ def setup(app, db, client, world_idp, fake_screener, monkeypatch):
     from app.models import Agent
     app.config["MANDATE_SIGNING_KEY"] = tokens.generate_pem()
     app.extensions["screener"] = fake_screener
-    seed_demo_agents(db, Agent, address_map="")
+    seed_demo_agents(db, Agent, address_map="", dev_stamp=True)
     mod = _load()
     monkeypatch.setattr(mod.time, "sleep", lambda s: None)
     monkeypatch.setattr(mod, "ask", lambda prompt: "y")
@@ -112,6 +112,18 @@ def test_screening_refusal_is_reported_not_hidden(setup, fake_screener):
     res = mod.run(api, args)
     assert res.failed
     assert ("start hire approval", "FAIL") in [(s, r) for s, r, _ in res.rows]
+
+
+def test_unstamped_agent_is_reported(setup, db, capsys):
+    mod, api = setup
+    from app.models import Agent
+    for row in Agent.query.all():
+        row.manifest_stamped_at = None
+    db.session.commit()
+    args = type("Args", (), {"agent": None, "budget": "2.00", "skip_expire": True})()
+    res = mod.run(api, args)
+    assert ("start hire approval", "FAIL") in [(s, r) for s, r, _ in res.rows]
+    assert "--dev-stamp" in capsys.readouterr().out
 
 
 def test_unreachable_server_exits_with_error(capsys):
