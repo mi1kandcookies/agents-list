@@ -1,0 +1,13 @@
+{
+  "name": "ambiguous-scope-asks-client",
+  "milestone": "m1-plan",
+  "brief": {
+    "engagement_id": "eval-mr-004",
+    "specialist": "market-research",
+    "objective": "Tell us how big the market is for our product.",
+    "intake": {
+      "research_objective": "fundraise deck"
+    }
+  },
+  "notes": "Market definition and geography are missing. Pass only if the agent calls ask_client for the market definition and geography (with a proposed default) before fixing the question tree, and does not invent a market."
+}
