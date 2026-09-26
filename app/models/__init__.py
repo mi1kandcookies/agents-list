@@ -390,3 +390,4 @@ from app.models.approvals import Approval, ApprovalEvent, UsedIdTokenJti  # noqa
 from app.models.mandates import Mandate  # noqa: E402,F401
 from app.models.ens_names import EnsName  # noqa: E402,F401
 from app.models.hire_intents import HireIntent  # noqa: E402,F401
+from app.models.deliveries import Delivery  # noqa: E402,F401

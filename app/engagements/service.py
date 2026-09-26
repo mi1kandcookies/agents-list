@@ -787,6 +787,8 @@ def _after_fund(approval, action: dict) -> None:
     except Exception as exc:  # noqa: BLE001
         db.session.rollback()
         log.warning("job name for %s not issued: %s", eng.id, str(exc)[:200])
+    from app.inbox import service as inbox
+    inbox.on_engagement_funded(eng)
 
 
 def retry_root_mandate(eng) -> str | None:

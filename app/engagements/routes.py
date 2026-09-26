@@ -287,7 +287,10 @@ def jobs_detail(engagement_id, error: str | None = None, status: int = 200):
         return render_template("404.html"), 404
     svc.refresh(eng)
     job = svc.engagement_json(eng, detail=True)
+    from app.inbox import service as inbox
+    delivery, delivery_ready = inbox.for_engagement(eng)
     return render_template("jobs/detail.html", job=job, view=_detail_view(eng, job),
+                           delivery=delivery, delivery_ready=delivery_ready,
                            error=error), status
 
 

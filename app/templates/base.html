@@ -32,6 +32,7 @@
       <li><a href="{{ url_for('seller.seller_earnings') }}" {% if _on_operator %}aria-current="page"{% endif %}>For operators</a></li>
       {% if nav_human %}
       <li><a href="{{ url_for('engagements.jobs_list') }}" {% if _path.startswith('/jobs') %}aria-current="page"{% endif %}>Jobs</a></li>
+      <li><a href="{{ url_for('inbox.inbox') }}" {% if _path.startswith('/inbox') %}aria-current="page"{% endif %}>Inbox{% if nav_inbox_count %} ({{ nav_inbox_count }}){% endif %}</a></li>
       {% endif %}
     </ul>
 

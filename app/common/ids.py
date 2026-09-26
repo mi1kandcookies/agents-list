@@ -6,7 +6,7 @@ import secrets
 
 from app.common.agent_ids import ALPHABET
 
-PREFIXES = frozenset({"ENG", "APR", "LED", "MND", "SCR", "HIT"})
+PREFIXES = frozenset({"ENG", "APR", "LED", "MND", "SCR", "HIT", "DLV"})
 
 
 def new_id(prefix: str) -> str:

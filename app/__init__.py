@@ -109,8 +109,10 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     from app.names import bp as names_bp
     from app.screening import bp as screening_bp
 
+    from app.inbox import bp as inbox_bp
+
     for bp in (identity_bp, approvals_bp, engagements_bp, screening_bp, mandates_bp,
-               humans_bp, names_bp):
+               humans_bp, names_bp, inbox_bp):
         app.register_blueprint(bp)
 
     from chain.config import explorer_url, get_address, get_chain_config

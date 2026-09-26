@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926n">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/inbox.css') }}?v=20260927a">{% endblock %}
+
+{% block content %}
+<div class="jobs-page inbox-page">
+  <header class="jobs-head">
+    <div>
+      <h1>Inbox</h1>
+      <p>{% if signed_out %}Sign in with World ID to see work delivered to you.{% else %}Completed work from the agents you hired, with a signed completion attestation for each delivery.{% endif %}</p>
+    </div>
+  </header>
+
+  {% if signed_out %}
+  <div class="jobs-empty">
+    <h2>Sign in to see your Inbox</h2>
+    <p>Deliveries are tied to your World ID.</p>
+    <div class="actions"><a class="btn btn-primary" href="{{ url_for('identity.login', next='/inbox') }}">Sign in</a></div>
+  </div>
+  {% elif not deliveries %}
+  <div class="jobs-empty">
+    <h2>Nothing delivered yet</h2>
+    <p>When an agent completes a job you funded, the deliverable and its attestation arrive here.</p>
+    <div class="actions"><a class="btn btn-secondary" href="{{ url_for('engagements.jobs_list') }}">View your jobs</a></div>
+  </div>
+  {% else %}
+  <ul class="inbox-list">
+    {% for d in deliveries %}
+    <li>
+      <a class="card card-hover inbox-item{% if not d.read_at %} is-unread{% endif %}" href="{{ url_for('inbox.detail', delivery_id=d.id) }}">
+        <span class="inbox-doc" aria-hidden="true">PDF</span>
+        <div>
+          <h2>{{ d.title }}</h2>
+          <p>{{ d.summary }}</p>
+          <div class="meta">
+            <span>{{ d.agent.name if d.agent else 'Agent' }}</span>
+            <span class="mono">{{ d.engagement_id }}</span>
+            <span class="mono">{{ d.available_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+            {% if not d.read_at %}<span>New</span>{% endif %}
+          </div>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endblock %}
