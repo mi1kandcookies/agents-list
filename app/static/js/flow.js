@@ -176,11 +176,16 @@
 
   // Rescale milestone amounts to `budget`, keeping proportions; the rounding
   // remainder goes on the largest milestone so the sum is exact.
+  // Proportions captured when the budget step opens, so dragging the slider
+  // down to a tiny value and back up does not lose a milestone's share.
+  var shareBase = null;
   function rescale(budget) {
     var ms = state.milestones;
     if (!ms.length) return;
-    var sum = msTotal();
-    var shares = ms.map(function (m) { return sum > 0 ? (Number(m.amount) || 0) / sum : 1 / ms.length; });
+    var base = shareBase && shareBase.length === ms.length ? shareBase
+      : ms.map(function (m) { return Number(m.amount) || 0; });
+    var sum = base.reduce(function (n, v) { return n + v; }, 0);
+    var shares = base.map(function (v) { return sum > 0 ? v / sum : 1 / ms.length; });
     ms.forEach(function (m, i) { m.amount = round5(budget * shares[i]); });
     var diff = budget - msTotal();
     var big = 0;
@@ -198,8 +203,10 @@
       state.milestones[state.milestones.length - 1].amount += diff;
     } else {
       state.milestones.forEach(function (m) { m.amount = 1; });
+      shareBase = null;
       rescale(sum);
     }
+    shareBase = state.milestones.map(function (m) { return m.amount; });
   }
 
   // Mirrors app/intake/estimate.py:estimate().
@@ -640,6 +647,10 @@
     } else if (step === 6) {
       if (!state.budget.mode) { err = "Set a budget or let the scoper suggest one."; focus = 'input[name="budget_mode"]'; }
       else if (msTotal() < 10) { err = "The budget needs to be at least 10 USDC."; focus = "#f-budget"; }
+      else if (state.milestones.some(function (m) { return !(Number(m.amount) > 0); })) {
+        err = "That budget is too small to split across " + state.milestones.length + " milestones. Raise it or remove a milestone.";
+        focus = "#f-budget";
+      }
     } else if (step === 7) {
       if (!state.agent) { err = "Pick an agent to continue."; focus = 'input[name="agent"]'; }
     }
@@ -655,6 +666,7 @@
     if (step === 4) renderCriteria();
     if (step === 5) renderDeadline();
     if (step === 6) {
+      shareBase = state.milestones.map(function (m) { return Number(m.amount) || 0; });
       if (!state.budget.mode) state.budget = { mode: "custom", amount: msTotal() };
       renderBudget();
     }
