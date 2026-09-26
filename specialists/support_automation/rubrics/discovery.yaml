@@ -1,0 +1,8 @@
+name: Discovery report and intent taxonomy
+criteria:
+  - {id: taxonomy_quality, description: "Intents are distinct, customer-meaningful and at a useful grain (not one catch-all, not near-duplicates); labels match sampled tickets", weight: 0.3}
+  - {id: automation_levels, description: "Each intent's automation level (answer_only, with_tools, human_only) is justified and risky topics are human_only", weight: 0.2}
+  - {id: gap_prioritization, description: "Knowledge gaps are ranked by volume and business impact with a clear recommendation of what to fill first", weight: 0.2}
+  - {id: contradictions, description: "Policy contradictions are listed with where each value appears and a question for the policy owner", weight: 0.15}
+  - {id: clarity, description: "The report leads with numbers and decisions, avoids filler and states open questions", weight: 0.15}
+threshold: 0.75
