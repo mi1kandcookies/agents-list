@@ -5,9 +5,13 @@ contract-review specialist.
 Each check is fn(workspace, params, *, run=None) -> {"passed", "details",
 "score"} and is listed in CHECK_DEFS; agent.py wraps them as kit checks.
 They never trust what the agent says it did: quotes are re-matched against
-the contract under inputs/ (whose sha256 must match the one recorded),
-coverage is recomputed from the issues themselves, and the redline is
-re-applied from the ops so the .docx and proposed text must agree with it.
+the contract under inputs/ (judged on the resolved path, and whose sha256
+must match the one recorded), coverage is recomputed from the issues
+themselves, the attorney's Markdown/CSV views must be the rendering of the
+recorded issue list, and the redline is re-applied from the ops so the
+.docx (text and margin comments), redline.md and proposed text must agree
+with it. The manifest pins the deliverable paths, so a record cannot point
+a check at a different file than the one delivered.
 """
 from __future__ import annotations
 
@@ -49,9 +53,7 @@ def _issue_doc(workspace: Path, path: str) -> tuple[dict, list[str]]:
     if not isinstance(doc, dict):
         raise ValueError(f"{path} is not a JSON object")
     contract = str(doc.get("contract", ""))
-    if not contract.startswith("inputs/"):
-        raise ValueError("issue list must name a contract under inputs/")
-    src = t.resolve(workspace, contract)
+    src = t.input_file(workspace, contract)
     if doc.get("contract_sha256") != t.sha256_file(src):
         raise ValueError(f"{contract} changed since the issue list was recorded (sha256 mismatch)")
     return doc, t.load_paragraphs(src)
@@ -135,27 +137,47 @@ def playbook_coverage(workspace: Path, params: dict) -> dict[str, Any]:
 
 @_guard
 def issue_list_valid(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: issues (path). The full record_issues validation, re-run."""
-    doc = t.load_structured(t.resolve(workspace, params["issues"]))
+    """params: issues (path), playbook (optional, pins it), markdown and csv
+    (optional paths). The full record_issues validation, re-run; issues.md
+    and issues.csv must be exactly what record_issues renders from
+    issues.json, so the attorney's view cannot drift from the checked record."""
+    recorded = t.load_structured(t.resolve(workspace, params["issues"]))
+    doc = recorded
     if params.get("playbook") and isinstance(doc, dict):
         doc = {**doc, "playbook": params["playbook"]}
     problems = t.issue_list_errors(workspace, doc)
+    if not problems:
+        for key, render in (("markdown", t.render_issues_md), ("csv", t.render_issues_csv)):
+            if params.get(key):
+                view = t.resolve(workspace, params[key])
+                if not view.is_file() or view.read_text(encoding="utf-8") != render(recorded):
+                    problems.append(f"{params[key]} is not the rendering of {params['issues']}; "
+                                    "call record_issues again instead of editing either file")
     if problems:
         return _result(False, _summary(problems), 0.0)
     return _result(True, f"{len(doc['issues'])} issues valid", 1.0)
 
 
+def _pinned(params: dict, rec: dict, key: str) -> str:
+    """A deliverable path: the manifest's (params) when given, else the record's."""
+    return str(params.get(key) or rec.get(key) or "")
+
+
 @_guard
 def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: redline (path to redline.json), issues (optional path).
+    """params: redline (path to redline.json), issues (optional path), and
+    the delivered proposed / docx / markdown paths (default: the record's).
     Re-applies the ops to the original contract and requires: each target
     matched exactly once; proposed.txt equals the result; in the .docx,
-    reject-all equals the original and accept-all equals the proposal."""
+    reject-all equals the original, accept-all equals the proposal and the
+    margin comments are exactly the ops' comments; redline.md is the
+    rendering of the ops."""
     rec = t.load_structured(t.resolve(workspace, params["redline"]))
-    contract = str(rec.get("contract", ""))
-    if not contract.startswith("inputs/"):
-        return _result(False, "redline must name a contract under inputs/", 0.0)
-    src = t.resolve(workspace, contract)
+    try:
+        src = t.input_file(workspace, str(rec.get("contract", "")))
+    except ToolError as exc:
+        return _result(False, f"redline: {exc}", 0.0)
+    contract = str(rec["contract"])
     if rec.get("contract_sha256") != t.sha256_file(src):
         return _result(False, f"{contract} does not match the recorded sha256", 0.0)
     original = t.load_paragraphs(src)
@@ -164,12 +186,12 @@ def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
     if not ops:
         problems.append("no redline ops")
     _orig, proposed = t.plan_views(plan)
-    prop_path = t.resolve(workspace, rec.get("proposed", ""))
+    prop_path = t.resolve(workspace, _pinned(params, rec, "proposed"))
     if not prop_path.is_file():
         problems.append("proposed text file is missing")
     elif prop_path.read_text(encoding="utf-8") != "\n".join(proposed):
         problems.append("proposed.txt does not equal the original with the ops applied")
-    docx = t.resolve(workspace, rec.get("docx", ""))
+    docx = t.resolve(workspace, _pinned(params, rec, "docx"))
     if not docx.is_file():
         problems.append("redline .docx is missing")
     else:
@@ -177,6 +199,13 @@ def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
             problems.append("rejecting all changes in the .docx does not reproduce the original")
         if t.docx_paragraphs(docx, "accepted") != proposed:
             problems.append("accepting all changes in the .docx does not give the proposed text")
+        if t.docx_comments(docx) != t.op_comments(ops):
+            problems.append("the .docx margin comments are not exactly the ops' comments")
+    markdown = _pinned(params, rec, "markdown")
+    if markdown:
+        md_path = t.resolve(workspace, markdown)
+        if not md_path.is_file() or md_path.read_text(encoding="utf-8") != t.render_redline_md(plan, ops):
+            problems.append(f"{markdown} is not the rendering of the redline ops")
     issues_path = params.get("issues") or rec.get("issues")
     if issues_path:
         known = {str(i.get("id")) for i in
@@ -191,12 +220,14 @@ def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
 
 @_guard
 def references_resolve(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: redline (path). The redline must not break a cross-reference
-    or remove a definition whose term is still used. Breaks already in the
+    """params: redline (path), proposed (optional path, default the
+    record's). The redline must not break a cross-reference or remove a
+    definition whose term is still used. Breaks already in the
     counterparty's paper are reported but do not fail the check."""
     rec = t.load_structured(t.resolve(workspace, params["redline"]))
-    original = t.load_paragraphs(t.resolve(workspace, rec["contract"]))
-    proposed = t.resolve(workspace, rec["proposed"]).read_text(encoding="utf-8").split("\n")
+    original = t.load_paragraphs(t.input_file(workspace, rec["contract"]))
+    proposed = t.resolve(workspace, _pinned(params, rec, "proposed")).read_text(
+        encoding="utf-8").split("\n")
     before, after = t.reference_report(original), t.reference_report(proposed)
     old_refs = {r["reference"] for r in before["unresolved_references"]}
     new_refs = sorted({r["reference"] for r in after["unresolved_references"]} - old_refs)

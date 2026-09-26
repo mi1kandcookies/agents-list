@@ -25,14 +25,21 @@ What the checks guarantee, recomputed from source rather than taken from
 the agent's report:
 
 - every issue quote (and every "compliant" coverage quote) appears verbatim
-  in the contract under `inputs/`, whose sha256 must match the recorded one;
+  in the contract under `inputs/` (judged on the resolved path, so a file
+  the agent wrote cannot stand in for it), whose sha256 must match the
+  recorded one;
+- `issues.md` and `issues.csv` are exactly what `record_issues` renders
+  from `issues.json`, so the attorney's view cannot drift from the checked
+  record;
 - every family in the approved playbook is marked deviation, compliant,
   absent or not applicable, consistently with the issues raised, and every
   critical issue is escalated;
 - the redline is re-applied from its ops: each target matches exactly once,
   `proposed.txt` equals the result, and in `redline.docx` "reject all"
   reproduces the original while "accept all" gives the proposal, so there
-  are no silent edits;
+  are no silent edits; its margin comments are exactly the ops' comments and
+  `redline.md` is the rendering of the ops. The manifest pins each
+  delivered path, so `redline.json` cannot point a check at another file;
 - the redline breaks no cross-reference or used definition;
 - CSV cells cannot be read as spreadsheet formulas;
 - hidden text, comments, metadata, field codes, macros, external links and

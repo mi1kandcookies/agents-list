@@ -144,7 +144,12 @@ milestones:
         description: Every approved playbook family is addressed and consistent with the issues
         params: {issues: deliverables/m2-issues/issues.json, playbook: deliverables/m1-playbook/playbook.yaml}
       - check: issue_list_valid
-        params: {issues: deliverables/m2-issues/issues.json, playbook: deliverables/m1-playbook/playbook.yaml}
+        description: The issue list re-validates and issues.md / issues.csv are its exact rendering
+        params:
+          issues: deliverables/m2-issues/issues.json
+          playbook: deliverables/m1-playbook/playbook.yaml
+          markdown: deliverables/m2-issues/issues.md
+          csv: deliverables/m2-issues/issues.csv
       - check: csv_formula_safe
         params: {path: deliverables/m2-issues/issues.csv}
       - check: hidden_content_disclosed
@@ -176,9 +181,14 @@ milestones:
         params: {paths: [deliverables/m3-redline/redline.docx, deliverables/m3-redline/redline.json, deliverables/m3-redline/proposed.txt, deliverables/m3-redline/memo.md]}
       - check: redline_roundtrip
         description: Tracked changes reject to the original and accept to the proposal
-        params: {redline: deliverables/m3-redline/redline.json, issues: deliverables/m2-issues/issues.json}
+        params:
+          redline: deliverables/m3-redline/redline.json
+          issues: deliverables/m2-issues/issues.json
+          proposed: deliverables/m3-redline/proposed.txt
+          docx: deliverables/m3-redline/redline.docx
+          markdown: deliverables/m3-redline/redline.md
       - check: references_resolve
-        params: {redline: deliverables/m3-redline/redline.json}
+        params: {redline: deliverables/m3-redline/redline.json, proposed: deliverables/m3-redline/proposed.txt}
       - check: memo_covers_issues
         params: {memo: deliverables/m3-redline/memo.md, issues: deliverables/m2-issues/issues.json}
       - check: markdown_sections
