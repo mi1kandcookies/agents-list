@@ -41,7 +41,7 @@
     "uniform sampler2D uImg; uniform sampler2D uMask;\n" +
     "uniform vec2 uScale; uniform vec2 uOffset;   // canvas uv -> image uv (object-fit: cover)\n" +
     "uniform vec2 uCss;                           // element size in CSS px\n" +
-    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic; uniform float uSparkle; uniform float uMist; uniform float uSwell;\n" +
+    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic; uniform float uSparkle; uniform float uMist;\n" +
     "vec2 hash22(vec2 p){ p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }\n" +
     "// Fine spray droplets: three depth layers drifting up and back off the wave lip.\n" +
     "float mist(vec2 px, float t){\n" +
@@ -103,15 +103,30 @@
     "  float a = snoise(vec3(p * vec2(1.6, 2.6) + vec2(t * 0.050, t * 0.085), t * 0.14));\n" +
     "  float b = snoise(vec3(p * vec2(3.4, 5.2) - vec2(t * 0.070, t * 0.040), t * 0.20 + 7.0));\n" +
     "  vec2 dw = vec2(a * 0.65 + b * 0.35, b * 0.55 - a * 0.25) * uWater * w;\n" +
-    "  // spray: rising drift with a little turbulence\n" +
-    "  float c = snoise(vec3(p * 3.0 + vec2(0.0, t * 0.20), t * 0.36 + 3.0));\n" +
-    "  // Crest (above the horizon) reads as airborne spray: droplets instead of a smear.\n" +
+    "  vec3 col = texture(uImg, iuv + (dw / uCss) * uScale).rgb;\n" +
+    "  // Crest (above the horizon) is airborne spray; below it is the tumbling whitewater.\n" +
     "  float crest = s * (1.0 - smoothstep(0.50, 0.58, iuv.y));\n" +
-    "  vec2 ds = vec2(c * 0.6, -0.55 - abs(c) * 0.45) * uSpray * (s - crest * 0.7);\n" +
-    "  // Same rolling pattern on the open water, kept level so it swells instead of rising.\n" +
-    "  dw += vec2(c * 0.6, c * 0.30) * uSwell * w;\n" +
-    "  vec2 dpx = dw + ds;                       // CSS px\n" +
-    "  vec3 col = texture(uImg, iuv + (dpx / uCss) * uScale).rgb;\n" +
+    "  if (s > 0.01 && uSpray > 0.0) {\n" +
+    "    // Stream the spray texture along a wind field (up and back off the lip) with a\n" +
+    "    // two-phase flow map, so it reads as mist blowing through rather than wobbling.\n" +
+    "    float n = snoise(vec3(p * 1.4, t * 0.05 + 41.0));\n" +
+    "    vec2 dir = normalize(mix(vec2(-0.9 + 0.35 * n, 0.25), vec2(-0.55 + 0.4 * n, -1.0), crest / max(s, 1e-3)));\n" +
+    "    float speed = mix(5.0, 13.0, crest / max(s, 1e-3)) * uSpray;   // CSS px per second\n" +
+    "    float per = 2.2;\n" +
+    "    float ofs = 0.5 + 0.5 * snoise(vec3(p * 0.9, 53.0));\n" +
+    "    float ph0 = fract(t / per + ofs), ph1 = fract(t / per + ofs + 0.5);\n" +
+    "    vec2 f0 = dir * speed * per * (ph0 - 0.5), f1 = dir * speed * per * (ph1 - 0.5);\n" +
+    "    vec3 s0 = texture(uImg, iuv - (f0 / uCss) * uScale).rgb;\n" +
+    "    vec3 s1 = texture(uImg, iuv - (f1 / uCss) * uScale).rgb;\n" +
+    "    float wgt = abs(2.0 * ph0 - 1.0);\n" +
+    "    vec3 streamed = mix(s0, s1, wgt);\n" +
+    "    // Lighten-only so darker background never smears into the spray edges.\n" +
+    "    col = mix(col, max(col, streamed), s);\n" +
+    "    // Fine haze puffs carried on the same wind.\n" +
+    "    vec2 hq = vUv * uCss / 38.0 - dir * t * speed / 38.0;\n" +
+    "    float hz = snoise(vec3(hq, t * 0.35)) * 0.6 + snoise(vec3(hq * 2.3, t * 0.5 + 9.0)) * 0.4;\n" +
+    "    col = mix(col, vec3(0.97, 0.99, 1.0), crest * 0.16 * smoothstep(0.05, 0.75, hz));\n" +
+    "  }\n" +
     "  // soft caustic light bands drifting across the water\n" +
     "  float k = snoise(vec3(p * vec2(1.1, 1.8) + vec2(t * 0.06, -t * 0.04), t * 0.12 + 17.0));\n" +
     "  float k2 = snoise(vec3(p * 2.7 - vec2(t * 0.05, t * 0.03), t * 0.18 + 29.0));\n" +
@@ -121,8 +136,6 @@
     "  float glint = smoothstep(0.80, 0.97, lum) * w;\n" +
     "  float tw = snoise(vec3(p * 26.0, t * 1.10 + 11.0));\n" +
     "  col += glint * pow(max(tw, 0.0), 3.0) * uGlint;\n" +
-    "  // spray breathes very slightly\n" +
-    "  col += s * 0.035 * snoise(vec3(p * 2.0, t * 0.50 + 5.0));\n" +
     "  col += uSparkle * sparkle(vUv * uCss, t) * vec3(1.0, 0.97, 0.9);\n" +
     "  if (s > 0.01 && uMist > 0.0) col = mix(col, vec3(0.97, 0.99, 1.0), clamp((0.35 * s + crest) * uMist * mist(vUv * uCss, t), 0.0, 0.8));\n" +
     "  outColor = vec4(col, 1.0);\n" +
@@ -130,7 +143,7 @@
 
   var PRESETS = {
     hero:   { water: 3.2, spray: 0.0, glint: 0.22, caustic: 0.035, sparkle: 0.9 },
-    footer: { water: 2.0, spray: 4.0, glint: 0.14, caustic: 0.028, mist: 1.5, swell: 2.2 },
+    footer: { water: 2.0, spray: 1.0, glint: 0.14, caustic: 0.028, mist: 1.5 },
   };
 
   function compile(gl, type, src) {
@@ -198,14 +211,13 @@
       gl.activeTexture(gl.TEXTURE1); texture(gl, ims[1], false);
       var u = function (n) { return gl.getUniformLocation(prog, n); };
       self.u = { img: u("uImg"), mask: u("uMask"), scale: u("uScale"), offset: u("uOffset"), css: u("uCss"),
-                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic"), sparkle: u("uSparkle"), mist: u("uMist"), swell: u("uSwell") };
+                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic"), sparkle: u("uSparkle"), mist: u("uMist") };
       gl.uniform1i(self.u.img, 0); gl.uniform1i(self.u.mask, 1);
       gl.uniform1f(self.u.water, self.preset.water); gl.uniform1f(self.u.spray, self.preset.spray);
       gl.uniform1f(self.u.glint, self.preset.glint);
       gl.uniform1f(self.u.caustic, self.preset.caustic || 0);
       gl.uniform1f(self.u.sparkle, self.preset.sparkle || 0);
       gl.uniform1f(self.u.mist, self.preset.mist || 0);
-      gl.uniform1f(self.u.swell, self.preset.swell || 0);
       self.natural = [ims[0].naturalWidth, ims[0].naturalHeight];
       img.insertAdjacentElement("afterend", canvas);
       self.resize();
