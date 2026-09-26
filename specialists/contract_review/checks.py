@@ -4,14 +4,24 @@ contract-review specialist.
 
 Each check is fn(workspace, params, *, run=None) -> {"passed", "details",
 "score"} and is listed in CHECK_DEFS; agent.py wraps them as kit checks.
-They never trust what the agent says it did: quotes are re-matched against
-the contract under inputs/ (judged on the resolved path, and whose sha256
-must match the one recorded), coverage is recomputed from the issues
-themselves, the attorney's Markdown/CSV views must be the rendering of the
-recorded issue list, and the redline is re-applied from the ops so the
-.docx (text and margin comments), redline.md and proposed text must agree
-with it. The manifest pins the deliverable paths, so a record cannot point
-a check at a different file than the one delivered.
+They never trust what the agent says it did:
+
+- the reviewed contract must be the one the brief's intake names (pinned
+  under .agentkit/ by the harness before the run, or given as a
+  "contracts" param), resolved under inputs/, with the recorded sha256;
+- quotes are re-matched against it, and coverage is recomputed from the
+  issues, the approved playbook and the contract's wording
+  (tools.coverage_errors);
+- the attorney's Markdown/CSV views must be the rendering of the recorded
+  issue list;
+- the redline is re-applied from its ops against the same contract, hash
+  and base as the issue list, so the .docx (text and margin comments),
+  redline.md and proposed text must agree with it;
+- files approved in an earlier milestone (the playbook, the issue list)
+  must be byte-for-byte what was approved.
+
+The manifest pins every deliverable path, so a record cannot point a check
+at a different file than the one delivered.
 """
 from __future__ import annotations
 
@@ -21,6 +31,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
+from agentkit.checks.builtin import headings
 from agentkit.errors import ToolError
 from specialists.contract_review import tools as t
 
@@ -46,17 +57,47 @@ def _summary(problems: list[str], limit: int = 12) -> str:
     return "\n".join(problems[:limit]) + extra
 
 
-def _issue_doc(workspace: Path, path: str) -> tuple[dict, list[str]]:
-    """The issue list plus the original contract paragraphs, after checking
-    the contract is a customer input whose hash matches the recorded one."""
+def _contracts(workspace: Path, params: dict) -> list[str]:
+    """The engagement's contract paths: params["contracts"], else what the
+    harness pinned from the intake. Fails closed when neither exists."""
+    given = params.get("contracts")
+    if given is not None:
+        return [str(c) for c in ([given] if isinstance(given, str) else given)]
+    pinned = t.engagement_contracts(workspace)
+    if pinned is None:
+        raise ValueError("no contract is pinned for this engagement: run the milestone through the "
+                         "harness (it records the intake's contract_files) or pass 'contracts'")
+    return pinned
+
+
+def _load_dict(workspace: Path, path: str) -> dict:
     doc = t.load_structured(t.resolve(workspace, path))
     if not isinstance(doc, dict):
         raise ValueError(f"{path} is not a JSON object")
+    return doc
+
+
+def _issue_doc(workspace: Path, path: str, params: dict) -> tuple[dict, list[str]]:
+    """The issue list plus the contract paragraphs it was reviewed on, after
+    checking the contract is the engagement's, its hash matches the
+    recorded one, and its base is valid."""
+    doc = _load_dict(workspace, path)
     contract = str(doc.get("contract", ""))
     src = t.input_file(workspace, contract)
+    error = t.contract_error(workspace, src, _contracts(workspace, params))
+    if error:
+        raise ValueError(error)
     if doc.get("contract_sha256") != t.sha256_file(src):
         raise ValueError(f"{contract} changed since the issue list was recorded (sha256 mismatch)")
-    return doc, t.load_paragraphs(src)
+    base, error = t.contract_base(src, doc.get("base"))
+    if error:
+        raise ValueError(error)
+    return doc, t.load_paragraphs(src, base)
+
+
+def _families(workspace: Path, path: str) -> dict[str, dict]:
+    data = t.load_structured(t.resolve(workspace, path))
+    return t.playbook_families(data if isinstance(data, dict) else {})
 
 
 @_guard
@@ -76,16 +117,17 @@ def playbook_schema_valid(workspace: Path, params: dict) -> dict[str, Any]:
 
 @_guard
 def quotes_in_contract(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: issues (path to issues.json). Every issue quote and every
-    'compliant' coverage quote must appear verbatim in the contract."""
-    doc, paragraphs = _issue_doc(workspace, params["issues"])
+    """params: issues (path to issues.json), contracts (optional). Every
+    issue quote and every 'compliant' coverage quote must appear verbatim in
+    the engagement's contract."""
+    doc, paragraphs = _issue_doc(workspace, params["issues"], params)
     quotes = [(f"issue {i.get('id')}", i.get("quote")) for i in doc.get("issues", [])]
     quotes += [(f"coverage {c.get('family')}", c.get("quote")) for c in doc.get("coverage", [])
                if c.get("status") == "compliant"]
     if not quotes:
         return _result(False, "no quotes to verify", 0.0)
     bad = [label for label, q in quotes
-           if not isinstance(q, str) or len(t.normalize(q)) < 12 or not t.locate(paragraphs, q)]
+           if not isinstance(q, str) or len(t.normalize(q)) < t.MIN_QUOTE or not t.locate(paragraphs, q)]
     score = (len(quotes) - len(bad)) / len(quotes)
     if bad:
         return _result(False, f"{len(bad)} of {len(quotes)} quotes not found verbatim: "
@@ -97,55 +139,33 @@ def quotes_in_contract(workspace: Path, params: dict) -> dict[str, Any]:
 def playbook_coverage(workspace: Path, params: dict) -> dict[str, Any]:
     """params: issues (path), playbook (path; defaults to the one the issue
     list names, but the manifest pins it so a thinner playbook cannot be
-    swapped in). Every family must be addressed and consistent with the issues."""
-    doc = t.load_structured(t.resolve(workspace, params["issues"]))
+    swapped in), contracts (optional). Every family must be addressed, and
+    each row must stand up against the issues, the playbook's severities and
+    the contract's wording (tools.coverage_errors)."""
+    doc, paragraphs = _issue_doc(workspace, params["issues"], params)
     pb_path = params.get("playbook") or doc.get("playbook", "")
-    families = t.playbook_families(t.load_structured(t.resolve(workspace, pb_path)))
-    if not families:
+    fams = _families(workspace, pb_path)
+    if not fams:
         return _result(False, f"playbook {pb_path} has no families", 0.0)
-    issues = [i for i in doc.get("issues", []) if isinstance(i, dict)]
-    raised: dict[str, list[str]] = {}
-    for issue in issues:
-        raised.setdefault(issue.get("family"), []).append(str(issue.get("id")))
-    rows = {r.get("family"): r for r in doc.get("coverage", []) if isinstance(r, dict)}
-    problems, ok = [], 0
-    for fid in families:
-        row = rows.get(fid)
-        status = (row or {}).get("status")
-        if row is None:
-            problems.append(f"{fid}: not addressed")
-        elif status not in t.COVERAGE_STATUSES:
-            problems.append(f"{fid}: invalid status {status!r}")
-        elif (status == "deviation") != bool(raised.get(fid)):
-            problems.append(f"{fid}: status {status} disagrees with issues {raised.get(fid, [])}")
-        elif status in ("absent", "not_applicable") and not str(row.get("note") or "").strip():
-            problems.append(f"{fid}: {status} without a note")
-        else:
-            ok += 1
-    unknown = sorted(str(f) for f in raised if f not in families)
-    problems += [f"issue family {f} is not in the playbook" for f in unknown]
-    for issue in issues:
-        if issue.get("severity") not in t.SEVERITIES:
-            problems.append(f"issue {issue.get('id')}: invalid severity")
-        elif issue.get("severity") == "critical" and not issue.get("escalate"):
-            problems.append(f"issue {issue.get('id')}: critical but not escalated")
-    score = ok / len(families)
+    instruction = t.carries_instruction(workspace, doc["contract"])
+    problems = t.coverage_errors(doc, paragraphs, fams, instruction=instruction)
+    bad = {fam for fam, _msg in problems if fam in fams}
+    score = (len(fams) - len(bad)) / len(fams)
     if problems:
-        return _result(False, _summary(problems), score)
-    return _result(True, f"all {len(families)} playbook families addressed", 1.0)
+        return _result(False, _summary([msg for _fam, msg in problems]), score)
+    return _result(True, f"all {len(fams)} playbook families addressed consistently", 1.0)
 
 
 @_guard
 def issue_list_valid(workspace: Path, params: dict) -> dict[str, Any]:
     """params: issues (path), playbook (optional, pins it), markdown and csv
-    (optional paths). The full record_issues validation, re-run; issues.md
-    and issues.csv must be exactly what record_issues renders from
-    issues.json, so the attorney's view cannot drift from the checked record."""
-    recorded = t.load_structured(t.resolve(workspace, params["issues"]))
-    doc = recorded
-    if params.get("playbook") and isinstance(doc, dict):
-        doc = {**doc, "playbook": params["playbook"]}
-    problems = t.issue_list_errors(workspace, doc)
+    (optional paths), contracts (optional). The full record_issues
+    validation, re-run; issues.md and issues.csv must be exactly what
+    record_issues renders from issues.json, so the attorney's view cannot
+    drift from the checked record."""
+    recorded = _load_dict(workspace, params["issues"])
+    doc = {**recorded, "playbook": params["playbook"]} if params.get("playbook") else recorded
+    problems = t.issue_list_errors(workspace, doc, contracts=_contracts(workspace, params))
     if not problems:
         for key, render in (("markdown", t.render_issues_md), ("csv", t.render_issues_csv)):
             if params.get(key):
@@ -166,14 +186,17 @@ def _pinned(params: dict, rec: dict, key: str) -> str:
 
 @_guard
 def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: redline (path to redline.json), issues (optional path), and
-    the delivered proposed / docx / markdown paths (default: the record's).
-    Re-applies the ops to the original contract and requires: each target
-    matched exactly once; proposed.txt equals the result; in the .docx,
-    reject-all equals the original, accept-all equals the proposal and the
-    margin comments are exactly the ops' comments; redline.md is the
-    rendering of the ops."""
-    rec = t.load_structured(t.resolve(workspace, params["redline"]))
+    """params: redline (path to redline.json), issues (path; default the
+    record's), contracts (optional) and the delivered proposed / docx /
+    markdown paths (default: the record's). Re-applies the ops to the
+    contract the issue list reviewed (same file, sha256 and base) and
+    requires: each target matched exactly once; every op cites a recorded
+    issue, and one that edits another section than its issue's quote
+    carries a comment; no placeholder added; proposed.txt equals the result;
+    in the .docx, reject-all equals the original, accept-all equals the
+    proposal and the margin comments are exactly the ops' comments;
+    redline.md is the rendering of the ops."""
+    rec = _load_dict(workspace, params["redline"])
     try:
         src = t.input_file(workspace, str(rec.get("contract", "")))
     except ToolError as exc:
@@ -181,11 +204,31 @@ def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
     contract = str(rec["contract"])
     if rec.get("contract_sha256") != t.sha256_file(src):
         return _result(False, f"{contract} does not match the recorded sha256", 0.0)
-    original = t.load_paragraphs(src)
+    issues_path = params.get("issues") or rec.get("issues")
+    if not issues_path:
+        return _result(False, "the redline names no issue list to tie its ops to", 0.0)
+    issue_doc = _load_dict(workspace, str(issues_path))
+    base, problems = t.redline_basis(workspace, src, issue_doc, rec.get("base"),
+                                     _contracts(workspace, params))
+    if rec.get("base") != base:
+        problems.append(f"redline.json records base {rec.get('base')!r}; the contract is read as {base!r}")
+    original = t.load_paragraphs(src, base)
     ops = rec.get("ops") or []
-    plan, problems = t.redline_plan(original, ops)
+    if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops):
+        return _result(False, "redline ops must be a list of objects", 0.0)
+    plan, errors = t.redline_plan(original, ops)
+    problems += errors
     if not ops:
         problems.append("no redline ops")
+    recorded = [i for i in issue_doc.get("issues") or [] if isinstance(i, dict)]
+    known = {str(i.get("id")) for i in recorded}
+    problems += [f"ops[{k}] cites unknown issue {op.get('issue_id')!r}"
+                 for k, op in enumerate(ops) if str(op.get("issue_id")) not in known]
+    cross = t.cross_section_ops(original, ops, recorded)
+    problems += [f"ops[{c['op']}] changes \u00a7{c['section']}, outside the section its issue "
+                 f"{c['issue_id']} quotes, without a comment" for c in cross
+                 if not str(ops[c["op"]].get("comment") or "").strip()]
+    problems += t.placeholder_errors(original, plan, ops)
     _orig, proposed = t.plan_views(plan)
     prop_path = t.resolve(workspace, _pinned(params, rec, "proposed"))
     if not prop_path.is_file():
@@ -205,19 +248,14 @@ def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
     markdown = _pinned(params, rec, "markdown")
     if markdown:
         md_path = t.resolve(workspace, markdown)
-        rendered = t.render_redline_md(plan, ops)
+        rendered = t.render_redline_md(plan, ops, cross)
         if not md_path.is_file() or md_path.read_text(encoding="utf-8") != rendered:
             problems.append(f"{markdown} is not the rendering of the redline ops")
-    issues_path = params.get("issues") or rec.get("issues")
-    if issues_path:
-        known = {str(i.get("id")) for i in
-                 t.load_structured(t.resolve(workspace, issues_path)).get("issues", [])}
-        problems += [f"ops[{k}] cites unknown issue {op.get('issue_id')!r}"
-                     for k, op in enumerate(ops) if str(op.get("issue_id")) not in known]
     if problems:
         return _result(False, _summary(problems), 0.0)
-    return _result(True, f"{len(ops)} ops re-applied; .docx reject-all = original, "
-                         "accept-all = proposed", 1.0)
+    moved = f", {len(cross)} cross-section edit(s) listed in redline.md" if cross else ""
+    return _result(True, f"{len(ops)} ops re-applied to {contract} (base {base}); .docx reject-all = "
+                         f"original, accept-all = proposed{moved}", 1.0)
 
 
 @_guard
@@ -226,8 +264,12 @@ def references_resolve(workspace: Path, params: dict) -> dict[str, Any]:
     record's). The redline must not break a cross-reference or remove a
     definition whose term is still used. Breaks already in the
     counterparty's paper are reported but do not fail the check."""
-    rec = t.load_structured(t.resolve(workspace, params["redline"]))
-    original = t.load_paragraphs(t.input_file(workspace, rec["contract"]))
+    rec = _load_dict(workspace, params["redline"])
+    src = t.input_file(workspace, str(rec.get("contract", "")))
+    base, error = t.contract_base(src, rec.get("base"))
+    if error:
+        raise ValueError(error)
+    original = t.load_paragraphs(src, base)
     proposed = t.resolve(workspace, _pinned(params, rec, "proposed")).read_text(
         encoding="utf-8").split("\n")
     before, after = t.reference_report(original), t.reference_report(proposed)
@@ -255,42 +297,106 @@ def csv_formula_safe(workspace: Path, params: dict) -> dict[str, Any]:
     return _result(True, "no formula-injectable cells", 1.0)
 
 
+def _mentions(text: str, name: str) -> bool:
+    return bool(re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text, re.I))
+
+
 @_guard
 def memo_covers_issues(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: memo (path), issues (path), severities (default critical, high).
-    The memo must name every issue at those severities and every escalation."""
+    """params: memo (path), issues (path), playbook (path; default the issue
+    list's), severities (default critical, high). The memo must name every
+    issue at those severities and every escalated issue by id, and every
+    family marked absent or not applicable that the playbook rates at those
+    severities or that is escalated, by family id or title."""
     memo = t.resolve(workspace, params["memo"]).read_text(encoding="utf-8")
-    doc = t.load_structured(t.resolve(workspace, params["issues"]))
+    doc = _load_dict(workspace, params["issues"])
     wanted = set(params.get("severities") or ["critical", "high"])
     need = [str(i["id"]) for i in doc.get("issues", [])
-            if i.get("severity") in wanted or i.get("escalate")]
-    missing = [iid for iid in need if not re.search(rf"(?<![\w-]){re.escape(iid)}(?![\w-])", memo)]
+            if i.get("severity") in wanted or i.get("escalate") is True]
+    missing = [iid for iid in need if not _mentions(memo, iid)]
+    fams = _families(workspace, params.get("playbook") or str(doc.get("playbook", "")))
+    gaps = [r for r in doc.get("coverage", []) if isinstance(r, dict)
+            and r.get("status") in ("absent", "not_applicable") and r.get("family") in fams
+            and (r.get("escalate") is True or fams[r["family"]].get("severity", "high") in wanted)]
+    need += [str(r["family"]) for r in gaps]
+    missing += [str(r["family"]) for r in gaps if not _mentions(memo, str(r["family"]))
+                and not _mentions(memo, str(fams[r["family"]].get("title") or r["family"]))]
     score = (len(need) - len(missing)) / len(need) if need else 1.0
     if missing:
-        return _result(False, "memo does not mention issues: " + ", ".join(missing), score)
-    return _result(True, f"memo covers all {len(need)} priority issues", 1.0)
+        return _result(False, "memo does not mention: " + ", ".join(missing), score)
+    return _result(True, f"memo covers all {len(need)} priority issues and missing protections", 1.0)
+
+
+def _section_text(text: str, title: str) -> str:
+    """The body under the first Markdown heading starting with title, up to
+    the next heading of the same or a higher level."""
+    body: list[str] | None = None
+    level = 0
+    for line in text.splitlines():
+        m = re.match(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if m and body is not None and len(m.group(1)) <= level:
+            break
+        if m and body is None and m.group(2).strip().lower().startswith(title):
+            body, level = [], len(m.group(1))
+            continue
+        if body is not None:
+            body.append(line)
+    return "\n".join(body or [])
 
 
 @_guard
 def hidden_content_disclosed(workspace: Path, params: dict) -> dict[str, Any]:
-    """params: issues (path), report (path). Re-scans the contract; if it
-    carries hidden content or embedded instructions, the report must have a
-    'Hidden content' heading naming each kind of finding."""
-    doc, _paragraphs = _issue_doc(workspace, params["issues"])
+    """params: issues (path), report (path), contracts (optional). Re-scans
+    the contract; if it carries hidden content, pending tracked changes or
+    embedded instructions, the report must have a "Hidden content" heading
+    whose section names each kind of finding."""
+    doc, _paragraphs = _issue_doc(workspace, params["issues"], params)
     scan = t.scan_hidden_content(workspace, path=doc["contract"])
     kinds = sorted({f["kind"] for f in scan["findings"]})
     if not kinds:
         return _result(True, "no hidden content in the contract", 1.0)
     report = t.resolve(workspace, params["report"]).read_text(encoding="utf-8")
-    lower = report.lower()
-    if "hidden content" not in lower:
+    if not any(h.startswith("hidden content") for h in headings(report)):
         return _result(False, f"contract has {', '.join(kinds)} but the report has no "
-                              "'Hidden content' section", 0.0)
-    missing = [k for k in kinds if k.replace("_", " ") not in lower and k not in lower]
+                              "'## Hidden content' heading", 0.0)
+    section = _section_text(report, "hidden content").lower()
+    missing = [k for k in kinds if k.replace("_", " ") not in section and k not in section]
     if missing:
-        return _result(False, "hidden-content kinds not disclosed: " + ", ".join(missing),
-                       1 - len(missing) / len(kinds))
+        return _result(False, "hidden-content kinds not disclosed under Hidden content: "
+                              + ", ".join(missing), 1 - len(missing) / len(kinds))
     return _result(True, f"disclosed {', '.join(kinds)}", 1.0)
+
+
+@_guard
+def approved_inputs_unchanged(workspace: Path, params: dict) -> dict[str, Any]:
+    """params: paths (deliverables approved in earlier milestones). Each must
+    be byte-for-byte what was approved: the artifact hash in its milestone's
+    submission, else the hash the harness recorded before this milestone
+    ran (tools.record_baseline). A file absent then must still be absent."""
+    paths = params.get("paths") or []
+    if not paths:
+        return _result(False, "no approved paths to compare", 0.0)
+    problems, ok = [], []
+    for path in paths:
+        expected, source = t.approved_sha(workspace, path)
+        target = t.resolve(workspace, path)
+        current = t.sha256_file(target) if target.is_file() else None
+        if expected == "":
+            problems.append(f"{path}: {source}")
+        elif expected is None and current is not None:
+            problems.append(f"{path} did not exist at {source}; a file written since is not approved")
+        elif expected is None:
+            ok.append(f"{path} absent, as at {source}")
+        elif current is None:
+            problems.append(f"{path} was deleted since {source}")
+        elif current != expected:
+            problems.append(f"{path} changed since {source} (approved sha256 {expected[:12]}, "
+                            f"now {current[:12]}); restore it, or re-run and resubmit its milestone")
+        else:
+            ok.append(f"{path} sha256 {current[:12]} matches {source}")
+    if problems:
+        return _result(False, _summary(problems), len(ok) / len(paths))
+    return _result(True, "; ".join(ok), 1.0)
 
 
 CHECK_DEFS: dict[str, Callable[..., dict[str, Any]]] = {
@@ -303,4 +409,5 @@ CHECK_DEFS: dict[str, Callable[..., dict[str, Any]]] = {
     "csv_formula_safe": csv_formula_safe,
     "memo_covers_issues": memo_covers_issues,
     "hidden_content_disclosed": hidden_content_disclosed,
+    "approved_inputs_unchanged": approved_inputs_unchanged,
 }
