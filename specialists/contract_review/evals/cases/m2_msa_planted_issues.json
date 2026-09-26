@@ -1,0 +1,20 @@
+{
+  "name": "Planted-issue review of a vendor SaaS MSA",
+  "milestone": "m2-issues",
+  "brief": {
+    "engagement_id": "eval-cr-m2",
+    "specialist": "contract-review",
+    "objective": "Review Northwind's MSA against Harborlight's approved playbook and produce the issue list.",
+    "intake": {
+      "contract_files": ["inputs/northwind_saas_msa.txt"],
+      "contract_type": "SaaS/MSA",
+      "side": "customer",
+      "reviewing_attorney": "Fictional reviewer, admitted in Ohio"
+    }
+  },
+  "fixtures": {
+    "inputs/northwind_saas_msa.txt": "northwind_saas_msa.txt",
+    "deliverables/m1-playbook/playbook.yaml": "harborlight_playbook.yaml"
+  },
+  "notes": "Planted deviations the issue list must catch: cap of 3 months of fees paid (9.2); cap applied to indemnity and confidentiality claims with no carve-outs (9.3, critical, escalate); one-way customer indemnity for any breach (8.1, critical, escalate); perpetual licence to use Customer Data to train (5.2, escalate); breach notice with no fixed window and no DPA (6.2); full as-is disclaimer (7.1); 90-day non-renewal notice (3.2); unilateral mid-term price increases and net 15 (2.1, 2.2); one-sided assignment (10.1); Delaware law (11.1, fallback-acceptable, low). Insurance and non-solicitation are absent. Section 14 cross-reference in 12.1 is dangling and should be mentioned in the review notes."
+}
