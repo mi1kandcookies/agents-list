@@ -1,0 +1,7 @@
+ID,Category,Question
+SEC-01,Data Protection,Is customer data encrypted at rest? Describe the algorithm.
+SEC-02,Data Protection,Is customer data encrypted in transit?
+SEC-03,Incident Response,How quickly do you notify customers of a security incident affecting their data?
+SEC-04,Compliance,Do you hold a current SOC 2 Type II report?
+SEC-05,Compliance,Are you FedRAMP authorized?
+SEC-06,Availability,What monthly availability do your backend services target?
