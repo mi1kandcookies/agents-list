@@ -1,0 +1,5 @@
+metric,value,tolerance_pct,note
+paid_revenue_2026_07,2659.0,0.5,"Finance-reported paid revenue for 2026-07, test tenants excluded"
+paying_customers_2026_07,11,0,Distinct non-test customers with a paid invoice in 2026-07
+paid_revenue_2026_08,4436.0,0.5,"Finance-reported paid revenue for 2026-08, test tenants excluded"
+paying_customers_2026_08,19,0,Distinct non-test customers with a paid invoice in 2026-08
