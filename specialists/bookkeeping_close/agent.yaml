@@ -214,6 +214,7 @@ milestones:
           statement: inputs/bank_statement.csv
           gl: inputs/gl_detail.csv
           reconciliation: deliverables/m2-period-close/bank_reconciliation.json
+          journal_entries: deliverables/m2-period-close/journal_entries.csv
       - check: journal_entries_balanced
         description: Every draft entry balances, cites support, uses known accounts and is marked draft
         params:
