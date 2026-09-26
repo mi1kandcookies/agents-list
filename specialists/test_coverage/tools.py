@@ -12,7 +12,8 @@ reports (Cobertura, LCOV, JaCoCo, Go cover profiles), JUnit run results,
 unified diffs, mutation reports (the open mutation-testing-elements JSON
 schema), risk ranking and a secret scan of added lines. Subprocess work goes
 through the injected `run` (the kit's shell-policy-checked runner); nothing
-here opens a socket or spawns a process itself.
+here opens a socket or spawns a process itself, except export_patch, whose
+preview comes from the harness's private store (snapshot.RepoStore).
 
 Paths in arguments are workspace-relative and go through the kit's
 resolve_path during a run (the PolicyGate: no escape, inputs/ read-only,
@@ -32,8 +33,9 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from agentkit.errors import ToolError
+from agentkit.errors import AgentKitError, ToolError
 from agentkit.policy import INTERNAL_DIR, PolicyGate
+from specialists.test_coverage.snapshot import RepoStore
 
 # Paths that count as "test code" when no globs are given. `**/` matches any
 # number of directories (including none); `*` stays inside one path segment.
@@ -615,27 +617,25 @@ def diff_scope(workspace: Path, *, fetch=None, run=None, resolve_path=None, patc
     return scope_report(parse_patch(_read_text(workspace, patch, resolve_path)), test_globs, allow)
 
 
-def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
-                 out: str, base: str = "HEAD", cwd: str = "repo") -> dict:
-    """Write `git diff <base>` (including new files) of repo/ to `out`."""
-    if run is None:
-        raise ToolError("export_patch needs the kit's command runner")
-    if not re.fullmatch(r"[A-Za-z0-9._/~^-]{1,100}", base) or base.startswith("-"):
-        raise ToolError("invalid base revision")
-    work = str(_ws_path(workspace, cwd, resolve_path=resolve_path))
+def export_patch(workspace: Path, *, fetch=None, run=None, resolve_path=None, out: str) -> dict:
+    """Preview repo.patch: the harness's own diff of repo/ against the state
+    this milestone started from (snapshot.RepoStore), written to `out`.
+
+    This is the same computation finalize() makes after submission, so the
+    model sees the patch it will deliver: every change under repo/, new
+    files included, committed or not, minus ignored files and tool output.
+    """
+    store = RepoStore(workspace)
+    base = store.active_base()
+    if base is None:
+        raise ToolError("no patch base: the harness records one when a milestone that delivers "
+                        "repo.patch starts")
     target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    # Mark untracked files intent-to-add so they appear in the diff.
-    run(["git", "add", "-N", "."], cwd=work)
-    # git writes the file itself: command output reaching a tool is capped
-    # and truncated in the middle, which would silently drop part of a patch.
-    res = run(["git", "diff", "--no-color", "--no-ext-diff", f"--output={target}", base], cwd=work)
-    if _get(res, "exit_code") != 0:
-        raise ToolError(f"git diff failed: {(_get(res, 'stderr') or '')[:500]}")
-    if not target.is_file():
-        target.write_text("", encoding="utf-8")
-    text = target.read_text(encoding="utf-8", errors="replace")
-    report = scope_report(parse_patch(text))
+    try:
+        store.write_patch(base, store.tree(base, index="index.preview"), target)
+    except AgentKitError as exc:
+        raise ToolError(f"cannot build the patch: {exc}") from None
+    report = scope_report(parse_patch(target.read_text(encoding="utf-8", errors="replace")))
     report["written"] = out
     return report
 
@@ -992,11 +992,11 @@ TOOL_DEFS: list[dict[str, Any]] = [
                     "flag every path outside the test-path globs (renames count both sides).",
      "input_schema": {"type": "object", "required": ["patch"], "properties": {
          "patch": _PATH, "test_globs": _GLOBS, "allow": _GLOBS}}},
-    {"name": "export_patch", "risk": "exec", "function": export_patch,
-     "description": "Write the diff of repo/ against a base revision (new files included) to a "
-                    "deliverable path, and report its scope.",
-     "input_schema": {"type": "object", "required": ["out"], "properties": {
-         "out": _PATH, "base": {"type": "string"}, "cwd": _PATH}}},
+    {"name": "export_patch", "risk": "write", "function": export_patch,
+     "description": "Preview the patch the harness will deliver: every change under repo/ since "
+                    "this milestone started (new files included, committed or not; ignored files "
+                    "and tool output left out), written to a deliverable path, with its scope.",
+     "input_schema": {"type": "object", "required": ["out"], "properties": {"out": _PATH}}},
     {"name": "find_assertion_free_tests", "risk": "read", "function": find_assertion_free_tests,
      "description": "Find tests that assert nothing (or only assert constants): every test a "
                     "patch adds, or every test in the given files. Python is parsed; JS/TS, "

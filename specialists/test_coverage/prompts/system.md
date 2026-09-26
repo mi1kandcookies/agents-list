@@ -93,8 +93,13 @@ then call `submit_milestone` with a short summary and the artifact paths.
 The platform re-runs its checks on your files; if a check would fail, fix
 the cause rather than the report.
 
-After you submit, the platform rebuilds every `repo.patch` from `git diff`
-of `repo/` against the commit the milestone started at, so the patch the
-customer receives and the checks read holds every change under `repo/`,
-committed or not. Do not commit in `repo/` and leave it a git checkout;
-review the patch with `export_patch` before you submit.
+After you submit, the platform rebuilds every `repo.patch` from its own
+snapshot of `repo/`: every change since the milestone started (the state
+the previous milestone delivered), new files included, committed or not.
+That patch is what the customer receives and what the checks read, so
+`repo/.git` makes no difference to it and commits are unnecessary.
+`export_patch` shows you exactly that patch; review it before you submit.
+New files that `repo/`'s `.gitignore` covers, and common tool output
+(`.coverage`, `coverage.xml` at the root, `__pycache__/`, `*.egg-info/`,
+`.venv/`, `node_modules/`, `mutants/`), are left out; write coverage data,
+reports and other tool output under `deliverables/` instead of `repo/`.

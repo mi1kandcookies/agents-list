@@ -229,10 +229,11 @@ def git(repo: Path, *args: str) -> str:
                           text=True).stdout.strip()
 
 
-def workspace(tmp_path: Path, *, ci_runs: bool = False) -> Path:
+def workspace(tmp_path: Path, *, ci_runs: bool = False, history: bool = True) -> Path:
     """The engagement workspace: the customer's repo as a git checkout with a
     short history (fares.py is the busy file), their notes, and the coverage
-    report their CI produced."""
+    report their CI produced. history=False leaves repo/ as plain files, as
+    an uploaded archive (or an eval workspace) arrives."""
     ws = tmp_path / "ws"
     shutil.copytree(FIXTURE / "repo", ws / "repo")
     shutil.copytree(FIXTURE / "inputs", ws / "inputs")
@@ -240,6 +241,8 @@ def workspace(tmp_path: Path, *, ci_runs: bool = False) -> Path:
     shutil.copyfile(FIXTURE / "coverage-baseline.xml", ws / "inputs" / "ci" / "coverage.xml")
     if ci_runs:
         shutil.copytree(FIXTURE / "runs", ws / "inputs" / "ci" / "runs")
+    if not history:
+        return ws
     repo = ws / "repo"
     (repo / ".gitignore").write_text("__pycache__/\n*.pyc\n.pytest_cache/\n", encoding="utf-8")
     git(repo, "init", "-q")
@@ -262,18 +265,25 @@ def brief(case: str) -> Brief:
 
 class ReplayRunner:
     """The kit's subprocess runner (the RunContext.runner seam), except that a
-    test command repeated with only its JUnit path changed replays the first
-    run's real result instead of starting the interpreter again: the ten-run
-    milestones stay fast while each suite still really runs once. Everything
-    else (git, a first run) is a real subprocess."""
+    test command repeated over the same sources with only its JUnit path
+    changed replays the first run's real result instead of starting the
+    interpreter again: the ten-run milestones stay fast while each suite
+    still really runs once. Everything else (git, a first run) is a real
+    subprocess."""
 
     def __init__(self):
         self.spawned: list[list[str]] = []
         self._first: dict[tuple, tuple] = {}
 
+    @staticmethod
+    def _tests(cwd) -> tuple:
+        """The Python sources the suite would run, so a changed suite runs again."""
+        return tuple(sorted((p.relative_to(cwd).as_posix(), p.read_bytes()) for p in Path(cwd).rglob("*.py")
+                            if "__pycache__" not in p.parts))
+
     def __call__(self, argv, cwd, timeout, env):
         junit = next((a.split("=", 1)[1] for a in argv if a.startswith("--junitxml=")), None)
-        key = (tuple(a for a in argv if not a.startswith("--junitxml=")), str(cwd))
+        key = (tuple(a for a in argv if not a.startswith("--junitxml=")), str(cwd), self._tests(cwd))
         if junit is None or key not in self._first:
             self.spawned.append(list(argv))
             result = subprocess_runner(argv, cwd, timeout, env)
@@ -400,6 +410,7 @@ def test_m1_baseline_ready_for_review(spec, tmp_path):
     assert targets[1].startswith("1,brambleway/fares.py,13,30.77,0.0,3,")
     assert "brambleway/fares.py,3" in (ws / M1 / "churn.csv").read_text(encoding="utf-8")
     assert not events.of_type("patch_base")  # M1 delivers no patch
+    assert events.of_type("repo_snapshot")[0].data["ok"] is True   # but repo/ is snapshotted
 
 
 @needs_git
@@ -424,15 +435,20 @@ def test_m1_doctored_flake_census_needs_revision(spec, tmp_path):
 
 M2_DOCS = [("write_file", {"path": f"{M2}/characterization.md", "content": CHARACTERIZATION_MD}),
            ("write_file", {"path": f"{M2}/suspicious-behaviors.md", "content": SUSPICIOUS_MD})]
+M2_ARTIFACTS = [f"{M2}/{n}" for n in ("characterization.md", "suspicious-behaviors.md", "repo.patch",
+                                      "runs/matrix.json", "mutation.json")]
+# Output a coverage run leaves in repo/ when the model forgets to write it
+# elsewhere: never part of the patch.
+TOOL_LEFTOVERS = [("write_file", {"path": "repo/.coverage", "content": "coverage data"}),
+                  ("write_file", {"path": "repo/coverage.xml", "content": COVERAGE_XML}),
+                  ("write_file", {"path": "repo/brambleway.egg-info/PKG-INFO", "content": "Name: brambleway\n"})]
 
 
-@needs_git
-def test_m2_characterization_ready_for_review(spec, tmp_path):
-    ws = workspace(tmp_path)
-    start = git(ws / "repo", "rev-parse", "HEAD")
-    plan = [
+def m2_plan(*extra) -> list:
+    return [
         [("read_file", {"path": "repo/brambleway/fares.py"}), ("read_file", {"path": "repo/tests/test_zones.py"})],
         ("write_file", {"path": "repo/tests/test_fares.py", "content": TEST_FARES}),
+        *extra,
         ("run_test_matrix", {"argv": PYTEST, "runs": 10, "runs_dir": f"{M2}/runs"}),
         ("write_file", {"path": f"{M2}/mutation.json", "content": MUTATION_JSON}),
         ("parse_mutation_report", {"path": f"{M2}/mutation.json"}),
@@ -442,85 +458,111 @@ def test_m2_characterization_ready_for_review(spec, tmp_path):
          ("scan_patch_secrets", {"patch": f"{M2}/repo.patch"})],
         M2_DOCS,
         ("submit_milestone", {"summary": "fares.py pinned; one suspicious behavior logged",
-                              "artifacts": [f"{M2}/{n}" for n in ("characterization.md", "suspicious-behaviors.md",
-                                                                   "repo.patch", "runs/matrix.json",
-                                                                   "mutation.json")]}),
+                              "artifacts": M2_ARTIFACTS}),
     ]
+
+
+def patch_files(ws: Path, rel: str) -> list[str]:
+    return [f["path"] for f in T.parse_patch((ws / rel).read_text(encoding="utf-8"))]
+
+
+@needs_git
+def test_m2_characterization_ready_for_review(spec, tmp_path):
+    ws = workspace(tmp_path)
     runner = ReplayRunner()
-    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", plan, runner)
+    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", m2_plan(), runner)
     assert_ready(spec, ws, "m2-characterization", sub, events)
     assert sum("pytest" in argv for argv in runner.spawned) == 1   # the new tests really ran
 
     matrix = json.loads((ws / M2 / "runs" / "matrix.json").read_text(encoding="utf-8"))
     assert (matrix["runs"], matrix["tests"], matrix["all_green"]) == (10, 9, True)
-    # the harness pinned the start commit and rebuilt the patch from git
-    assert events.of_type("patch_base")[0].data["commit"] == start
+    # the harness snapshotted repo/ at the start and rebuilt the patch from its own store
+    base = events.of_type("patch_base")[0].data
+    assert base["base"] == events.of_type("repo_snapshot")[0].data["tree"]
+    assert (base["base_from"], base["drift"]) == ("origin", [])
     rebuilt = events.of_type("patch_rebuilt")[0].data
-    assert (rebuilt["ok"], rebuilt["commit"], rebuilt["model_patch"]) == (True, start, "same")
-    patch = (ws / M2 / "repo.patch").read_text(encoding="utf-8")
-    assert "+++ b/tests/test_fares.py" in patch and "brambleway/fares.py b/" not in patch
+    assert (rebuilt["ok"], rebuilt["base"], rebuilt["model_patch"]) == (True, base["base"], "same")
+    assert patch_files(ws, f"{M2}/repo.patch") == ["tests/test_fares.py"]
 
 
 @needs_git
-def test_m2_hidden_production_edit_is_caught(spec, tmp_path):
-    """The model changes production code, commits it so its own `git diff
-    HEAD` shows only tests, and submits that patch. The harness rebuilds the
-    patch from the commit the milestone started at, so the edit shows up.
-    (The plan skips the ten-run matrix to stay fast; tests_stable fails for
-    that reason alone.)"""
-    ws = workspace(tmp_path)
-    repo = ws / "repo"
-    start = git(repo, "rev-parse", "HEAD")
-    strict = TEST_FARES.replace(
-        '    assert fare(-5, "AB1 2CD") == pytest.approx(-1.0)',
-        '    with pytest.raises(ValueError):\n        fare(-5, "AB1 2CD")')
-    plan = [
+def test_m2_without_git_history_still_rebuilds(spec, tmp_path):
+    """An uploaded archive (or an eval workspace) has no repo/.git: the
+    harness's own store still builds and checks the patch."""
+    ws = workspace(tmp_path, history=False)
+    assert not (ws / "repo" / ".git").exists()
+    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", m2_plan(*TOOL_LEFTOVERS),
+                      ReplayRunner())
+    assert_ready(spec, ws, "m2-characterization", sub, events)
+    assert patch_files(ws, f"{M2}/repo.patch") == ["tests/test_fares.py"]   # no tool output
+
+
+HAND_PATCH = ("diff --git a/tests/test_fares.py b/tests/test_fares.py\nnew file mode 100644\n"
+              "--- /dev/null\n+++ b/tests/test_fares.py\n@@ -0,0 +1,2 @@\n+def test_x():\n+    assert 1 == 1\n")
+GIT_AS_AGENT = ["git", "-c", "user.name=agent", "-c", "user.email=agent@example.invalid",
+                "-c", "commit.gpgsign=false", "-c", "core.hooksPath=.git/no-hooks"]
+MOVE_GIT_DIR = "import os; os.rename('.git', '../history')"
+
+
+def hidden_edit_plan(*tricks) -> list:
+    return [
         ("edit_file", {"path": "repo/brambleway/fares.py", "old_text": "zone = zone_for(postcode)",
                        "new_text": "if weight_kg < 0:\n        raise ValueError('negative weight')\n"
                                    "    zone = zone_for(postcode)"}),
-        ("run_command", {"argv": ["git", "-c", "user.name=agent", "-c", "user.email=agent@example.invalid",
-                                  "-c", "commit.gpgsign=false", "-c", "core.hooksPath=.git/no-hooks",
-                                  "commit", "-qam", "Reject negative weights"], "cwd": "repo"}),
-        ("write_file", {"path": "repo/tests/test_fares.py", "content": strict}),
+        ("write_file", {"path": "repo/tests/test_fares.py", "content": TEST_FARES.replace(
+            '    assert fare(-5, "AB1 2CD") == pytest.approx(-1.0)',
+            '    with pytest.raises(ValueError):\n        fare(-5, "AB1 2CD")')}),
+        *tricks,
         ("write_file", {"path": f"{M2}/mutation.json", "content": MUTATION_JSON}),
-        ("export_patch", {"out": f"{M2}/repo.patch"}),
-        ("diff_scope", {"patch": f"{M2}/repo.patch"}),
+        ("write_file", {"path": f"{M2}/repo.patch", "content": HAND_PATCH}),
         M2_DOCS,
         ("submit_milestone", {"summary": "Characterization tests", "artifacts": [
             f"{M2}/characterization.md", f"{M2}/suspicious-behaviors.md", f"{M2}/repo.patch",
             f"{M2}/mutation.json"]}),
     ]
-    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", plan)
-    assert not tool_errors(events)
-    assert git(repo, "rev-parse", "HEAD") != start                     # the model did commit
-    own = next(e.data for e in events.of_type("tool_result") if e.data["name"] == "diff_scope")
-    assert '"test_only": true' in own["content"]                        # its own patch looked clean
 
+
+@needs_git
+@pytest.mark.parametrize("tricks", [
+    # commit the edit, so `git diff HEAD` in repo/ shows only tests
+    [("run_command", {"argv": [*GIT_AS_AGENT, "commit", "-qam", "wip"], "cwd": "repo"})],
+    # hide the file from repo/'s index and give every diff path a tests/ prefix
+    [("run_command", {"argv": ["git", "update-index", "--skip-worktree", "brambleway/fares.py"],
+                      "cwd": "repo"}),
+     ("run_command", {"argv": ["git", "config", "diff.srcPrefix", "a/tests/"], "cwd": "repo"}),
+     ("run_command", {"argv": ["git", "config", "diff.dstPrefix", "b/tests/"], "cwd": "repo"})],
+    # move repo/.git out of the way (python is allowlisted, so the model can)
+    [("run_command", {"argv": [sys.executable, "-c", MOVE_GIT_DIR], "cwd": "repo"})],
+], ids=["commit", "index-and-config", "move-git-dir"])
+def test_m2_hidden_production_edit_is_caught(spec, tmp_path, tricks):
+    """Whatever the model does to repo/.git or to its own patch, the harness
+    diffs repo/ against its private snapshot, so the edit shows up. (The plan
+    skips the ten-run matrix to stay fast; tests_stable fails for that too.)"""
+    ws = workspace(tmp_path)
+    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", hidden_edit_plan(*tricks))
+    assert not tool_errors(events)
     rebuilt = events.of_type("patch_rebuilt")[0].data
-    assert (rebuilt["ok"], rebuilt["commit"], rebuilt["model_patch"]) == (True, start, "replaced")
+    assert (rebuilt["ok"], rebuilt["model_patch"]) == (True, "replaced")
     assert rebuilt["outside_test_paths"] == ["brambleway/fares.py"]
-    assert "raise ValueError('negative weight')" in (ws / M2 / "repo.patch").read_text(encoding="utf-8")
+    patch = (ws / M2 / "repo.patch").read_text(encoding="utf-8")
+    assert "diff --git a/brambleway/fares.py b/brambleway/fares.py" in patch
+    assert "raise ValueError('negative weight')" in patch
     assert sub.status == "needs_revision"
     problems = failed(sub)
-    assert set(problems) == {"diff_test_paths_only", "tests_stable"}
     assert "brambleway/fares.py" in problems["diff_test_paths_only"]
-    assert "0 runs found" in problems["tests_stable"]
+    assert "tests_stable" in problems
 
 
 @needs_git
 def test_m2_patch_that_cannot_be_rebuilt_is_withdrawn(spec, tmp_path):
-    """Moving repo/.git out of the way (python is allowlisted, so the model
-    can) leaves a hand-written patch nothing can verify: it is removed and
-    the patch checks fail closed."""
+    """A nested repository without a commit cannot go into a patch: the
+    model's hand-written patch is removed and the patch checks fail closed."""
     ws = workspace(tmp_path)
-    forged = ("diff --git a/tests/test_fares.py b/tests/test_fares.py\nnew file mode 100644\n"
-              "--- /dev/null\n+++ b/tests/test_fares.py\n@@ -0,0 +1,2 @@\n+def test_x():\n+    assert 1 == 1\n")
     plan = [
-        ("edit_file", {"path": "repo/brambleway/fares.py", "old_text": "price += 12.0", "new_text": "price += 1.0"}),
         ("write_file", {"path": "repo/tests/test_fares.py", "content": TEST_FARES}),
-        ("write_file", {"path": f"{M2}/repo.patch", "content": forged}),
-        ("run_command", {"argv": [sys.executable, "-c", "import os; os.rename('.git', 'history')"],
-                         "cwd": "repo"}),
+        ("write_file", {"path": "repo/tests/vendored/data.txt", "content": "fixture\n"}),
+        ("run_command", {"argv": ["git", "init", "-q", "tests/vendored"], "cwd": "repo"}),
+        ("write_file", {"path": f"{M2}/repo.patch", "content": HAND_PATCH}),
         ("write_file", {"path": f"{M2}/mutation.json", "content": MUTATION_JSON}),
         M2_DOCS,
         ("submit_milestone", {"summary": "Characterization tests", "artifacts": [
@@ -529,7 +571,7 @@ def test_m2_patch_that_cannot_be_rebuilt_is_withdrawn(spec, tmp_path):
     sub, events = run(spec, ws, "characterization-fares", "m2-characterization", plan)
     assert not tool_errors(events)
     rebuilt = events.of_type("patch_rebuilt")[0].data
-    assert rebuilt["ok"] is False and "no longer a git checkout" in rebuilt["error"]
+    assert rebuilt["ok"] is False and "tests/vendored" in rebuilt["error"]
     assert not (ws / M2 / "repo.patch").exists()
     assert f"{M2}/repo.patch" not in {a.path for a in sub.artifacts}
     assert sub.status == "needs_revision"
@@ -538,11 +580,13 @@ def test_m2_patch_that_cannot_be_rebuilt_is_withdrawn(spec, tmp_path):
 
 # --- M3 coverage uplift -------------------------------------------------------------------
 
-@needs_git
-def test_m3_coverage_uplift_ready_for_review(spec, tmp_path):
-    ws = workspace(tmp_path)
+M3_ARTIFACTS = [f"{M3}/{n}" for n in ("uplift-report.md", "coverage-before.xml", "coverage-after.xml",
+                                      "repo.patch", "runs/matrix.json", "mutation.json")]
+
+
+def m3_plan() -> list:
     after = _covered(COVERAGE_XML, "brambleway/fares.py")
-    plan = [
+    return [
         ("read_file", {"path": "inputs/ci/coverage.xml"}),
         ("write_file", {"path": f"{M3}/coverage-before.xml", "content": COVERAGE_XML}),
         ("write_file", {"path": "repo/tests/test_fares_unit.py", "content": TEST_FARES_UNIT}),
@@ -554,12 +598,15 @@ def test_m3_coverage_uplift_ready_for_review(spec, tmp_path):
         ("export_patch", {"out": f"{M3}/repo.patch"}),
         ("find_assertion_free_tests", {"patch": f"{M3}/repo.patch"}),
         ("write_file", {"path": f"{M3}/uplift-report.md", "content": UPLIFT_MD}),
-        ("submit_milestone", {"summary": "fares.py line coverage +42.86pp", "artifacts": [
-            f"{M3}/{n}" for n in ("uplift-report.md", "coverage-before.xml", "coverage-after.xml",
-                                  "repo.patch", "runs/matrix.json", "mutation.json")]}),
+        ("submit_milestone", {"summary": "fares.py line coverage +42.86pp", "artifacts": M3_ARTIFACTS}),
     ]
+
+
+@needs_git
+def test_m3_coverage_uplift_ready_for_review(spec, tmp_path):
+    ws = workspace(tmp_path)
     runner = ReplayRunner()
-    sub, events = run(spec, ws, "uplift-fares", "m3-coverage-uplift", plan, runner)
+    sub, events = run(spec, ws, "uplift-fares", "m3-coverage-uplift", m3_plan(), runner)
     assert_ready(spec, ws, "m3-coverage-uplift", sub, events)
     assert sum("pytest" in argv for argv in runner.spawned) == 1
     matrix = json.loads((ws / M3 / "runs" / "matrix.json").read_text(encoding="utf-8"))
@@ -571,3 +618,25 @@ def test_m3_coverage_uplift_ready_for_review(spec, tmp_path):
     assert T.scope_report(T.parse_patch(patch))["files"] == [
         {"path": "tests/test_fares_unit.py", "status": "added", "added": len(TEST_FARES_UNIT.splitlines()),
          "removed": 0, "binary": False}]
+
+
+@needs_git
+def test_m3_after_m2_patches_only_its_own_tests(spec, tmp_path):
+    """M2's tests stay uncommitted in repo/ (the model never commits). M3's
+    base is the tree M2 delivered, so M3's patch holds M3's work only, and
+    what a coverage run left in repo/ during M2 never reaches either patch."""
+    ws = workspace(tmp_path)
+    runner = ReplayRunner()
+    sub2, events2 = run(spec, ws, "characterization-fares", "m2-characterization",
+                        m2_plan(*TOOL_LEFTOVERS), runner)
+    assert_ready(spec, ws, "m2-characterization", sub2, events2)
+    sub3, events3 = run(spec, ws, "uplift-fares", "m3-coverage-uplift", m3_plan(), runner)
+    assert_ready(spec, ws, "m3-coverage-uplift", sub3, events3)
+
+    delivered_m2 = events2.of_type("patch_rebuilt")[0].data["tree"]
+    base = events3.of_type("patch_base")[0].data
+    assert (base["base"], base["base_from"], base["drift"]) == (delivered_m2, "m2-characterization", [])
+    assert patch_files(ws, f"{M2}/repo.patch") == ["tests/test_fares.py"]
+    assert patch_files(ws, f"{M3}/repo.patch") == ["tests/test_fares_unit.py"]
+    matrix = json.loads((ws / M3 / "runs" / "matrix.json").read_text(encoding="utf-8"))
+    assert (matrix["tests"], matrix["all_green"]) == (17, True)   # M2's tests still run in M3

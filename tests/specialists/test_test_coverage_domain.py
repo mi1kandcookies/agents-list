@@ -239,26 +239,6 @@ def git_writes(argv, text):
     return {"exit_code": 0, "stdout": "", "stderr": ""}
 
 
-def test_export_patch_writes_git_diff(tmp_path):
-    (tmp_path / "repo").mkdir()
-    seen = []
-    # Longer than the kit's cap on captured command output: git must write
-    # the file itself, or the middle of the patch would be dropped.
-    big = PATCH_TESTS_ONLY + "".join(PATCH_TESTS_ONLY.replace("test_rates", f"test_r{i}") for i in range(200))
-
-    def fake_run(argv, *, cwd=None, timeout=None):
-        seen.append(argv)
-        return git_writes(argv, big) if "diff" in argv else {"exit_code": 0, "stdout": "", "stderr": ""}
-
-    out = T.export_patch(tmp_path, run=fake_run, out="deliverables/m3-coverage-uplift/repo.patch")
-    target = tmp_path / "deliverables/m3-coverage-uplift/repo.patch"
-    assert out["test_only"] and out["files_changed"] == 201 and seen[0][:3] == ["git", "add", "-N"]
-    assert f"--output={target.resolve()}" in seen[1] and len(big) > 30_000
-    assert target.read_text() == big
-    with pytest.raises(ToolError):
-        T.export_patch(tmp_path, run=fake_run, out="x.patch", base="--output=/etc/x")
-
-
 def test_assertion_free_python_and_other_languages(tmp_path):
     src = ("import pytest\n"
            "def test_real():\n    assert 1 + 1 == 2\n"

@@ -5,36 +5,38 @@ agent.yaml, TOOL_DEFS (tools.py) and CHECK_DEFS (checks.py) beside this
 module are wired in by the kit. This subclass adds what the harness, not the
 model, must own in a code engagement: the patch the customer receives.
 
-    prepare   records the commit repo/ is at when the milestone starts, once
-              (a resumed run keeps the first one), under .agentkit/ where the
-              agent's tools cannot write
-    finalize  rebuilds every repo.patch deliverable from `git diff <start>`
-              over repo/ (new files included) and overwrites whatever the
-              model wrote there, so diff_test_paths_only, patch_size_max and
-              the other patch checks grader the real change, committed or not,
-              instead of a hand-made patch. If the rebuild fails the
-              unverifiable patch is removed, so those checks fail closed.
+    prepare   snapshots repo/ into the harness's private store
+              (snapshot.RepoStore) the first time any milestone starts, and
+              fixes a patch milestone's base the first time it starts (a
+              resumed or repeated run keeps it): the tree the last submitted
+              patch milestone delivered, else that first snapshot. A
+              patch_base event lists any drift of repo/ from that base.
+    finalize  rebuilds every repo.patch deliverable as diff(base, repo/ now)
+              from the private store and overwrites whatever the model wrote
+              there, so diff_test_paths_only, patch_size_max and the other
+              patch checks grader the real change, whatever the model did to
+              repo/.git. If the rebuild fails the unverifiable patch is
+              removed, so those checks fail closed. A submitted milestone's
+              tree becomes the next patch milestone's base.
 
-The rebuild needs repo/ to be a git checkout with at least one commit; when
-it is not, a patch_base event says why and the patch is checked as written.
+repo/ does not need to be a git checkout: the store reads it as a plain
+work tree.
 """
 from __future__ import annotations
 
-import re
+import os
 from pathlib import Path, PurePosixPath
 
 from agentkit.errors import AgentKitError
-from agentkit.journal import safe_name
 from agentkit.loop import RunOutcome
-from agentkit.policy import INTERNAL_DIR
 from agentkit.specialist import Specialist
 from agentkit.tools import ToolContext
 from agentkit.types import MilestoneSpec
-from specialists.test_coverage.tools import export_patch
+from specialists.test_coverage.snapshot import RepoStore
+from specialists.test_coverage.tools import parse_patch, scope_report
 
-REPO_DIR = "repo"
 PATCH_NAME = "repo.patch"
-_COMMIT = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")   # SHA-1 or SHA-256 object name
+MAX_DRIFT_LISTED = 50
 
 
 class CoverageSpecialist(Specialist):
@@ -45,67 +47,100 @@ class CoverageSpecialist(Specialist):
         return [d for d in milestone.deliverables
                 if PurePosixPath(d.replace("\\", "/")).name == PATCH_NAME]
 
-    def start_file(self, workspace: Path, milestone_id: str) -> Path:
-        """Where prepare() keeps the commit the milestone started at."""
-        return Path(workspace) / INTERNAL_DIR / self.slug / f"{safe_name(milestone_id)}.start"
-
-    def start_commit(self, workspace: Path, milestone_id: str) -> str | None:
-        path = self.start_file(workspace, milestone_id)
-        if not path.is_file():
-            return None
-        sha = path.read_text(encoding="utf-8").strip()
-        return sha if _COMMIT.match(sha) else None
+    @staticmethod
+    def store(ctx: ToolContext) -> RepoStore:
+        return RepoStore(ctx.workspace, timeout=ctx.policy.shell_timeout)
 
     def prepare(self, ctx: ToolContext, milestone: MilestoneSpec) -> None:
         super().prepare(ctx, milestone)
-        if not self.patch_deliverables(milestone) or self.start_commit(ctx.workspace, milestone.id):
-            return
-        sha, reason = self._head(ctx)
-        if sha is None:
-            ctx.events.emit("patch_base", milestone=milestone.id, commit=None, reason=reason)
-            return
-        path = self.start_file(ctx.workspace, milestone.id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(sha + "\n", encoding="utf-8")
-        ctx.events.emit("patch_base", milestone=milestone.id, commit=sha)
+        store = self.store(ctx)
+        state = store.state()
+        if not state.get("origin"):
+            try:
+                state["origin"] = store.tree(index="index.origin")
+                ctx.events.emit("repo_snapshot", milestone=milestone.id, ok=True, tree=state["origin"])
+            except AgentKitError as exc:
+                ctx.events.emit("repo_snapshot", milestone=milestone.id, ok=False, error=str(exc))
+        state["active"] = None
+        if self.patch_deliverables(milestone):
+            entry = state.setdefault("milestones", {}).setdefault(milestone.id, {})
+            if not entry.get("base") and state.get("origin"):
+                earlier = [m for m in state.get("delivered_order", []) if m != milestone.id]
+                entry["base_from"] = earlier[-1] if earlier else "origin"
+                entry["base"] = (state["milestones"][earlier[-1]]["delivered"] if earlier
+                                 else state["origin"])
+            if entry.get("base"):
+                state["active"] = {"milestone": milestone.id, "base": entry["base"]}
+                ctx.events.emit("patch_base", milestone=milestone.id, base=entry["base"],
+                                base_from=entry["base_from"], drift=self._drift(store, entry["base"]))
+            else:
+                ctx.events.emit("patch_base", milestone=milestone.id, base=None,
+                                reason="repo/ could not be snapshotted")
+        store.save(state)
 
     def finalize(self, ctx: ToolContext, milestone: MilestoneSpec, outcome: RunOutcome) -> RunOutcome:
         outcome = super().finalize(ctx, milestone, outcome)
-        start = self.start_commit(ctx.workspace, milestone.id)
-        if start is None:
-            return outcome
+        store = self.store(ctx)
+        state = store.state()
+        entry = (state.get("milestones") or {}).get(milestone.id) or {}
+        delivered = None
         for rel in self.patch_deliverables(milestone):
-            target = ctx.path(rel, write=True)
-            written = target.read_bytes() if target.is_file() else None
             try:
-                if not (ctx.workspace / REPO_DIR / ".git").exists():
-                    # git would search the parent directories for a repository
-                    raise AgentKitError("repo/ is no longer a git checkout")
-                report = export_patch(ctx.workspace, run=ctx.run, resolve_path=ctx.path,
-                                      out=rel, base=start)
+                target = self._own_path(ctx, rel)
+                written = target.read_bytes() if target.is_file() else None
+                if not entry.get("base"):
+                    raise AgentKitError("no base was recorded when the milestone started")
+                delivered = delivered or store.tree(entry["base"])
+                store.write_patch(entry["base"], delivered, target)
+                report = scope_report(parse_patch(target.read_text(encoding="utf-8", errors="replace")))
             except (AgentKitError, OSError) as exc:
-                target.unlink(missing_ok=True)
-                ctx.events.emit("patch_rebuilt", milestone=milestone.id, path=rel, ok=False,
-                                error=str(exc))
+                self._withdraw(ctx, rel)
+                ctx.events.emit("patch_rebuilt", milestone=milestone.id, path=rel, ok=False, error=str(exc))
                 continue
             model_patch = ("missing" if written is None
                            else "same" if written == target.read_bytes() else "replaced")
-            ctx.events.emit("patch_rebuilt", milestone=milestone.id, path=rel, ok=True, commit=start,
+            ctx.events.emit("patch_rebuilt", milestone=milestone.id, path=rel, ok=True,
+                            base=entry["base"], base_from=entry.get("base_from"), tree=delivered,
                             model_patch=model_patch, files_changed=report["files_changed"],
                             outside_test_paths=report["outside_test_paths"])
+        if delivered and outcome.status == "submitted":
+            entry["delivered"] = delivered
+            state.setdefault("milestones", {})[milestone.id] = entry
+            state["delivered_order"] = [m for m in state.get("delivered_order", [])
+                                        if m != milestone.id] + [milestone.id]
+        state["active"] = None
+        store.save(state)
         return outcome
 
+    # --- helpers -------------------------------------------------------------------
+
     @staticmethod
-    def _head(ctx: ToolContext) -> tuple[str | None, str]:
-        """(commit, "") for repo/'s HEAD, or (None, why not)."""
-        repo = ctx.workspace / REPO_DIR
-        if not (repo / ".git").exists():   # never a parent directory's repository
-            return None, "repo/ is not a git checkout"
+    def _drift(store: RepoStore, base: str) -> list[str] | None:
+        """Paths where repo/ differs from the base right now (None if unknown)."""
         try:
-            res = ctx.run(["git", "rev-parse", "--verify", "--quiet", "HEAD^{commit}"], cwd=REPO_DIR)
-        except AgentKitError as exc:       # git missing or not allowlisted
-            return None, str(exc)
-        sha = res.stdout.strip()
-        if res.exit_code != 0 or not _COMMIT.match(sha):
-            return None, "repo/ has no commit to diff against"
-        return sha, ""
+            changed = store.changes(base, store.tree(base, index="index.drift"))
+        except AgentKitError:
+            return None
+        return [c["path"] for c in changed][:MAX_DRIFT_LISTED]
+
+    @staticmethod
+    def _lexical(ctx: ToolContext, rel: str) -> Path:
+        return Path(os.path.normpath(ctx.workspace / rel))
+
+    def _own_path(self, ctx: ToolContext, rel: str) -> Path:
+        """A deliverable path the harness writes: inside the policy's rules
+        and reached without a link (the model could point one at a file the
+        harness would then overwrite)."""
+        target = ctx.path(rel, write=True)
+        if target != self._lexical(ctx, rel):
+            raise AgentKitError(f"{rel} is reached through a link")
+        return target
+
+    def _withdraw(self, ctx: ToolContext, rel: str) -> None:
+        """Remove an unverifiable deliverable (the link itself, if it is one)."""
+        path = self._lexical(ctx, rel)
+        try:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+        except OSError:
+            pass

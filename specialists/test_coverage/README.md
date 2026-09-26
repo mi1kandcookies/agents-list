@@ -57,23 +57,32 @@ so the kit's cap on command output never truncates them.
 
 ## The harness owns the patch (`agent.py`)
 
-`CoverageSpecialist` adds two run hooks to the kit's defaults:
+`CoverageSpecialist` adds two run hooks to the kit's defaults, both built on
+`snapshot.RepoStore`, a private git object store under
+`.agentkit/test-coverage/` that reads `repo/` only as a work tree:
 
-- `prepare` records the commit `repo/` is at when a milestone that delivers
-  a `repo.patch` starts (kept under `.agentkit/test-coverage/`, and kept
-  across a resumed run).
-- `finalize` rebuilds each `repo.patch` from `git diff <that commit>` over
-  `repo/`, new files included, and overwrites what the model wrote. The
-  patch checks therefore grader the real change: a production edit that the
-  model committed, or left out of a hand-written patch, still fails
-  `diff_test_paths_only`. If the patch cannot be rebuilt (for example
-  `repo/.git` was moved away) it is removed and the patch checks fail
-  closed. A `patch_rebuilt` event records the commit, whether the model's
-  patch matched, and any paths outside the test globs.
+- `prepare` snapshots `repo/` the first time any milestone starts (the
+  origin), and fixes each patch milestone's base the first time it starts
+  (kept across resumed or repeated runs): the tree the last submitted patch
+  milestone delivered, else the origin. So M3's patch never repeats M2's
+  tests, and production edits made in any earlier milestone surface in the
+  next patch. A `patch_base` event lists any drift of `repo/` from the base.
+- `finalize` rebuilds each `repo.patch` as the diff from that base to
+  `repo/` now (new and binary files included) and overwrites what the model
+  wrote. The patch checks therefore grader the real change: committing an
+  edit, skip-worktree bits, diff-prefix or exclude settings in `repo/.git`,
+  or moving `repo/.git` away change nothing, because every git command runs
+  on the private store with an isolated configuration. If the patch cannot
+  be rebuilt (an embedded repository, `repo/` replaced by a link) it is
+  removed and the patch checks fail closed. A `patch_rebuilt` event records
+  the base, the delivered tree, whether the model's patch matched, and any
+  paths outside the test globs.
 
-This needs `repo/` to be a git checkout with a commit; for an uploaded
-archive without history the platform should commit it once before M2, or
-the patch is checked as the model wrote it (a `patch_base` event says so).
+`repo/` need not be a git checkout (an uploaded archive works as is). New
+files covered by `repo/`'s `.gitignore`, and common tool output (coverage
+data, caches, virtualenvs, `*.egg-info/`), are left out of the patch; files
+the base tracks are always compared. The `export_patch` tool previews the
+same patch from the same store.
 
 ## Human gate
 
