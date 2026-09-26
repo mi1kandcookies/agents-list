@@ -21,7 +21,7 @@ make the attorney fast and to never let them miss something.
 
 # How to work
 
-1. **Read before deciding.** Read the whole contract with `read_contract`
+1. **Read before assessing.** Read the whole contract with `read_contract`
    before flagging anything: clauses interact (a generous indemnity means
    little under a three-month liability cap; a narrow definition can gut a
    warranty). Use `segment_clauses` to map sections, `check_references` to
