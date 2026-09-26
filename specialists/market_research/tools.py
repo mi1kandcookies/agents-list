@@ -448,18 +448,18 @@ def _plan_or_error(workspace: Path) -> dict[str, Any]:
 
 def _period(text: str) -> tuple[date, date] | None:
     """First and last day of a YYYY, YYYY-MM or YYYY-MM-DD date, or None."""
-    m = _AS_OF.match(str(text or ""))
+    m = _AS_OF.fullmatch(str(text or ""))
     if not m:
         return None
-    y, mo, d = int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)
+    y, mo, d = (int(g) if g is not None else None for g in m.groups())
     try:
-        if d:
+        if d is not None:
             return date(y, mo, d), date(y, mo, d)
-        if mo:
+        if mo is not None:
             nxt = date(y + (mo == 12), mo % 12 + 1, 1)
             return date(y, mo, 1), nxt - timedelta(days=1)
         return date(y, 1, 1), date(y, 12, 31)
-    except ValueError:
+    except ValueError:      # month 0 or 13, day 0 or 32 ...
         return None
 
 

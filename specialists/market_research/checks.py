@@ -177,9 +177,8 @@ def question_coverage(workspace: Path, params: dict, *, run=None) -> dict[str, A
 def source_tier_mix(workspace: Path, params: dict, *, run=None) -> dict[str, Any]:
     """Share of the external sources behind verified claims that recompute
     to tier 1 meets the threshold. Counted per source, not per claim, so
-    extra claims from one page do not move it; client documents are
-    reported but not counted (a client's own material is not market
-    evidence of its quality)."""
+    extra claims from one page do not move it. The mix measures the
+    external evidence, so client documents are reported but not counted."""
     threshold = _share(params, "min_tier1_share", 0.6)
     _, problem = tools.load_plan(workspace)
     if problem and (Path(workspace) / tools.QUESTIONS_PATH).is_file():
