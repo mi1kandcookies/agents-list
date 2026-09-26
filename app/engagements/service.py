@@ -27,7 +27,7 @@ from flask import current_app
 from sqlalchemy import select, update
 
 from app.approvals.actions import describe, format_usdc
-from app.approvals.executors import ExecutionResult, executor
+from app.approvals.executors import ExecutionResult, after_consume, executor
 from app.common import agent_ids
 from app.common.ids import new_id
 from app.engagements import ledger
@@ -301,6 +301,9 @@ def create_engagement(*, agent, outcome, budget_micro: int, milestones=None, dea
 
 # ── hire → engagement.fund approval ───────────────────────────────────────
 def hire(eng, *, flow: str, confirm_micro: int):
+    if eng.parent_engagement_id is not None:
+        raise EngagementError("a sub-hire is funded from its parent's mandate, not hired directly",
+                              "NOT_HIREABLE", 409)
     if eng.status not in HIREABLE:
         raise EngagementError(f"engagement is {eng.status}", "NOT_HIREABLE", 409)
     if confirm_micro != eng.total_micro:
@@ -449,6 +452,8 @@ def execute_fund(approval, action: dict) -> ExecutionResult:
                 for m in eng.milestones]
     if action.get("milestones") != expected:
         return _failed("milestones changed since approval")
+    if eng.parent_engagement_id is not None:
+        return _failed("a sub-hire is funded from its parent's mandate")
     if eng.status not in HIREABLE or ledger.has_live_fund(eng.id):
         return _failed("engagement is already funded")
     escrow = get_escrow()
@@ -556,7 +561,9 @@ def approval_json(approval) -> dict:
     return out
 
 
-def engagement_json(eng, *, detail: bool = False) -> dict:
+def engagement_json(eng, *, detail: bool = False, with_token: bool = False) -> dict:
+    """The §7 engagement object. ``with_token`` adds ``mandate_token`` (the
+    grantee's signed mandate); callers must have authenticated first."""
     agent = eng.agent
     out = {
         "engagement_id": eng.id, "agent_id": agent.public_id if agent else None,
@@ -580,24 +587,31 @@ def engagement_json(eng, *, detail: bool = False) -> dict:
             chain_url=f"/api/engagements/{eng.id}/chain",
             escrow_mode=get_escrow().mode,
             page_url=f"/jobs/{eng.id}",
+            chain_page_url=f"/jobs/{eng.id}/chain",
         )
+    if with_token:
+        out["mandate_token"] = _mandate_token(eng)
     return out
+
+
+def _mandate_token(eng) -> str | None:
+    from app.models import Mandate
+    row = db.session.get(Mandate, eng.mandate_id) if eng.mandate_id else None
+    return row.token if row is not None and row.revoked_at is None else None
 
 
 MANDATE_DEFAULT_DAYS = 30
 
 
 def ensure_root_mandate(eng) -> str | None:
-    """Mint the hired agent's root mandate (§5) once the engagement's
-    ``engagement.fund`` approval is consumed: budget = SOW total, categories =
+    """Mint the hired agent's root mandate (§5) from the engagement's consumed
+    ``engagement.fund`` approval: budget = SOW total, categories =
     [engagement category], max_depth = MANDATE_MAX_DEPTH, expiry = the SOW
-    deadline (else 30 days). Idempotent; a failure is logged and retried on
-    the next refresh.
+    deadline (else 30 days). Idempotent; a failure is logged and returns None.
 
-    TODO: call this right after approvals.consume() commits a fund approval.
-    It cannot run inside the executor: issue_root requires the approval to be
-    already ``consumed`` and commits its own transaction. Until that hook
-    exists, ``refresh`` reconciles it whenever the engagement is read."""
+    Runs from the ``engagement.fund`` after-consume hook below, once the
+    approval is committed as ``consumed`` (``issue_root`` requires that and
+    commits its own transaction, so it cannot run inside the executor)."""
     from app.models import Approval, Human
     if eng.mandate_id or eng.status not in ("funded", "in_progress", "completed"):
         return eng.mandate_id
@@ -629,9 +643,25 @@ def ensure_root_mandate(eng) -> str | None:
     return row.id
 
 
+@after_consume("engagement.fund")
+def _after_fund(approval, action: dict) -> None:
+    """Right after funding commits: mint the root mandate, then name the job
+    (names are never fatal)."""
+    from app.models import Engagement
+    eng = db.session.get(Engagement, action.get("engagement_id") or "")
+    if eng is None:
+        return
+    ensure_root_mandate(eng)
+    try:
+        from app.names import service as names
+        names.on_engagement_funded(eng)
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        log.warning("job name for %s not issued: %s", eng.id, str(exc)[:200])
+
+
 def refresh(eng) -> None:
     """Poll pending escrow receipts for this engagement (cheap no-op when
-    simulated), reconcile the root mandate, and commit any change."""
+    simulated) and commit any change."""
     if ledger.refresh_receipts(eng, get_escrow()):
         db.session.commit()
-    ensure_root_mandate(eng)

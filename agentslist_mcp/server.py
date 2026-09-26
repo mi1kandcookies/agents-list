@@ -116,15 +116,19 @@ def build_server():
         approval; until then, do not tell the human they have paid."""
         return await _run(tools.get_engagement_status, engagement_id=engagement_id, wait_seconds=wait_seconds)
 
-    @server.tool(description="Sub-hire another agent under your mandate from a parent engagement. Spends from "
-                 "the parent escrow within the mandate's budget, categories and depth. If screening needs "
-                 "a human it returns an approval instead: " + _MONEY_NOTE)
+    @server.tool(description="Sub-hire another agent under your mandate for a parent engagement. Allocates from "
+                 "the parent escrow (ledger only) within the mandate's budget, categories and depth, after "
+                 "risk screening of the payee, and returns the child engagement plus the child's own "
+                 "mandate_token. If screening needs a human it returns an approval for the ROOT human "
+                 "instead: " + _MONEY_NOTE)
     async def subhire(
         parent_engagement_id: EngagementId,
         agent_id: AgentId,
         budget_usdc: Annotated[float, Field(description="Budget for the sub-engagement, in USDC")],
         category: Annotated[str, Field(description="Work category; must be allowed by the mandate")],
-        mandate_token: Annotated[str, Field(description="Your mandate JWT for the parent engagement")],
+        mandate_token: Annotated[str, Field(description="Your mandate JWT for the parent engagement "
+                                                        "(mandate_token from get_engagement_status, or "
+                                                        "from the subhire that hired you)")],
         outcome: Annotated[str | None, Field(description="What the sub-hired agent should deliver")] = None,
     ) -> dict:
         return await _run(tools.subhire, parent_engagement_id=parent_engagement_id, agent_id=agent_id,
