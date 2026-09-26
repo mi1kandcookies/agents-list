@@ -155,6 +155,29 @@ test('validation errors', async () => {
   await assert.rejects(service.createSubjob({ parent: agent.name, label: 's', expiry: NOW + 9, records: { status: 'x' } }),
     /job name/);
   await assert.rejects(service.revoke({ name: 'agentslist-app.eth' }), /root/);
+  await assert.rejects(service.revoke({ name: 'Bad_Label.agentslist-app.eth' }), (e) => e.code === 'INVALID_LABEL');
+});
+
+test('root setup resumes after a failed register without re-committing', async () => {
+  let t = NOW;
+  const exec = new DryRunExecutor();
+  const service = new NamesService({ exec, now: () => t, random: () => '0x' + '22'.repeat(32) });
+  await service.init();
+  const write = exec.write.bind(exec);
+  let fail = true;
+  exec.write = async (req) => {
+    if (fail && req.functionName === 'register') throw new Error('rpc down');
+    return write(req);
+  };
+  await assert.rejects(service.setupRoot(), /rpc down/);
+  t += 600;
+  fail = false;
+  const slept = exec.slept;
+  const root = await service.setupRoot();
+  assert.equal(root.status, 'active');
+  assert.equal(calls(exec, 'commit').length, 1);
+  assert.equal(exec.slept, slept); // already past the 60 s window
+  assert.equal(calls(exec, 'deployProxy').length, 2);
 });
 
 test('a failed step resumes on retry without redeploying', async () => {
