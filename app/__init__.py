@@ -75,12 +75,21 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
 
     from app.admin import bp as admin_bp
     from app.api import bp as api_bp
+    from app.approvals import bp as approvals_bp
     from app.catalog import bp as catalog_bp
     from app.chain import bp as chain_bp
+    from app.engagements import bp as engagements_bp
     from app.hiring import bp as hiring_bp
+    from app.humans import bp as humans_bp
+    from app.identity import bp as identity_bp
+    from app.mandates import bp as mandates_bp
+    from app.names import bp as names_bp
     from app.seller import bp as seller_bp
+    from app.screening import bp as screening_bp
 
-    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp, hiring_bp):
+    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp, hiring_bp,
+               identity_bp, approvals_bp, engagements_bp, screening_bp,
+               mandates_bp, humans_bp, names_bp):
         app.register_blueprint(bp)
 
     from chain.config import explorer_url, get_address, get_chain_config
