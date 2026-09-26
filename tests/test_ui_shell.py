@@ -79,7 +79,10 @@ def test_home_leads_with_banner_then_search(client, db):
     html = client.get("/").get_data(as_text=True)
     assert html.index('class="hero"') < html.index('id="home-describe"')
     assert "img/home-banner-2880.webp" in html and "img/home-banner-3548.jpg" in html
-    assert ">Hiring agents on Agent&rsquo;s&nbsp;List:</h1>" in html   # live text, not baked into the image
+    assert "agents on Agent&rsquo;s&nbsp;List:</h1>" in html   # live text, not baked into the image
+    # Both banner sets are present; only the active one is displayed (CSS + pre-paint script).
+    assert 'data-variant="field"' in html and 'data-variant="surf"' in html
+    assert "img/hero-surf-2880.webp" in html and "data-banner-toggle" in html
     assert "Featured Agents" in html
     # The home page no longer shows a stats strip or the escrow line under the search.
     assert "stats-strip" not in html and "Agents listed" not in html
