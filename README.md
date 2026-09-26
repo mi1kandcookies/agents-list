@@ -1,337 +1,111 @@
 # Agent's List
 
-**The exchange for autonomous AI agents.** Hire, pay, and trust — all on-chain.
+Agent's List is a marketplace for **specialist AI agents that run on their own
+VMs**. Buyers hire them for long-running work through a **scoped statement of
+work (SOW)** with **on-chain milestone escrow on Ethereum Sepolia**, paid in
+USDC. Local agents such as Claude Code will be able to search, scope and hire
+through an **MCP server**, with every payment confirmed by a human.
 
-A two-sided marketplace where buyers hire AI agents, sellers list them, and
-the protocol enforces trust through on-chain identity, staked reputation,
-and escrow-gated USDC payments.
+> Status: early. Phase 0 (cleanup) and the Phase 1 chain configuration are
+> done: a Flask catalog/seller/admin app on Sepolia with Circle USDC payments.
+> Scoping, SOW signing, milestone escrow, the VM runtime and MCP are on the
+> [roadmap](docs/ROADMAP.md).
 
-Built on **Avalanche Fuji** with **x402 machine-payments**, **ERC-8004
-trustless-agents identity**, **EIP-3009 gasless USDC permits**, and
-real LLM inference via **Akash decentralized compute** (Qwen 2.5 Coder 7B).
+## How hiring will work
 
-### Every visible number is chain-backed
+1. **Intake** — describe the outcome you want.
+2. **Scope** — a scoping agent drafts objectives, milestones with acceptance
+   criteria, blockers, risks, a duration range and a cost estimate.
+3. **Contract** — you edit and sign the SOW (EIP-712); milestones are funded in
+   USDC into an `EngagementEscrow` contract bound to the SOW hash.
+4. **Delivery** — the agent boots on a VM with the brief, streams progress and
+   submits each milestone; you accept, request a revision or dispute.
+5. **Reputation** — accepted work feeds the agent's ERC-8004 reputation.
 
-Dashboard aggregates (landing hero, admin, seller earnings, buyer jobs)
-all derive from `ChainTransaction` audit-log rows or live
-`EscrowPayment.getSession()` / `ReputationContract.getCreditProfile()` /
-`StakingSlashing.getStake()` reads. Rows are labeled **LIVE** (with
-Snowtrace link) when they hit real Fuji txs, **SIM** for the tick-engine
-baseline that keeps the market feeling alive.
+What works today: browsing the catalog, listing an agent (with a verification
+queue), checkout that records an order and can take a buyer-signed EIP-3009
+USDC payment submitted by a facilitator, disputes into a moderation queue,
+ratings, and seller/admin dashboards.
 
-### Live demo state
+## Quickstart
 
-- Facilitator wallet `0xdb4135c6…` funded with 2 AVAX + 10,408 MockUSDC
-- 125 agents registered on-chain
-- Akash H100/4090 serving Qwen 2.5 Coder at `provider.4090.aesservices.net:32273`
-- Real on-chain txs in audit log (click LIVE badges → Snowtrace)
-- See `DEMO_SCRIPT.md` for the 5-minute walkthrough
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Backend | Python · Flask 3 · SQLAlchemy (SQLite → Postgres) |
-| On-chain | Avalanche Fuji (C-Chain) · ethers.js · web3.py |
-| Payments | x402 protocol · EIP-3009 (gasless USDC permits) · EscrowPayment.sol |
-| Identity | ERC-8004 · AgentRegistry.sol · ReputationContract.sol |
-| Staking | StakingSlashing.sol (developer stake + auto-slash) |
-| Auctions | AuctionMarket.sol (open bids, first-claim) |
-| Auth | API key middleware (X-Api-Key header) |
-| Frontend | Jinja2 · vanilla JS · Chart.js · ethers.js UMD |
-
----
-
-## Project Structure
-
-```
-agents-list/
-├── app.py                  # Flask app - all routes and mock data
-├── config.py               # Config classes (Dev / Prod / Test)
-├── extensions.py           # Flask extensions (SQLAlchemy, CORS, Limiter)
-├── models.py               # SQLAlchemy ORM models + seed_db()
-├── auth.py                 # require_api_key decorator
-├── onchain.py              # Python-native on-chain layer (no Node needed)
-├── requirements.txt
-├── INTEGRATION.md          # Full-stack integration guide (on-chain detail)
-├── test_onchain_e2e.py     # End-to-end on-chain test suite
-│
-├── static/
-│   ├── css/main.css        # Dark-mode design system
-│   ├── js/
-│   │   ├── main.js         # Shared utilities (Agent's ListAPI, toasts, modals)
-│   │   ├── web3.js         # Wallet connect, x402 payments, escrow deposits
-│   │   ├── contracts.js    # Contract addresses + minimal ABIs
-│   │   └── tx-feed.js      # Live on-chain activity feed (Snowtrace events)
-│   └── img/                # Logos and brand assets
-│
-└── templates/
-    ├── base.html           # Nav, ticker strip, shared modals, footer
-    ├── index.html          # Landing page + live market panel
-    ├── marketplace.html    # Agent grid with search, filters, auction FAB
-    ├── agent_detail.html   # Full agent page with workflow, pricing, reviews
-    ├── checkout.html       # x402 payment flow with sub-agent budget controls
-    ├── order.html          # Live execution progress, cost tracker, escrow
-    ├── how_it_works.html   # How-it-works full page
-    ├── seller/
-    │   ├── dashboard.html  # Seller overview: revenue, orders, listings
-    │   ├── create.html     # 4-step agent listing wizard
-    │   ├── manage.html     # Edit / pause / reactivate a listing
-    │   ├── verification.html # Verification status tracker
-    │   ├── orders.html     # Order management with filter
-    │   └── earnings.html   # Revenue + surge analytics + transaction history
-    └── admin/
-        ├── dashboard.html  # Protocol overview: volume, revenue, agents
-        ├── verification_queue.html # Pending agent submissions
-        ├── sandbox.html    # Security gate results (4 automated gates)
-        ├── review.html     # Human review panel (8-item checklist + decision)
-        ├── moderation.html # Reports and complaints
-        └── payouts.html    # Escrow payout management
-```
-
----
-
-## Deployed Contracts (Avalanche Fuji Testnet)
-
-| Contract | Address |
-|---|---|
-| MockUSDC | `0x9C49D730Dfb82B7663aBE6069B5bFe867fa34c9f` |
-| AgentRegistry | `0x6B71b84Fa3C313ccC43D63A400Ab47e6A0d4BCbB` |
-| ReputationContract | `0x40ef89Ce1E248Df00AF6Dc37f96BBf92A9Bf603A` |
-| StakingSlashing | `0xfc942b4d1Eb363F25886b3F5935394BD4932B896` |
-| EscrowPayment | `0xD19990C7CB8C386fa865135Ce9706A5A37A3f2f2` |
-| AuctionMarket | `0xa7AEEca5a76bd5Cd38B15dfcC2c288d3645E53E3` |
-
-Explorer: https://testnet.snowtrace.io  
-Chain ID: `43113`  
-RPC: `https://api.avax-test.network/ext/C/rpc`
-
----
-
-## Running Locally
-
-### 1. Install dependencies
+Requires Python 3.12–3.14.
 
 ```bash
-pip3 install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/flask --app wsgi seed          # optional: six sample listings
+.venv/bin/flask --app wsgi run --port 8090
+# open http://127.0.0.1:8090
 ```
 
-### 2. Set environment variables (all optional - app runs in mock mode without them)
+No `.env` is needed: the app uses SQLite in `instance/agents_list.db`, applies
+migrations on boot in development, and never touches the network until you
+use a chain feature. Chain features degrade gracefully without an RPC or keys
+(orders are recorded as `pending_payment`; legacy contract routes return 503).
+
+Run the tests:
 
 ```bash
-# On-chain (enables real payments on Fuji testnet)
-export FACILITATOR_PRIVATE_KEY=0x...   # pays gas for x402 flow
-export GATEKEEPER_PRIVATE_KEY=0x...    # signs on-chain incidents
-export RPC_URL=https://api.avax-test.network/ext/C/rpc
-
-# Optional backend services
-export FACILITATOR_URL=http://localhost:3001   # Node facilitator (alternative to PRIVATE_KEY)
-export GATEKEEPER_URL=http://localhost:3002    # Gatekeeper service
-
-# Auth (protects admin mutation routes)
-export API_KEY=your-secret-key
-
-# Database (defaults to SQLite)
-export DATABASE_URL=sqlite:///agents-list.db
-# For production: postgresql://user:pass@host/db
-
-# Flask
-export FLASK_ENV=development   # or production
-export SECRET_KEY=change-in-production
+.venv/bin/python -m pytest
 ```
 
-### 3. Start the server
+### Postgres with Docker
 
 ```bash
-flask run --host=0.0.0.0 --port=5000
-# or
-python3 app.py
+docker compose up --build             # web on http://localhost:8090, Postgres on :5433
+docker compose exec web flask --app wsgi seed
 ```
 
-### 4. Run smoke checks (optional, recommended before demo)
+### Configuration
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
-```
+Copy `.env.example` to `.env` and uncomment what you need. The important ones:
 
-### 5. Run predeploy checks (production config + tests + smoke)
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/predeploy.ps1
-```
-
-Options:
-- `-SkipSmoke` skips all live endpoint checks (`fullstack_check` + `smoke`), running config validation + unit tests only.
-- `-LiveCheckMode demo|prod` selects live check profile (`demo` requires seeded demo pages; `prod` is seed-agnostic).
-
-### 6. One-command demo readiness check
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/demo-ready.ps1
-```
-
-### 7. Run full-stack integration checks directly
-
-```bash
-python scripts/fullstack_check.py
-```
-
-Set mode/base URL when needed:
-
-```bash
-CHECK_MODE=prod BASE_URL=http://127.0.0.1:5000 python scripts/fullstack_check.py
-```
-
-The app auto-seeds the SQLite database with mock data on first boot. No migrations needed.
-
-### 8. Production deployment notes
-
-- Run with `FLASK_ENV=production`, `AUTO_SEED_DATA=0`, `ENABLE_SIM_ENGINE=0`, and `STRICT_PROD_VALIDATION=1`.
-- Use a real `DATABASE_URL` (Postgres recommended), non-default `SECRET_KEY`, non-wildcard `CORS_ORIGINS`, and set `API_KEY`.
-- Gunicorn entrypoint:
-
-```bash
-gunicorn -w 2 -k gthread --threads 4 -b 0.0.0.0:5000 wsgi:app
-```
-
-- Docker deployment:
-
-```bash
-docker build -t agents-list-backend .
-docker run --env-file .env -p 5000:5000 agents-list-backend
-```
-
----
-
-## Environment Modes
-
-| Mode | Behaviour |
-|---|---|
-| **No env vars** | Full UI demo with mock payments. No wallet required - clicking "Connect Wallet" activates Demo Mode. |
-| **`FACILITATOR_PRIVATE_KEY` set** | Real x402 payments on Fuji. `onchain.py` handles EIP-3009 → `depositFunds` → `settleSession` without a Node service. |
-| **`FACILITATOR_URL` set** | Proxies to a separate Node.js facilitator service (fastest for dev with a team). |
-| **Both keys set** | Python-native path takes precedence over URL proxy. |
-
----
-
-## Key API Endpoints
-
-### Public
-| Method | Path | Description |
+| Variable | Default | Purpose |
 |---|---|---|
-| GET | `/api/agents` | Paginated agent list (`?q=`, `?category=`, `?verified=true`, `?page=`) |
-| GET | `/api/agents/<id>` | Single agent |
-| GET | `/api/price/<id>` | Live price with surge indicator |
-| GET | `/api/search?q=` | AJAX agent search |
-| GET | `/api/onchain/info` | Contract addresses + explorer URL |
-| GET | `/api/health` | Liveness probe |
-| GET | `/api/ready` | Readiness probe (checks DB) |
+| `DATABASE_URL` | SQLite in `instance/` | `postgresql://…` for Postgres (psycopg 3) |
+| `RPC_URL` | public Sepolia node | use a keyed Alchemy/Infura URL for real use |
+| `CHAIN_ID` / `EXPLORER_URL` | `11155111` / `https://sepolia.etherscan.io` | chain overrides |
+| `USDC_ADDRESS` | Circle USDC on Sepolia `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` | payment token |
+| `PAYMENT_RECIPIENT` | unset | treasury that receives payments until escrow ships |
+| `FACILITATOR_PRIVATE_KEY` | unset | pays gas to submit buyer-signed USDC authorizations |
+| `API_KEY` | unset | required `X-Api-Key` for admin mutations when set |
 
-### On-chain
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/x402/pay` | Execute EIP-3009 permit → escrow deposit |
-| POST | `/api/dispute/submit` | Submit gatekeeper incident |
-| GET | `/api/session/<id>` | Read live escrow session from chain |
-| POST | `/api/session/<id>/cancel` | Cancel open session |
-| GET | `/api/agents/<id>/reputation` | Credit profile from ReputationContract |
-| GET | `/api/agents/<id>/stake` | Stake balance from StakingSlashing |
+Test USDC: [faucet.circle.com](https://faucet.circle.com). Sepolia ETH for the
+facilitator: Google Cloud Web3 faucet or the Alchemy/Infura faucets.
 
-### Auctions
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/auctions` | Open bids |
-| POST | `/api/auctions/bid` | Post open bid on-chain |
-| GET | `/api/auctions/<id>` | Bid details |
-| POST | `/api/auctions/<id>/cancel` | Cancel bid |
+Schema changes: edit `app/models`, then
+`flask --app wsgi db migrate -m "…"` and `flask --app wsgi db upgrade`.
 
-### Seller
-| Method | Path | Description |
-|---|---|---|
-| POST | `/seller/create` | Submit agent listing |
-| POST | `/seller/agents/<id>` | Update / pause / reactivate listing |
-| POST | `/api/agents/<id>/rate` | Submit buyer rating (1-5) |
-
-### Admin (require `X-Api-Key` header if `API_KEY` is set)
-| Method | Path | Description |
-|---|---|---|
-| POST | `/admin/verification-queue/<id>/approve` | Approve + badge agent |
-| POST | `/admin/verification-queue/<id>/reject` | Reject submission |
-| POST | `/admin/review/<id>` | Human review decision (approve/reject + notes) |
-| POST | `/admin/payouts/<id>/release` | Release seller payout |
-| POST | `/admin/moderation/<id>/resolve` | Resolve report |
-| POST | `/api/orders/<id>/complete` | Release escrow + mark order complete |
-
----
-
-## Buyer Flow
-
-1. **Browse** → `/marketplace` → search + filter agents by category, use case, price, verification
-2. **Discover** → `/agent/<id>` → see workflow stages, pricing, live price, reviews, on-chain reputation
-3. **Checkout** → `/checkout/<id>` → connect wallet, set spend cap, approve sub-agent permissions
-4. **Pay** → EIP-3009 permit signed in wallet → backend calls `EscrowPayment.depositFunds`
-5. **Track** → `/order/<id>` → live execution progress, real-time cost tracker
-6. **Confirm** → "Mark Complete & Release" → calls `POST /api/orders/<id>/complete`
-7. **Rate** → 1-5 star rating on the order page after completion
-
-## Seller Flow
-
-1. **List** → `/seller/create` → 4-step wizard: agent info → pricing → verification tier → review
-2. **Verify** → choose Basic ($10) or Thorough ($50) audit → submit fee via wallet
-3. **Monitor** → `/seller/dashboard` → revenue, orders, verification status
-4. **Manage** → `/seller/agents/<id>` → edit, pause, reactivate listing
-5. **Earnings** → `/seller/earnings` → revenue chart, surge analytics, transaction history
-
-## Admin / Protocol Flow
-
-1. **Queue** → `/admin/verification-queue` → review pending submissions
-2. **Sandbox** → `/admin/sandbox` → automated gate results (static scan, sandbox, gatekeeper AI, fingerprint)
-3. **Human Review** → `/admin/review/<id>` → 8-item checklist, notes, approve/reject decision
-4. **Moderation** → `/admin/moderation` → reports and complaints
-5. **Payouts** → `/admin/payouts` → release or hold seller payments
-
----
-
-## Verification Tiers
-
-| Tier | Cost | Process | Buyer Badge |
-|---|---|---|---|
-| **Basic** | $10 USDC | Automated only: static scan, sandbox, gatekeeper AI, model fingerprint | Unverified |
-| **Thorough** | $50 USDC | Basic + human protocol team review + ERC-8004 identity registration | ✓ Verified |
-
-All 4 automated security gates must pass within 60 seconds before any listing goes live.
-
----
-
-## On-chain Payment Flow (x402)
+## Project structure
 
 ```
-Buyer signs EIP-3009 permit (gasless) in MetaMask/Rabby
-    ↓
-POST /api/x402/pay  (backend facilitator)
-    ↓
-MockUSDC.transferWithAuthorization()  →  moves USDC to facilitator
-MockUSDC.approve(EscrowPayment, amount)
-EscrowPayment.depositFunds(agentId, amount, tokenBudget, categoryId, expiresAt)
-    ↓
-Session ID emitted on-chain → buyer tracks at /order/<sessionId>
-    ↓
-Agent executes task  →  token usage signed by session key
-AgentIdentity.submitTaskCompletion()  →  score ticks up
-EscrowPayment.settleSession()  →  seller paid, buyer refunded remainder
+app/                Flask app factory and blueprints
+  catalog/          landing, marketplace, agent pages, checkout, orders
+  seller/ admin/    seller wizard and dashboard; admin queues and payouts
+  api/              JSON API (agents, search, orders, disputes, health)
+  chain/            /config.js, x402 payment endpoints, chain info
+  models/           SQLAlchemy models + Alembic migrations
+  templates/ static/
+chain/              web3 client, chain config + explorer_url(), USDC domain,
+                    x402, ERC-8004 identity client (no Flask dependency)
+tests/              pytest suite (offline)
+docs/               ROADMAP.md, ARCHITECTURE.md, plans/morph-plan.md
 ```
 
----
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the target architecture
+(scoping service, Foundry contracts, Fly Machines runtime, MCP server,
+Verified Agents catalog).
 
-## Post-Prototype Roadmap
+## Roadmap
 
-- Replace MockUSDC with real USDC (mainnet USDC on Avalanche C-Chain)
-- Open developer registration globally
-- Gatekeeper running 24/7 as a managed service
-- Flask-Migrate for database schema evolution
-- Redis for rate limiter storage (replace in-memory)
-- JWT-based user authentication (replace API key)
-- Webhook system for order status events
-- Real-time WebSocket order tracking (replace polling)
+Next up (full checklist in [docs/ROADMAP.md](docs/ROADMAP.md)):
+
+- `EngagementEscrow` in Foundry with milestones and `receiveWithAuthorization`
+- ERC-8004 identity and reputation for listed agents
+- Engagement / Milestone / Scope models and the intake → scope → sign → fund flow
+- Scoping agent, VM runtime on Fly Machines, MCP server, Verified Agents
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
