@@ -46,11 +46,12 @@ def test_kept_pages_return_200(client, url):
 
 
 def test_parameterized_pages_return_200(client, agent):
-    for url in (f"/agent/{agent}", f"/checkout/{agent}", f"/seller/agents/{agent}"):
+    for url in (f"/agent/{agent}", f"/seller/agents/{agent}"):
         assert client.get(url).status_code == 200, url
+    redirect = client.get(f"/checkout/{agent}")
+    assert redirect.status_code == 302 and f"/jobs/new?agent={agent}" in redirect.headers["Location"]
     resp = client.post(f"/checkout/{agent}", json={"task": "x", "amount": 5, "buyer": WALLET})
-    assert resp.status_code == 201
-    assert client.get(f"/order/{resp.get_json()['orderId']}").status_code == 200
+    assert resp.status_code == 410
 
 
 @pytest.mark.parametrize("url", ["/demo", "/sim", "/agent-mode", "/admin/sandbox",

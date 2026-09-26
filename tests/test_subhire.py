@@ -267,6 +267,20 @@ def test_refuse_blocks_with_no_allocation(client, root, agents, screener, named)
     assert client.get(f"/api/engagements/{eid}").get_json()["status"] == "funded"
 
 
+def test_parent_payer_screening_blocks_subhire_before_payee_screen(client, root, agents,
+                                                                   screener, named):
+    eid, token = root
+    screener.set(ROOT_PAYEE, "REFUSE")
+    before = len(screener.calls)
+    resp = _subhire(client, eid, token, agents["B"])
+    assert resp.status_code == 403
+    body = resp.get_json()
+    assert body["code"] == "SCREENING_REFUSED"
+    assert body["screening"]["hop"] == "payer.check"
+    assert [call["hop"] for call in screener.calls[before:]] == ["payer.check"]
+    assert not _children(eid) and not _allocs() and named == []
+
+
 def test_forged_screening_in_body_is_ignored(client, root, agents, screener):
     eid, token = root
     screener.set(B_ADDR, "REFUSE")
@@ -496,6 +510,19 @@ def test_ask_human_action_carries_payee_source(client, root, agents, screener, b
     action = _db.session.get(Approval, apr["approval_id"]).action
     assert (action["payee_address"], action["payee_source"]) == (B_ADDR, "ens")
     assert ["Payee address from", "ENS record"] in apr["summary"]
+
+
+def test_ask_human_subhire_re_resolves_ens_before_allocate(client, root, agents, screener,
+                                                          approve, b_named):
+    eid, token = root
+    b_named(B_ADDR)
+    screener.set(B_ADDR, "ASK_HUMAN")
+    apr = _subhire(client, eid, token, agents["B"]).get_json()
+    b_named("0x" + "d" * 40)
+    row = approve(apr["approval_id"])
+    assert (row.state, row.failure_code) == ("blocked", "PAYEE_MISMATCH")
+    assert _status(client, apr["child_engagement_id"]) == "refused"
+    assert not _allocs()
 
 
 # ── ASK_HUMAN approval ends without executing ─────────────────────────────

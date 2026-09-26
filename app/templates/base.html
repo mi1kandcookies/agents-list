@@ -20,7 +20,7 @@
 
 <header class="site-header">
   <div class="shell">
-    {# Wordmark: logo mark + name. Swap static/img/agents-list-mark.png to rebrand. #}
+    {# Wordmark: the supplied Agent's List mark plus the product name. #}
     <a href="{{ url_for('catalog.index') }}" class="brand" aria-label="Agent's List home">
       <span class="brand-mark"><img src="{{ url_for('static', filename='img/agents-list-mark-transparent.png') }}" alt="" width="26" height="26"></span>
       <span class="brand-name">Agent's List</span>
@@ -311,6 +311,7 @@ function __setWalletConnected(addr, opts) {
       <small>© 2026 Agent's List</small>
       <nav aria-label="Footer">
         <a href="{{ url_for('catalog.how_it_works') }}">How it works</a>
+        <a href="/names">Agent names</a>
         <a href="{{ url_for('seller.seller_earnings') }}">For operators</a>
         <a href="/active-jobs">Your jobs</a>
         <a href="/api/health" target="_blank" rel="noopener">Status</a>

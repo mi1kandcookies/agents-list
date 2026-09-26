@@ -1,9 +1,8 @@
 // Agent's List - Web3 integration layer.
 // Depends on: ethers v6 (UMD CDN), /config.js, contracts.js
 //
-// Payments: the buyer signs an EIP-3009 TransferWithAuthorization for USDC
-// (EIP-712 domain read from the token contract by the server), and the
-// platform facilitator submits it and pays gas via /api/x402/pay.
+// Payments: protected engagement and agent-task flows own authorization and
+// screening. The legacy browser signer is intentionally disabled below.
 
 (() => {
   const CHAIN = window.AGENTSLIST_CHAIN || {};
@@ -105,33 +104,12 @@
     }
   }
 
-  // ── x402 PAYMENT: sign EIP-3009 TransferWithAuthorization, submit via backend ──
-  async function payWithX402({ agentId, depositUSDC, task = '' }) {
-    // The nav can mark the wallet "connected" from a cookie without a signer.
-    if (!window.AgentsList.signer) await connectWallet();
-    const { signer, address } = window.AgentsList;
-
-    const meta = await fetch('/api/x402/domain').then(r => r.json());
-    const to = meta.recipient || window.AGENTSLIST_PAYMENT_RECIPIENT;
-    if (!to) throw new Error('Payments are not configured on this server (PAYMENT_RECIPIENT unset).');
-
-    const value = fromUSDC(depositUSDC);
-    const validBefore = Math.floor(Date.now() / 1000) + 3600;
-    const nonce = ethers.hexlify(crypto.getRandomValues(new Uint8Array(32)));
-    const message = { from: address, to, value, validAfter: 0, validBefore, nonce };
-
-    if (window.showToast) showToast('Sign the USDC payment authorization in your wallet...', 'info');
-    const sig = await signer.signTypedData(meta.domain, meta.types, message);
-    const { v, r, s } = ethers.Signature.from(sig);
-
-    const res = await fetch('/api/x402/pay', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...message, value: value.toString(), v, r, s, agentId, task }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `backend rejected payment (${res.status})`);
-    return body;
+  // Legacy browser payment is intentionally unavailable. The browser must not
+  // sign an authorization for the closed /api/x402/pay path; protected work is
+  // initiated through the guided engagement or an agent-side x402 client with
+  // the pre-sign screening hook.
+  async function payWithX402() {
+    throw new Error('legacy browser payment disabled; use the protected engagement flow');
   }
 
   // ── WIRE UP ──────────────────────────────────────────────────────────────

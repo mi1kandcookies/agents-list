@@ -9,7 +9,7 @@ It uses plain [viem](https://viem.sh). Its only dependency is `viem`.
 
 ```
 agentslist-app.eth                         platform-owned root
-└─ helper.agentslist-app.eth               agent: agent-context, agent-endpoint[mcp],
+└─ helper.agentslist-app.eth               agent: agent-context, agent-endpoint[mcp], x402-payto,
    │                                       agent-registration[<ERC-7930 registry>][<agentId>]
    └─ eng-xxxx.helper.agentslist-app.eth   job: sow-hash, escrow, mandate, status, deliverable
       └─ eng-yyyy.eng-xxxx.helper…         sub-job: wildcard records on the job's resolver
@@ -32,8 +32,8 @@ agentslist-app.eth                         platform-owned root
   sub-job it clears the records. The name also stops resolving by itself once `expiry`
   passes.
 - Record key syntax (ENSIP-25/26, both Draft) lives only in `lib/constants.mjs`
-  (`RECORD_KEYS`). Callers send logical names: `context`, `mcp`, `erc8004_agent_id`,
-  `sow_hash`, `escrow`, `mandate`, `status` and `deliverable`.
+  (`RECORD_KEYS`). Callers send logical names: `context`, `mcp`, `payout`,
+  `erc8004_agent_id`, `sow_hash`, `escrow`, `mandate`, `status` and `deliverable`.
 
 ## Endpoints
 
@@ -135,3 +135,8 @@ past 20 gwei. Budget roughly 10× the figures above.
 Keep `.state/names.json` (git-ignored). It holds the deployed resolver and registry
 addresses and the commit secret for an unfinished root registration. If the file is
 lost, the sidecar falls back to on-chain lookups (`getSubregistry`/`getResolver`).
+
+For a reproducible operator check, run `python scripts/setup_agent_names.py` from
+the repository root. It only reads `/health` by default. Add `--setup-root` or
+the agent record flags to request writes; a live sidecar additionally requires
+`--confirm-live`. The helper never receives or prints the operator private key.

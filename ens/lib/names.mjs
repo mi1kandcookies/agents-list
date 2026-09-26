@@ -1,5 +1,5 @@
 // Name encoding, salts and record translation (logical record -> ENS text key).
-import { encodeAbiParameters, encodeFunctionData, keccak256, stringToHex, toHex } from 'viem';
+import { encodeAbiParameters, encodeFunctionData, isAddress, keccak256, stringToHex, toHex } from 'viem';
 import { labelhash, namehash, packetToBytes } from 'viem/ens';
 
 import { resolverAbi } from './abis.mjs';
@@ -55,6 +55,9 @@ export function toTextRecords(kind, records = {}) {
     }
     if (field === 'mcp' && !/^(https|ipfs):\/\/\S+$/.test(value)) {
       throw badRequest('mcp endpoint must be an https:// or ipfs:// URL', 'INVALID_RECORD');
+    }
+    if (field === 'payout' && !isAddress(value)) {
+      throw badRequest('payout must be a 20-byte address', 'INVALID_RECORD');
     }
     out.push({ field, key: RECORD_KEYS[field], value, input: value });
   }

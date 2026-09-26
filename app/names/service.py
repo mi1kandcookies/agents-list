@@ -80,7 +80,7 @@ def _commit() -> None:
 
 def on_agent_published(agent: Agent) -> EnsName | None:
     try:
-        row = _agent_row(agent)
+        row = _agent_row(agent, refresh_records=True)
         _push(row)
         return row
     except Exception:
@@ -214,17 +214,25 @@ def resolve_payee(agent: Agent) -> Payee:
     payout record (``chain.ens_v2.PAYOUT_RECORD_KEY``) is read. When set, it
     must equal the profile's payout address: then the payee is that address
     with source ``"ens"``; otherwise PayeeError PAYEE_MISMATCH (fail closed,
-    nothing is paid to either). A failed lookup is PAYEE_UNRESOLVED. With no
-    resolver, no active name, or no record, the profile address is used
-    (source ``"profile"``)."""
+    nothing is paid to either). A failed lookup is PAYEE_UNRESOLVED. With
+    ``ENS_RESOLVE_PAYEES=1``, an active ENS name and a non-empty record are
+    required; missing configuration is therefore not silently redirected to
+    the profile payee. With the flag off, the profile fallback remains
+    available for local development and migration."""
     from app.engagements.service import payee_address
     profile = payee_address(agent)
     resolver = get_resolver()
+    strict = bool(current_app.config.get("ENS_RESOLVE_PAYEES")) if has_app_context() else False
+    if resolver is None:
+        if strict:
+            raise PayeeError("ENS payee resolution is not configured", "PAYEE_UNRESOLVED", 503)
+        return Payee(profile, "profile")
     row = None
-    if resolver is not None:
-        row = (EnsName.query.filter_by(agent_id=agent.id, kind="agent", status="active")
-               .order_by(EnsName.updated_at.desc()).first())
+    row = (EnsName.query.filter_by(agent_id=agent.id, kind="agent", status="active")
+           .order_by(EnsName.updated_at.desc()).first())
     if row is None:
+        if strict:
+            raise PayeeError("agent has no active ENS payout name", "PAYEE_UNRESOLVED", 503)
         return Payee(profile, "profile")
     from chain.ens_v2 import ENSResolutionError
     try:
@@ -234,6 +242,9 @@ def resolve_payee(agent: Agent) -> Payee:
         raise PayeeError(f"could not resolve the payout address of {row.name}",
                          "PAYEE_UNRESOLVED", 503) from None
     if record is None:
+        if strict:
+            raise PayeeError(f"{row.name} has no x402 payout record",
+                             "PAYEE_UNRESOLVED", 503)
         return Payee(profile, "profile", row.name)
     if profile is None or record.lower() != profile:
         log.warning("names: %s payout record differs from the agent profile", row.name)
@@ -264,13 +275,27 @@ def _manifest(agent: Agent) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _agent_row(agent: Agent) -> EnsName:
+def _agent_row(agent: Agent, *, refresh_records: bool = False) -> EnsName:
     existing = (EnsName.query.filter_by(agent_id=agent.id, kind="agent")
                 .filter(EnsName.status != "revoked").first())
     root = _root_row()
-    if existing is not None:
-        return existing
     label = slug(agent.name) or agent.public_id.lower()
+    manifest = _manifest(agent)
+    endpoints = manifest.get("endpoints") if isinstance(manifest.get("endpoints"), dict) else {}
+    payout = agent.payout_address or agent.deployer_wallet
+    records = _clean({
+        "context": (agent.description or "")[:1000],
+        "mcp": manifest.get("mcp_endpoint") or endpoints.get("mcp"),
+        "payout": payout,
+        "erc8004_agent_id": manifest.get("erc8004_agent_id"),
+    })
+    if existing is not None:
+        if refresh_records and existing.records != records:
+            existing.records = records
+            # Re-push an active agent name so newly-added authorization
+            # records such as x402-payto reach its existing resolver.
+            existing.status = "pending"
+        return existing
     name = f"{label}.{root.name}"
     taken = db.session.get(EnsName, name)
     if taken is not None and taken.agent_id != agent.id:
@@ -279,13 +304,7 @@ def _agent_row(agent: Agent) -> EnsName:
     if row.status == "revoked":
         row.status = "pending"       # re-issue; the sidecar deploys fresh proxies
     row.agent_id = agent.id
-    manifest = _manifest(agent)
-    endpoints = manifest.get("endpoints") if isinstance(manifest.get("endpoints"), dict) else {}
-    row.records = _clean({
-        "context": (agent.description or "")[:1000],
-        "mcp": manifest.get("mcp_endpoint") or endpoints.get("mcp"),
-        "erc8004_agent_id": manifest.get("erc8004_agent_id"),
-    })
+    row.records = records
     return row
 
 
@@ -373,6 +392,20 @@ def tree(root: str | None = None) -> dict:
 
     top = next((r for r in rows if r.name == root), None)
     return node(top, root)
+
+
+def resolve_name(name: str) -> dict | None:
+    """Return the application's latest active ENS record for a named agent.
+
+    The payment route still performs its own fresh Universal Resolver check
+    when strict ENS payee resolution is enabled. This read endpoint is for
+    named-agent discovery and never supplies a treasury or profile fallback.
+    """
+    wanted = str(name or "").strip().rstrip(".").lower()
+    row = db.session.get(EnsName, wanted)
+    if row is None or row.status != "active" or row.kind != "agent":
+        return None
+    return _row_dict(row)
 
 
 def _row_dict(r: EnsName) -> dict:

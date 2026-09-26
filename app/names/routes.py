@@ -10,6 +10,18 @@ def names_tree():
     return jsonify(service.tree(request.args.get("root") or None))
 
 
+@bp.get("/api/names/resolve")
+def names_resolve():
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required", "code": "NAME_REQUIRED"}), 400
+    row = service.resolve_name(name)
+    if row is None:
+        return jsonify({"error": "active ENS agent name not found", "code": "NAME_NOT_ACTIVE",
+                        "name": name.lower().rstrip(".")}), 404
+    return jsonify(row)
+
+
 @bp.post("/api/names/<path:name>/retry")
 @require_api_key
 def names_retry(name: str):

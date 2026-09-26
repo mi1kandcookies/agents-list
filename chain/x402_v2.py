@@ -49,6 +49,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 X402_VERSION = 2
 SCHEME = "exact"
@@ -148,10 +149,14 @@ def build_requirements(*, pay_to: str, amount_micro: int,
 
 def payment_required(requirements: PaymentRequirements, *, resource_url: str,
                      description: str = "", mime_type: str = "application/json",
-                     error: str = "X-PAYMENT header is required") -> dict:
-    return {"x402Version": X402_VERSION, "error": error,
+                     error: str = "X-PAYMENT header is required",
+                     extensions: dict | None = None) -> dict:
+    body = {"x402Version": X402_VERSION, "error": error,
             "resource": {"url": resource_url, "description": description, "mimeType": mime_type},
             "accepts": [requirements.to_dict()]}
+    if extensions:
+        body["extensions"] = extensions
+    return body
 
 
 # ── header encoding ─────────────────────────────────────────────────────────
@@ -263,7 +268,8 @@ class GuardedSigner:
 
 def sign_payment(account, requirements: PaymentRequirements, *, expected: Expectation,
                  domain: dict | None = None, now: int | None = None,
-                 nonce: str | None = None, resource: dict | None = None) -> dict:
+                 nonce: str | None = None, resource: dict | None = None,
+                 before_sign: Callable[[dict], object] | None = None) -> dict:
     """Preflight, then build and sign the exact-scheme PaymentPayload."""
     from chain.usdc import authorization_typed_data
     d = preflight(requirements, expected, domain=domain)
@@ -277,6 +283,11 @@ def sign_payment(account, requirements: PaymentRequirements, *, expected: Expect
         "nonce": nonce or "0x" + secrets.token_hex(32),
     }
     typed = authorization_typed_data(authorization, d)
+    # The payer-side risk gate runs after the exact payload is assembled and
+    # before the signer is invoked. A hook failure must leave the account
+    # completely untouched.
+    if before_sign is not None:
+        before_sign(typed)
     signed = GuardedSigner(account, expected, d).sign_typed_data(typed, now=now)
     signature = "0x" + bytes(signed.signature).hex()
     out = {"x402Version": X402_VERSION, "accepted": requirements.to_dict(),
@@ -295,6 +306,7 @@ class VerifiedPayment:
     nonce: str
     network: str
     permit: dict          # EIP-3009 fields + v, r, s, for settlement
+    typed_data: dict       # exact EIP-712 payload recovered from the request
 
 
 def _uint(value, name: str) -> int:
@@ -364,8 +376,11 @@ def verify_payment(payload: dict, requirements: PaymentRequirements, *,
         signer = ""
     if signer.lower() != payer.lower():
         raise X402Error("INVALID_SIGNATURE", "signature does not match authorization.from")
+    from chain.usdc import authorization_typed_data
+    typed_data = authorization_typed_data(permit, d)
     return VerifiedPayment(payer=payer.lower(), pay_to=to.lower(), amount_micro=value,
-                           nonce=nonce.lower(), network=requirements.network, permit=permit)
+                           nonce=nonce.lower(), network=requirements.network, permit=permit,
+                           typed_data=typed_data)
 
 
 def settle(verified: VerifiedPayment, *, escrow, ref: str | None = None):

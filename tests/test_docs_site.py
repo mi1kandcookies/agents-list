@@ -37,6 +37,14 @@ def test_site_has_pages():
     assert (SITE / "site.css").is_file()
 
 
+def test_site_uses_the_same_institutional_type_system():
+    css = (SITE / "site.css").read_text(encoding="utf-8")
+    assert "family=IBM+Plex+Mono" in css
+    assert "family=Inter" in css
+    assert "--font-body: 'Inter'" in css
+    assert "--font-mono: 'IBM Plex Mono'" in css
+
+
 @pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
 def test_local_links_resolve(page):
     parsed = _parse(page)

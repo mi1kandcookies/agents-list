@@ -21,6 +21,10 @@ _HTTP = {
     "RESTAMP_REQUIRED":  (409, "RESTAMP_REQUIRED"),
     "OPERATOR_BANNED":   (409, "OPERATOR_BANNED"),
     "PAYEE_REFUSED":     (409, "PAYEE_REFUSED"),
+    # ENS/profile payee binding changed or could not be resolved while an
+    # approval was waiting; never fall back to another payee.
+    "PAYEE_MISMATCH":    (409, "PAYEE_MISMATCH"),
+    "PAYEE_UNRESOLVED":  (503, "PAYEE_UNRESOLVED"),
 }
 APPROVAL_ERROR_CODES = frozenset(_HTTP)
 

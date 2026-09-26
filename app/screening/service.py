@@ -42,7 +42,8 @@ from app.screening.intercepta import MAINNET_CHAIN_ID, InterceptaClient, Interce
 
 HOPS = frozenset({"payee.onboard", "payer.check", "engagement.fund", "milestone.release",
                   "subhire.hop", "signature"})
-MONEY_HOPS = frozenset({"engagement.fund", "milestone.release", "subhire.hop", "signature"})
+MONEY_HOPS = frozenset({"payer.check", "engagement.fund", "milestone.release", "subhire.hop",
+                        "signature"})
 PROVIDER = "intercepta"
 NETWORK = f"eip155:{MAINNET_CHAIN_ID}"
 MAINNET_USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
@@ -78,6 +79,7 @@ class Verdict(TypedDict):
 # ── token scan cache ─────────────────────────────────────────────────────────
 _token_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 _token_lock = threading.Lock()
+ADDRESS_CACHE_SECONDS = 300
 
 
 def clear_token_cache() -> None:
@@ -95,6 +97,36 @@ def _cached_token_scan(client: InterceptaClient, address: str) -> dict:
     body = client.scan_token(address, chain_id=MAINNET_CHAIN_ID)  # errors are never cached
     with _token_lock:
         _token_cache[key] = (now + TOKEN_CACHE_SECONDS, body)
+    return body
+
+
+def _cached_address_scan(client: InterceptaClient, source: str, address: str) -> dict:
+    """Reuse successful address evidence briefly without caching failures.
+
+    Address risk is provider evidence, not an authorization decision: every
+    call still creates a fresh ``Screening`` row and re-runs local policy.
+    Keeping the cache on the provider client prevents test fixtures or a
+    changed provider client from sharing evidence across applications.
+    """
+    cache = getattr(client, "_agents_list_address_cache", None)
+    lock = getattr(client, "_agents_list_address_cache_lock", None)
+    if cache is None or lock is None:
+        cache = {}
+        lock = threading.Lock()
+        setattr(client, "_agents_list_address_cache", cache)
+        setattr(client, "_agents_list_address_cache_lock", lock)
+    key = (source, address.lower())
+    now = time.monotonic()
+    with lock:
+        hit = cache.get(key)
+        if hit and hit[0] > now:
+            return copy.deepcopy(hit[1])
+    if source == "deep-scan":
+        body = client.deep_scan_address(address)
+    else:
+        body = client.quick_scan_address(address)
+    with lock:
+        cache[key] = (now + ADDRESS_CACHE_SECONDS, copy.deepcopy(body))
     return body
 
 
@@ -239,9 +271,11 @@ class InterceptaScreener:
         state["screened"] = screened
 
         try:
-            source = "deep-scan" if hop == "payee.onboard" else "quick-scan"
-            body = (client.deep_scan_address(screened) if source == "deep-scan"
-                    else client.quick_scan_address(screened))
+            # A specialist deep-scans a payer before accepting its work. The
+            # payee-onboarding path has always used Deep Scan; all payment
+            # hops still keep their own fresh verdict and local policy pass.
+            source = "deep-scan" if hop in {"payee.onboard", "payer.check"} else "quick-scan"
+            body = _cached_address_scan(client, source, screened)
             raw[source] = body
             state["signals"]["toxic_score"] = body["toxicScore"]
             state["signals"]["traits"] = [t["name"] for t in body["traits"]]
@@ -348,7 +382,11 @@ def verdict_from_row(row) -> Verdict:
 def get_screener():
     """The app's screener: ``app.extensions["screener"]`` if set, else Intercepta."""
     from flask import current_app
-    return current_app.extensions.get("screener") or InterceptaScreener()
+    screener = current_app.extensions.get("screener")
+    if screener is None:
+        screener = InterceptaScreener()
+        current_app.extensions["screener"] = screener
+    return screener
 
 
 def screen(hop, *, chain_address, amount_micro, engagement_id=None, agent_id=None,

@@ -18,7 +18,7 @@ Requires Python 3.12–3.14.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/flask --app wsgi seed-demo --dev-stamp   # optional: nine demo agents
+.venv/bin/flask --app wsgi seed-demo --dev-stamp   # optional: ten demo agents
 .venv/bin/flask --app wsgi run --port 8090
 # open http://127.0.0.1:8090
 .venv/bin/python -m pytest -q             # offline, no keys needed
@@ -63,17 +63,37 @@ Design and reference: [decision 0001: chain of custody](docs/decisions/0001-cust
 
 Every payment hop is screened with the Intercepta (Web3 Antivirus) API before
 money moves, and the verdict (`PAY | CAP | ASK_HUMAN | REFUSE`) is stored as a
-`screenings` row, served at `GET /api/screening/<id>`. Risk data is mainnet
-only, so a Sepolia payee is screened as its mapped mainnet address
-(`agents.screening_address`, else `SCREENING_ADDRESS_MAP`). No key, an
+`screenings` row, served at `GET /api/screening/<id>`. Agent-to-agent tasks
+screen the payer and payee; approval-backed fund/release actions screen the
+World-bound payer when `Engagement.buyer_address` is present. Risk data is
+mainnet only, so a Sepolia payer or payee is screened as its mapped mainnet
+address (`agents.screening_address`, else `SCREENING_ADDRESS_MAP`). No key, an
 unmapped address, a timeout or any provider error means `REFUSE`
 (fail-closed). Traits drive the decision; the vendor publishes no toxic-score
 threshold, so the score thresholds are ours (see `.env.example`).
 
-Files that call the API: `app/screening/intercepta.py` (the only HTTP client),
-used by `app/screening/service.py`, and `scripts/screening_smoke.py` (manual,
-live only when `INTERCEPTA_API_KEY` is set). Tests use fixtures shaped per the
-provider's OpenAPI reference and never reach the network.
+Files that call the API: `app/screening/intercepta.py` (the only REST client),
+`app/screening/service.py` (persisted payer/payee verdicts), and
+`app/screening/presign.py` (payer-side pre-sign gate). The paying agent uses
+the official x402 Python client through `chain/x402_official.py`; its lifecycle
+hook validates the approved terms and its guarded signer passes the exact
+EIP-712 authorization to the screening gate before signing. The resource-side
+compatibility and settlement policy remain in `chain/x402_v2.py`.
+`scripts/intercepta_x402_smoke.py` demonstrates the 402 → three live scans →
+official SDK sign → retry path. `scripts/screening_smoke.py` is the
+provider-only smoke test. `scripts/hire_agent.py` resolves a named agent from
+ENS records, freezes a server-owned `HireIntent` (task hash, endpoint, ENS
+payee, token, amount and expiry), checks its x402 payee against the approved
+maximum, and returns a source-hashed structured test plan after the protected
+payment. The paid retry references the intent and never resubmits trusted task
+text. Tests use fixtures shaped per the provider's
+documented response shapes and never reach the network; live feedback is
+recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
+
+For ENS sidecar setup, `scripts/setup_agent_names.py` performs a read-only
+health check by default and can resume root or agent setup when explicitly
+requested. Live writes require `--confirm-live`; operator keys remain in the
+sidecar environment.
 
 `flask seed-demo` assigns `SCREENING_ADDRESS_MAP` entries to the demo agents
 as payout (Sepolia) and screening (mainnet) addresses. Without the map their
@@ -91,6 +111,7 @@ app/                Flask app factory and blueprints
   screening/        payee risk screening
   mandates/ humans/ scoped sub-hire mandates; bans and weekly caps
   names/            ENS names via the sidecar
+  hiring/           source-bound specialist deliverables
   seller/ admin/ api/ chain/ models/ templates/ static/
 chain/              web3 client, chain config, USDC, escrow, x402, ERC-8004
 agentslist_mcp/     stdio MCP server

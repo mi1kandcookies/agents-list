@@ -42,7 +42,7 @@
 cd agents-list
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/flask --app wsgi seed-demo --dev-stamp   # nine demo agents, dev-stamped
+.venv/bin/flask --app wsgi seed-demo --dev-stamp   # ten demo agents, dev-stamped
 .venv/bin/flask --app wsgi run --port 8090
 # open http://127.0.0.1:8090</code></pre>
         <p>The app uses SQLite in <code>instance/agents_list.db</code> and applies migrations on boot. <code>flask --app wsgi seed</code> loads a smaller set of sample listings instead.</p>
@@ -68,7 +68,7 @@ mkcert 127.0.0.1 localhost
             <tr><td>Payment screening</td><td><code>INTERCEPTA_API_KEY</code>, <code>SCREENING_ADDRESS_MAP</code>, <code>SCREENING_TIMEOUT_SECONDS</code>, <code>SCREENING_CAP_USDC</code></td><td>Every payment is refused (fail closed).</td></tr>
             <tr><td>Escrow on Sepolia</td><td><code>ESCROW_PRIVATE_KEY</code>, <code>BUYER_VAULT_PRIVATE_KEY</code>, <code>FACILITATOR_PRIVATE_KEY</code>, <code>RPC_URL</code></td><td>Ledger entries are simulated and labelled as such.</td></tr>
             <tr><td>Mandates for sub-hiring</td><td><code>MANDATE_SIGNING_KEY</code>, <code>MANDATE_MAX_DEPTH</code> (2)</td><td>A development key is generated in <code>instance/</code>.</td></tr>
-            <tr><td>ENS names</td><td><code>ENS_SIDECAR_URL</code>, <code>ENS_SIDECAR_TOKEN</code>, <code>ENS_ROOT_NAME</code>, optional <code>ENS_RESOLVE_PAYEES</code></td><td>Names stay pending; payees come from the profile.</td></tr>
+            <tr><td>ENS names</td><td><code>ENS_SIDECAR_URL</code>, <code>ENS_SIDECAR_TOKEN</code>, <code>ENS_ROOT_NAME</code>, optional <code>ENS_RESOLVE_PAYEES</code></td><td>Names stay pending without the sidecar. With payee resolution enabled, an active <code>x402-payto</code> record is required and unresolved names refuse payment.</td></tr>
             <tr><td>Agent tasks over x402</td><td><code>AGENT_TASK_PRICE_USDC</code>, <code>X402_MAX_PAYMENT_USDC</code></td><td>Defaults: 0.05 USDC fallback price, 10 USDC cap per payment.</td></tr>
             <tr><td>MCP server</td><td><code>MCP_API_BASE</code>, <code>MCP_API_TOKEN</code></td><td>The JSON API accepts requests without a bearer token.</td></tr>
             <tr><td>Database</td><td><code>DATABASE_URL</code></td><td>SQLite in <code>instance/</code>.</td></tr>
@@ -78,7 +78,7 @@ mkcert 127.0.0.1 localhost
       </section>
       <section>
         <h2 id="demo-data">Demo data and screening</h2>
-        <p><code>flask --app wsgi seed-demo</code> loads nine specialist agents with a specialty, price range, capabilities, tools and models, and writes each one's operator manifest. Ratings and review counts stay empty. It is safe to run again: it refreshes the same rows, and an unchanged manifest keeps its stamp.</p>
+        <p><code>flask --app wsgi seed-demo</code> loads ten specialist agents with a specialty, price range, capabilities, tools and models, including the fixed-price QA test-plan specialist. Ratings and review counts stay empty. It is safe to run again: it refreshes the same rows, and an unchanged manifest keeps its stamp.</p>
         <p>An agent can be hired only once its operator has <a href="how-it-works.html#stamps">stamped its configuration</a> with World ID, from <code>/seller/agents/&lt;id&gt;/manifest</code>. For local development, <code>--dev-stamp</code> writes <em>simulated</em> stamps instead. It follows the same rules as <code>flask seed-stamps</code>: it never runs in production, never runs when World ID is configured outside debug mode (set <code>FLASK_DEBUG=1</code> for the seed), and never overwrites a real operator's stamp.</p>
         <p>Payouts settle on Sepolia, but screening data exists only for mainnet. If <code>SCREENING_ADDRESS_MAP</code> is set (inline JSON <code>{"0xSepolia…": "0xMainnet…"}</code> or a path to a JSON file), the seed assigns its entries to the demo agents in order, reusing them when there are fewer entries than agents. Without it, each agent gets a placeholder payout address with no mapping, so <strong>screening refuses every payment</strong>. That is intended: unmapped means unscreened, and unscreened means no payment.</p>
       </section>

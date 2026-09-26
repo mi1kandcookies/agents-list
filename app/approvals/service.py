@@ -243,19 +243,46 @@ RESCREEN_HOPS = {"engagement.fund": "engagement.fund", "milestone.release": "mil
 
 
 def _rescreen(approval: Approval, action: dict) -> None:
-    """Fresh screen of the payee right before a money-moving action executes.
+    """Fresh screen of both payer and payee before money moves.
 
     Uses the same policy as payment hops: REFUSE, an expired verdict, an
     amount over a CAP, or an unacknowledged ASK_HUMAN all refuse. Actions
-    without ``payee_address`` have nothing to screen here.
+    without a payee address have nothing to screen here. The payer is the
+    parent agent for a sub-hire, or the World-bound ``buyer_address`` for a
+    fund/release action; an unbound buyer is left for the identity boundary to
+    reject before it authorizes a production payment.
     """
     hop = RESCREEN_HOPS.get(approval.kind)
     payee = action.get("payee_address")
     if hop is None or not payee:
         return
     from app.screening import policy
+    from app.engagements.service import payee_address, screen as engagement_screen
     from app.screening.service import screen
     amount = int(action.get("amount_micro") or 0)
+
+    eng = db.session.get(Engagement, approval.engagement_id) if approval.engagement_id else None
+    payer_address = None
+    payer_agent = None
+    payer_required = False
+    if approval.kind == "subhire.fund" and eng is not None and eng.parent is not None:
+        payer_agent = eng.parent.agent
+        payer_address = payee_address(payer_agent) if payer_agent is not None else ""
+        payer_required = True
+    elif eng is not None:
+        payer_address = eng.buyer_address
+        payer_required = bool(payer_address) or bool(action.get("payer_screening_id"))
+    if payer_required:
+        payer = engagement_screen("payer.check", chain_address=payer_address or "",
+                                  amount_micro=amount, engagement=eng, agent=payer_agent)
+        _event(approval, "payer_rescreened", screening_id=payer.get("id"),
+               verdict=payer.get("verdict"))
+        try:
+            policy.enforce_verdict(payer, amount,
+                                   acknowledged=bool(action.get("screening_ack")))
+        except policy.ScreeningBlocked as exc:
+            raise ApprovalError("SCREENING_REFUSED", f"payer re-screen {exc.code}: {exc}") from None
+
     verdict = screen(hop, chain_address=payee, amount_micro=amount,
                      engagement_id=approval.engagement_id, agent_id=approval.agent_id)
     _event(approval, "rescreened", screening_id=verdict.get("id"), verdict=verdict.get("verdict"))
@@ -629,6 +656,8 @@ FAILURE_TEXT = {
     "RESTAMP_REQUIRED": "The agent's configuration changed after it was stamped.",
     "OPERATOR_BANNED": "The operator behind this agent is banned.",
     "PAYEE_REFUSED": "The agent's payout address was refused at onboarding.",
+    "PAYEE_MISMATCH": "The ENS payee changed after approval, so the payment was blocked.",
+    "PAYEE_UNRESOLVED": "The ENS payout record could not be resolved, so the payment was blocked.",
 }
 
 
@@ -652,12 +681,18 @@ def to_dict(approval: Approval) -> dict:
     """The §7 approval object. Secrets (device_code, PKCE, state) never leave."""
     action = approval.action
     screening = None
+    payer_screening = None
     if approval.screening_id:
         from app.screening.service import verdict_from_row
         row = db.session.get(Screening, approval.screening_id)
         screening = verdict_from_row(row) if row else {"id": approval.screening_id, "verdict": None}
         if action.get("payee_source"):
             screening = {**screening, "payee_source": action["payee_source"]}
+    if action.get("payer_screening_id"):
+        from app.screening.service import verdict_from_row
+        row = db.session.get(Screening, action["payer_screening_id"])
+        payer_screening = verdict_from_row(row) if row else {
+            "id": action["payer_screening_id"], "verdict": None}
     result = result_of(approval)
     return {
         "approval_id": approval.id,
@@ -671,6 +706,7 @@ def to_dict(approval: Approval) -> dict:
         "action_hash": approval.action_hash,
         "summary": [list(row) for row in actions.describe(action)],
         "screening": screening,
+        "payer_screening": payer_screening,
         "failure_code": approval.failure_code,
         "result": None if result is None else {
             "ledger_ids": result.get("ledger_ids", []), "tx": result.get("tx"),
@@ -678,4 +714,3 @@ def to_dict(approval: Approval) -> dict:
         },
         "poll_interval": approval.poll_interval,
     }
-

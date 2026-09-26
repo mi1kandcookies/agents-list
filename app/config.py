@@ -77,7 +77,8 @@ class Config:
     ENS_ROOT_NAME: str = os.environ.get("ENS_ROOT_NAME", "") or "agentslist-app.eth"
     # Payee resolution (app/names/service.py resolve_payee): read the agent's
     # x402 payout record through the Universal Resolver and fail closed when it
-    # disagrees with the profile. Off → payees come from the profile.
+    # disagrees with the profile. Off → payees come from the profile. When on,
+    # an active ENS name and a non-empty x402-payto record are required.
     ENS_RESOLVE_PAYEES: bool = _flag("ENS_RESOLVE_PAYEES", "0")
     ENS_UNIVERSAL_RESOLVER: str = os.environ.get("ENS_UNIVERSAL_RESOLVER", "")
 
