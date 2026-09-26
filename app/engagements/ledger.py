@@ -84,6 +84,12 @@ def refresh_receipts(engagement, escrow) -> int:
             continue
         if status == entry.status:
             continue
+        if status == "failed" and entry.kind == "subhire_alloc":
+            # An x402 task payment (sub-hire allocations are ledger-only and
+            # never pending): refund its mandate charge, once.
+            from app.api.tasks import settlement_failed
+            changed += int(settlement_failed(entry))
+            continue
         entry.status = status
         changed += 1
         if status == "failed":
