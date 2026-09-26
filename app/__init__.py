@@ -154,8 +154,8 @@ def _register_cli(app: Flask) -> None:
         """Load sample agents for local development."""
         from app.models import Agent
         from app.sample_data import seed_sample_agents
-        added = seed_sample_agents(db, Agent)
-        print(f"Added {added} sample agents.")
+        result = seed_sample_agents(db, Agent)
+        print(f"Sample agents: {result['added']} added, {result['updated']} refreshed.")
 
     @app.cli.command("seed-stamps")
     def seed_stamps_command():
