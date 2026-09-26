@@ -32,8 +32,11 @@ MIGRATIONS_DIR = str(Path(__file__).resolve().parent / "models" / "migrations")
 
 
 def _load_dotenv(path: Path) -> None:
-    """Minimal .env loader (no python-dotenv dependency). Existing env wins."""
-    if not path.exists():
+    """Minimal .env loader (no python-dotenv dependency). Existing env wins.
+
+    Skipped under FLASK_ENV=testing so a developer's local .env can't leak
+    keys into the test suite."""
+    if os.environ.get("FLASK_ENV") == "testing" or not path.exists():
         return
     for line in path.read_text().splitlines():
         line = line.strip()
