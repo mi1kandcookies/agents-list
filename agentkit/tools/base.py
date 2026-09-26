@@ -79,7 +79,7 @@ from agentkit.types import Brief, MilestoneSpec, ToolCall, ToolResult, ToolRisk,
 
 MAX_OUTPUT_CHARS = 30_000
 MAX_CAPTURE_BYTES = 2_000_000   # per stream while a command runs (head + tail kept)
-MAX_FETCH_BYTES = 5_000_000
+MAX_FETCH_BYTES = 20_000_000    # SEC companyfacts for large filers runs 5-8 MB
 MAX_REDIRECTS = 5
 FETCH_TIMEOUT = 30.0      # per socket operation
 FETCH_DEADLINE = 120.0    # whole response, so a drip-feeding server cannot hold a step
