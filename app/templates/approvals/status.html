@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ kind_label }} approval{% endblock %}
+{% block head %}
+<style>
+  .apr { max-width: 640px; margin: 0 auto; padding: 48px 20px 80px; }
+  .apr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  .apr-head h1 { font-size: 1.375rem; margin: 0; }
+  .apr-pill { font-size: 0.6875rem; padding: 4px 10px; }
+  .apr-summary { width: 100%; border-collapse: collapse; margin: 0 0 16px; }
+  .apr-summary th, .apr-summary td { text-align: left; padding: 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .apr-summary th { color: var(--text-2); font-weight: 500; width: 38%; padding-right: 12px; }
+  .apr-summary td { word-break: break-all; }
+  .apr-hash { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-3); word-break: break-all; margin-bottom: 20px; }
+  .apr-panel { margin-top: 20px; }
+  .apr-code { font-family: var(--font-mono); font-size: 2rem; letter-spacing: 0.12em; margin: 8px 0 16px; }
+  .apr-link { display: block; font-size: 1rem; word-break: break-all; margin-bottom: 16px; }
+  .apr-muted { color: var(--text-2); font-size: 0.875rem; }
+  .apr-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .apr-terminal h2 { font-size: 1.125rem; margin: 0 0 8px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="apr" id="approval"
+     data-api="{{ url_for('approvals.api_get', approval_id=approval.id) }}"
+     data-cancel="{{ url_for('approvals.api_cancel', approval_id=approval.id) }}"
+     data-state="{{ approval.state }}"
+     data-terminal="{{ 'true' if terminal else 'false' }}"
+     data-interval="{{ approval.poll_interval or 3 }}"
+     data-expires-at="{{ expires_at }}">
+
+  <div class="apr-head">
+    <h1>{{ kind_label }}</h1>
+    <span class="badge apr-pill {{ pill[1] }}" id="approval-pill">{{ pill[0] }}</span>
+  </div>
+
+  <div class="card">
+    <p class="apr-muted" style="margin-top:0;">You are approving exactly this action:</p>
+    <table class="apr-summary">
+      {% for label, value in summary %}
+      <tr><th scope="row">{{ label }}</th><td>{{ value }}</td></tr>
+      {% endfor %}
+    </table>
+    <div class="apr-hash">Action hash {{ approval.action_hash }}</div>
+
+    {% if terminal or approval.state == 'approved' %}
+      {% include "approvals/_terminal.html" %}
+    {% elif approval.flow == 'device' %}
+      {% include "approvals/_pending_device.html" %}
+    {% else %}
+      {% include "approvals/_pending_web.html" %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/approval-poll.js') }}"></script>
+{% endblock %}
