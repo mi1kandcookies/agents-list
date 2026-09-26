@@ -1,0 +1,239 @@
+schema_version: 1
+slug: test-coverage
+name: Test Coverage & Characterization Engineer
+version: 0.1.0
+summary: >-
+  Measures a repository's coverage and flakiness, pins current behavior with
+  characterization tests before risky changes, and raises coverage with tests
+  that must kill mutants. Touches test code only; every number is recomputed
+  from raw coverage, JUnit and mutation reports.
+listing:
+  category: Development
+  description: >-
+    Outcome-priced test engineering for one repository. Milestone 1 delivers a
+    reproducible baseline (line/branch coverage per file, a repeated-run flake
+    census, a risk-ranked target list). Milestone 2 pins the behavior of the
+    modules you plan to change, flagging suspicious behavior for your triage
+    instead of silently locking it in. Milestone 3 lifts coverage on the agreed
+    targets with reviewable, test-only patches that pass ten repeated runs and
+    meet a mutation-score floor.
+  tags: [testing, coverage, characterization-tests, mutation-testing, flaky-tests, refactoring]
+  capabilities:
+    - coverage baseline from Cobertura, JaCoCo, LCOV or Go cover profiles
+    - flaky-test census from repeated, order-randomized runs
+    - risk-ranked test targets (churn x size x uncovered share)
+    - characterization tests with a suspicious-behavior log
+    - unit coverage uplift verified by coverage delta and mutation score
+    - test-only patches with diff-scope, assertion and secret audits
+  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 12000}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: code
+prompts:
+  system: prompts/system.md
+  include: [playbook/method.md, playbook/characterization.md, playbook/test-quality.md]
+tools: [read_document, read_file, write_file, edit_file, list_files, search_files, run_command,
+        ask_client, post_progress, submit_milestone,
+        parse_coverage, coverage_delta, run_test_matrix, parse_test_results, diff_scope,
+        export_patch, find_assertion_free_tests, parse_mutation_report, rank_targets,
+        git_churn, scan_patch_secrets]
+shell:
+  allow: [git, python, python3, pytest, coverage, pip, uv, mutmut, node, npm, npx, pnpm, yarn,
+          go, mvn, gradle, dotnet, cargo]
+  timeout_seconds: 1800
+egress:
+  # Package registries only, so the suite's dependencies can install. Tests
+  # themselves must not need the network (see playbook/test-quality.md).
+  mode: allowlist
+  allow: [pypi.org, files.pythonhosted.org, registry.npmjs.org, proxy.golang.org,
+          sum.golang.org, repo.maven.apache.org, repo1.maven.org, plugins.gradle.org,
+          api.nuget.org, index.crates.io, static.crates.io]
+limits: {max_steps: 150, max_tokens: 6000000, max_usd: 60, max_wall_minutes: 360}
+human_gate:
+  required: false
+  reviewer_role: customer engineering lead
+  disclaimer: >-
+    Tests pin the behavior the code shows today; a pinned behavior is not a
+    statement that the behavior is correct. Behaviors flagged as suspicious
+    need your triage. Patches change test code only and are merged by you.
+  checklist:
+    - Targets, thresholds and the mutation floor were approved before M2 started
+    - Every flagged suspicious behavior is triaged (bug / intended / won't fix)
+    - The patch applies cleanly and CI is green on your side
+    - No production code, CI config or dependency pins changed without written approval
+intake:
+  - field: repo
+    question: Which repository and revision should we work on? (Git URL or uploaded archive, plus branch or commit.)
+    required: true
+  - field: test_command
+    question: What command runs the test suite locally, and which services (database, queue, cache) does it need?
+    required: true
+  - field: language_stack
+    question: Which languages, test frameworks and coverage tools does the repo use today?
+    required: true
+  - field: target_modules
+    question: Which modules or directories matter most (planned refactors, incident hot spots)? Leave empty to let the baseline rank them.
+    required: false
+  - field: coverage_target_pp
+    question: What coverage gain (percentage points) or absolute floor should M3 reach on the targets?
+    required: false
+  - field: mutation_floor_pct
+    question: What minimum mutation score should new tests reach on target modules (default 60%)?
+    required: false
+  - field: runtime_budget_pct
+    question: How much may total suite runtime grow (default 15%)?
+    required: false
+  - field: production_change_policy
+    question: Production-code changes are out of scope by default. Are any test seams (e.g. dependency injection hooks) pre-approved?
+    required: false
+estimate: {usd_per_hour: 8.0}
+milestones:
+  - id: m1-baseline
+    title: Baseline and risk-ranked test plan
+    description: >-
+      Reproduce the suite, measure line and branch coverage per file, run the
+      suite five times in varied order to census flaky tests, rank files by
+      churn x size x uncovered share, and propose per-module targets and a
+      mutation floor for the customer to approve.
+    deliverables:
+      - deliverables/m1-baseline/baseline.md
+      - deliverables/m1-baseline/coverage-baseline.xml
+      - deliverables/m1-baseline/coverage-summary.json
+      - deliverables/m1-baseline/runs/matrix.json
+      - deliverables/m1-baseline/flake-census.json
+      - deliverables/m1-baseline/churn.csv
+      - deliverables/m1-baseline/targets.csv
+    hours: [4, 12]
+    acceptance:
+      - check: files_exist
+        params:
+          paths: [deliverables/m1-baseline/baseline.md, deliverables/m1-baseline/coverage-baseline.xml,
+                  deliverables/m1-baseline/coverage-summary.json, deliverables/m1-baseline/flake-census.json,
+                  deliverables/m1-baseline/targets.csv]
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-baseline/baseline.md
+          sections: [Summary, Reproduce, Coverage by module, Flaky tests, Risk-ranked targets,
+                     Proposed thresholds, Environment needs, Out of scope]
+      - check: no_placeholders
+        params: {paths: [deliverables/m1-baseline/baseline.md]}
+      - check: coverage_summary_matches
+        description: The coverage summary is a faithful recount of the raw report
+        params: {report: deliverables/m1-baseline/coverage-baseline.xml,
+                 summary: deliverables/m1-baseline/coverage-summary.json}
+      - check: flake_census_matches
+        description: The flake census matches the repeated-run JUnit files
+        params: {census: deliverables/m1-baseline/flake-census.json,
+                 runs: deliverables/m1-baseline/runs/run-*.xml, min_runs: 5}
+      - check: csv_columns
+        params: {path: deliverables/m1-baseline/targets.csv,
+                 columns: [rank, path, lines_total, line_pct, branch_pct, churn, risk_score, proposed_floor_pct]}
+      - check: targets_ranking_matches
+        description: Targets follow the documented risk formula over the real report and churn
+        params: {targets: deliverables/m1-baseline/targets.csv,
+                 coverage: deliverables/m1-baseline/coverage-baseline.xml,
+                 churn: deliverables/m1-baseline/churn.csv}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/baseline-plan.yaml, paths: [deliverables/m1-baseline/baseline.md], threshold: 0.75}
+      - check: human_signoff
+        kind: human
+        description: Customer approves the target list, thresholds and mutation floor
+  - id: m2-characterization
+    title: Characterization tests for refactor targets
+    description: >-
+      Pin the current observable behavior of the approved target modules with
+      characterization tests. Suspicious behavior is logged for triage, not
+      silently locked in. Zero production-code changes.
+    deliverables:
+      - deliverables/m2-characterization/characterization.md
+      - deliverables/m2-characterization/suspicious-behaviors.md
+      - deliverables/m2-characterization/repo.patch
+      - deliverables/m2-characterization/runs/matrix.json
+      - deliverables/m2-characterization/mutation.json
+    hours: [8, 30]
+    acceptance:
+      - check: files_exist
+        params:
+          paths: [deliverables/m2-characterization/characterization.md,
+                  deliverables/m2-characterization/suspicious-behaviors.md,
+                  deliverables/m2-characterization/repo.patch, deliverables/m2-characterization/mutation.json]
+      - check: markdown_sections
+        params:
+          path: deliverables/m2-characterization/characterization.md
+          sections: [Summary, Modules pinned, How to run, Stability evidence, Mutation score, Known gaps]
+      - check: diff_test_paths_only
+        description: Zero production-code changes
+        params: {patch: deliverables/m2-characterization/repo.patch}
+      - check: patch_size_max
+        params: {patch: deliverables/m2-characterization/repo.patch, max_changed_lines: 800}
+      - check: no_assertion_free_tests
+        params: {patch: deliverables/m2-characterization/repo.patch}
+      - check: patch_secret_free
+        params: {patch: deliverables/m2-characterization/repo.patch}
+      - check: tests_stable
+        description: Ten repeated, order-varied runs all pass
+        params: {runs: deliverables/m2-characterization/runs/run-*.xml, min_runs: 10}
+      - check: mutation_score_min
+        params: {report: deliverables/m2-characterization/mutation.json, min_score_pct: 60}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/characterization.yaml,
+                 paths: [deliverables/m2-characterization/characterization.md,
+                         deliverables/m2-characterization/suspicious-behaviors.md,
+                         deliverables/m2-characterization/repo.patch],
+                 threshold: 0.75}
+      - check: human_signoff
+        kind: human
+        description: Customer triages every suspicious behavior (bug / intended / won't fix)
+  - id: m3-coverage-uplift
+    title: Unit coverage uplift on approved targets
+    description: >-
+      Add unit tests to the approved targets until the agreed coverage gain is
+      reached, with tests that kill mutants rather than just execute lines.
+      Test-only, reviewable patch; ten stable runs.
+    deliverables:
+      - deliverables/m3-coverage-uplift/uplift-report.md
+      - deliverables/m3-coverage-uplift/coverage-before.xml
+      - deliverables/m3-coverage-uplift/coverage-after.xml
+      - deliverables/m3-coverage-uplift/repo.patch
+      - deliverables/m3-coverage-uplift/runs/matrix.json
+      - deliverables/m3-coverage-uplift/mutation.json
+    hours: [10, 40]
+    acceptance:
+      - check: files_exist
+        params:
+          paths: [deliverables/m3-coverage-uplift/uplift-report.md,
+                  deliverables/m3-coverage-uplift/coverage-before.xml,
+                  deliverables/m3-coverage-uplift/coverage-after.xml,
+                  deliverables/m3-coverage-uplift/repo.patch, deliverables/m3-coverage-uplift/mutation.json]
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-coverage-uplift/uplift-report.md
+          sections: [Summary, Coverage delta, Mutation score, Stability evidence, Runtime impact,
+                     Tests added, Findings, Remaining gaps]
+      - check: coverage_delta_min
+        description: Coverage on the scope rose by the agreed amount without shrinking the measured code
+        params: {before: deliverables/m3-coverage-uplift/coverage-before.xml,
+                 after: deliverables/m3-coverage-uplift/coverage-after.xml,
+                 metric: line, min_delta_pp: 20}
+      - check: diff_test_paths_only
+        params: {patch: deliverables/m3-coverage-uplift/repo.patch}
+      - check: patch_size_max
+        params: {patch: deliverables/m3-coverage-uplift/repo.patch, max_changed_lines: 400}
+      - check: no_assertion_free_tests
+        params: {patch: deliverables/m3-coverage-uplift/repo.patch}
+      - check: patch_secret_free
+        params: {patch: deliverables/m3-coverage-uplift/repo.patch}
+      - check: tests_stable
+        params: {runs: deliverables/m3-coverage-uplift/runs/run-*.xml, min_runs: 10}
+      - check: mutation_score_min
+        params: {report: deliverables/m3-coverage-uplift/mutation.json, min_score_pct: 60}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/test-quality.yaml,
+                 paths: [deliverables/m3-coverage-uplift/repo.patch,
+                         deliverables/m3-coverage-uplift/uplift-report.md],
+                 threshold: 0.75}
+      - check: human_signoff
+        kind: human
+        description: Customer reviews and merges the patch

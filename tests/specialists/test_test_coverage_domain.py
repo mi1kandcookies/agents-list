@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from agentkit.errors import ToolError
 from specialists.test_coverage import checks as C
@@ -462,3 +463,51 @@ def test_check_defs_signature():
     for name, fn in C.CHECK_DEFS.items():
         out = fn(Path("."), {})
         assert set(out) == {"passed", "details", "score"} and out["passed"] is False, name
+
+
+# --- manifest ----------------------------------------------------------------
+
+PACK = Path(__file__).resolve().parents[2] / "specialists" / "test_coverage"
+
+# Names the kit provides (agentkit contract v1).
+KIT_TOOLS = {"read_document", "read_file", "write_file", "edit_file", "list_files", "search_files",
+             "run_command", "http_fetch", "web_search", "record_source", "record_claim",
+             "ask_client", "post_progress", "submit_milestone"}
+KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+              "json_valid", "csv_columns", "command_succeeds", "ledger_verified", "citations_resolve",
+              "disclaimer_present", "rubric_grader", "human_signoff"}
+
+
+def _manifest():
+    return yaml.safe_load((PACK / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_manifest_parses_and_references_known_tools_and_checks():
+    m = _manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "test-coverage" and m["profile"] == "code"
+    domain_tools = {d["name"] for d in T.TOOL_DEFS}
+    assert set(m["tools"]) <= KIT_TOOLS | domain_tools
+    assert domain_tools <= set(m["tools"])  # every domain tool is exposed
+    assert [ms["id"] for ms in m["milestones"]] == ["m1-baseline", "m2-characterization",
+                                                    "m3-coverage-uplift"]
+    for ms in m["milestones"]:
+        assert ms["deliverables"] and all(d.startswith(f"deliverables/{ms['id']}/") for d in ms["deliverables"])
+        for crit in ms["acceptance"]:
+            assert crit["check"] in KIT_CHECKS | set(C.CHECK_DEFS), crit["check"]
+            if crit["check"] == "rubric_grader":
+                assert (PACK / crit["params"]["rubric"]).is_file()
+        kinds = {c.get("kind", "automated") for c in ms["acceptance"]}
+        assert "human" in kinds and "automated" in kinds
+    assert m["human_gate"]["required"] is False
+    assert m["listing"]["pricing"]["currency"] == "USDC"
+    assert m["models"]["primary"].startswith("anthropic:")
+    for rel in [m["prompts"]["system"], *m["prompts"]["include"]]:
+        assert (PACK / rel).is_file()
+
+
+def test_rubrics_are_well_formed():
+    for path in (PACK / "rubrics").glob("*.yaml"):
+        r = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert r["name"] and 0 < r["threshold"] <= 1
+        ids = [c["id"] for c in r["criteria"]]
+        assert len(ids) == len(set(ids)) and all(c["weight"] > 0 and c["description"] for c in r["criteria"])

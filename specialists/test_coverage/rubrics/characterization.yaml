@@ -1,0 +1,18 @@
+name: Characterization tests
+criteria:
+  - id: observable-behavior
+    description: Tests pin observable outputs and side effects through public entry points, not private helpers or implementation details that a refactor would legitimately change.
+    weight: 3
+  - id: deterministic
+    description: Non-deterministic values (timestamps, random ids, dict or set ordering, locale) are frozen, injected or normalized before comparison; nothing depends on the network or wall clock.
+    weight: 3
+  - id: suspicious-flagged
+    description: Behavior that looks wrong (swallowed errors, off-by-one boundaries, inconsistent rounding) is logged in suspicious-behaviors.md with a file:line reference and a reproducing test, rather than silently pinned as correct.
+    weight: 3
+  - id: readable-golden-data
+    description: Golden files and expected values are small, named for the case they cover, and free of personal data or secrets.
+    weight: 2
+  - id: boundaries-covered
+    description: Inputs include edge cases (empty, zero, maximum, invalid, unicode) for each pinned entry point.
+    weight: 2
+threshold: 0.75
