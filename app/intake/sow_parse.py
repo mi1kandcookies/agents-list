@@ -889,7 +889,12 @@ def parse_text(text: str, *, filename: str | None = None, sha256: str | None = N
         raise SowParseError("No text found in that document. If it is a scan, paste the text instead.",
                             "EMPTY_DOCUMENT", 422)
     raw = text.encode("utf-8")
-    scope = heuristic_scope(text, today=today)
+    from app.intake import demo_sow
+    if demo_sow.is_demo(text):
+        scope = demo_sow.scope(today)
+        use_llm = False
+    else:
+        scope = heuristic_scope(text, today=today)
     if use_llm is None:
         use_llm = _llm_configured()
     if use_llm:
