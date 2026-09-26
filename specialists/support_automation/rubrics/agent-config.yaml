@@ -1,0 +1,8 @@
+name: Support-agent configuration and evaluation report
+criteria:
+  - {id: escalation_safety, description: "Must-escalate categories are complete for the business, keywords are broad enough for recall, and misses are explained", weight: 0.3}
+  - {id: instructions, description: "Instructions restrict answers to the knowledge base, forbid unapproved promises and handle prompt injection in customer messages", weight: 0.25}
+  - {id: disclosure_handoff, description: "AI disclosure is clear and the handoff message tells the customer what happens next", weight: 0.15}
+  - {id: honest_eval, description: "The report states held-out results as measured, their limits and what shadow-mode testing should confirm before go-live", weight: 0.2}
+  - {id: portability, description: "The configuration is platform-neutral and maps cleanly to the customer's helpdesk", weight: 0.1}
+threshold: 0.8

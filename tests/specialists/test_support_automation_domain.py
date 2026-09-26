@@ -353,3 +353,18 @@ def test_manifest_parses_and_names_resolve():
     assert m["human_gate"]["required"] is False and m["human_gate"]["disclaimer"]
     assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
     assert m["listing"]["pricing"]["currency"] == "USDC"
+
+
+def test_manifest_files_and_rubrics_exist():
+    m = _manifest()
+    assert (PKG / m["prompts"]["system"]).is_file()
+    for inc in m["prompts"]["include"]:
+        assert (PKG / inc).is_file(), inc
+    for ms in m["milestones"]:
+        for crit in ms["acceptance"]:
+            if crit["check"] == "rubric_grader":
+                rubric = yaml.safe_load((PKG / crit["params"]["rubric"]).read_text(encoding="utf-8"))
+                weights = [c["weight"] for c in rubric["criteria"]]
+                assert rubric["name"] and 0 < rubric["threshold"] <= 1
+                assert abs(sum(weights) - 1.0) < 1e-9
+                assert all({"id", "description", "weight"} <= set(c) for c in rubric["criteria"])
