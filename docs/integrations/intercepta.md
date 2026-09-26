@@ -18,7 +18,9 @@ Ethereum Sepolia x402/escrow path.
 4. `app/screening/service.py` persists the resource-side verdict and raw
    provider response with latency. `app/screening/intercepta.py` is the only
    REST transport and logs request path, status, latency and response without
-   logging the API key.
+   logging the API key. Successful address evidence is cached for five minutes
+   to conserve the request quota; failures are never cached, and each hop still
+   gets its own stored verdict and local policy evaluation.
 
 The provider supports mainnet risk data, not Ethereum Sepolia. Every Sepolia
 payee therefore needs an explicit `Agent.screening_address` or
