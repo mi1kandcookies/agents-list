@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% from "components/sow_drop.html" import sow_drop %}
 {% block title %}Hire {{ agent.name }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/sow.css') }}?v=2">{% endblock %}
 
 {% block content %}
 <div class="container-sm" style="padding-top:48px; padding-bottom:80px; max-width:760px;">
@@ -13,10 +15,17 @@
   <div class="card card-sm" role="alert" style="border-color:var(--red-border); background:var(--red-dim); color:var(--red); margin-bottom:20px;">{{ error }}</div>
   {% endif %}
 
-  <form method="post" action="/jobs/new?agent={{ agent.id }}" class="card" style="display:flex; flex-direction:column; gap:18px;">
+  <form method="post" action="/jobs/new?agent={{ agent.id }}" class="card" id="job-form" style="display:flex; flex-direction:column; gap:18px;">
+    <input type="hidden" name="source_filename" id="source_filename" value="{{ form.source_filename }}">
+    <input type="hidden" name="source_sha256" id="source_sha256" value="{{ form.source_sha256 }}">
     <div class="form-group">
       <label class="form-label" for="outcome">Outcome</label>
       <textarea class="form-textarea" id="outcome" name="outcome" required maxlength="4000" placeholder="What should be true when the job is done?">{{ form.outcome }}</textarea>
+      {{ sow_drop("sow", hint="Drop a PDF, Word, text or Markdown file here (up to 5 MB). We fill in this form from it for you to review.") }}
+      <div class="sow-note" id="sow-note"{% if not form.source_sha256 %} hidden{% endif %}>
+        <p>Filled from <strong id="sow-note-file">{{ form.source_filename }}</strong>. Review each field before you create the statement of work.</p>
+        <ul id="sow-note-list" hidden></ul>
+      </div>
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
       <div class="form-group">
@@ -36,4 +45,42 @@
     <button type="submit" class="btn btn-gradient btn-lg">Create statement of work</button>
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
+<script>
+  (function () {
+    var zone = document.getElementById("sow");
+    if (!zone || !window.SowUpload) return;
+    function val(id, v) { document.getElementById(id).value = v == null ? "" : v; }
+    // One milestone per line, the format this form already takes:
+    // title | acceptance | amount. Missing amounts are left blank to fill in.
+    function line(m) {
+      var acc = (m.acceptance || []).join("; ").replace(/\|/g, "/");
+      return [String(m.title || "").replace(/\|/g, "/"), acc, m.amount_usdc == null ? "" : m.amount_usdc].join(" | ");
+    }
+    window.SowUpload.mount(zone, {
+      target: document.getElementById("job-form"),
+      onParsed: function (scope) {
+        val("outcome", scope.outcome || document.getElementById("outcome").value);
+        if (scope.budget_usdc != null) val("budget_usdc", scope.budget_usdc);
+        val("deadline", (scope.deadline && scope.deadline.date) || "");
+        val("milestones", (scope.milestones || []).map(line).join("\n"));
+        val("source_filename", scope.source.filename);
+        val("source_sha256", scope.source.sha256);
+        document.getElementById("sow-note-file").textContent = scope.source.filename;
+        var list = document.getElementById("sow-note-list");
+        list.innerHTML = "";
+        (scope.notes || []).concat(scope.warnings || []).forEach(function (w) {
+          var li = document.createElement("li"); li.textContent = w; list.appendChild(li);
+        });
+        list.hidden = !list.children.length;
+        document.getElementById("sow-note").hidden = false;
+        zone.querySelector("[data-sow-title]").textContent = "Use a different file?";
+        zone.querySelector("[data-sow-pick]").textContent = "Replace file";
+      }
+    });
+  })();
+</script>
 {% endblock %}

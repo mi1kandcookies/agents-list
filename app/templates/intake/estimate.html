@@ -44,7 +44,7 @@
             deadline=eng.deadline_at.strftime('%Y-%m-%d') if eng.deadline_at else "Flexible",
             deadline_is_date=eng.deadline_at is not none,
             auto_days=auto_release_days,
-            sow_hash=eng.sow_hash, engagement_id=eng.id) }}
+            sow_hash=eng.sow_hash, engagement_id=eng.id, source=source) }}
       </section>
 
       {% if can_approve %}

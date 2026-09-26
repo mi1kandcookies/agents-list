@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% from "intake/_macros.html" import estimate_card, contract %}
+{% from "components/sow_drop.html" import sow_drop %}
 {% block title %}Describe your job{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=4">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/sow.css') }}?v=2">
 {% endblock %}
 
 {% block content %}
@@ -38,9 +40,13 @@
           <p class="flow-lede">Describe the result you want, not the tasks. You can refine every detail on the next screens.</p>
           <label class="flabel" for="f-outcome">Outcome</label>
           <textarea id="f-outcome" name="outcome" rows="5" maxlength="2000"
-                    aria-describedby="f-outcome-help e-1"
+                    aria-describedby="e-1"
                     placeholder="A ranked list of the 20 closest competitors to our payroll product, with pricing and positioning for each">{{ prefill }}</textarea>
-          <p class="fhelp" id="f-outcome-help">Press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to continue.</p>
+          {{ sow_drop("sow") }}
+          <div class="sow-note" id="sow-note" hidden>
+            <p>Filled from <strong id="sow-note-file"></strong>. Review each step; everything stays editable.</p>
+            <ul id="sow-note-list"></ul>
+          </div>
           <div class="flow-brief" aria-live="polite">
             <span class="flow-brief-label">Brief</span>
             <span id="f-brief" class="flow-brief-text">Your one-line brief appears here.</span>
@@ -68,7 +74,7 @@
         <!-- Step 3: Milestones -->
         <section class="flow-step" data-step="3" data-name="Milestones" aria-labelledby="s3-h" hidden>
           <h2 id="s3-h" tabindex="-1">Break it into milestones</h2>
-          <p class="flow-lede">Each milestone is delivered and paid on its own. We suggested a starting point; rename, reorder, add or remove.</p>
+          <p class="flow-lede" id="ms-lede" data-from-file="Each milestone is delivered and paid on its own. These come from your document; rename, reorder, add or remove.">Each milestone is delivered and paid on its own. We suggested a starting point; rename, reorder, add or remove.</p>
           <div class="flow-note" id="ms-reset-note" hidden>
             <p>You changed the category. Your edited milestones were kept.</p>
             <button type="button" class="fbtn fbtn-link" id="ms-reset">Use the suggested milestones instead</button>
@@ -178,6 +184,7 @@
           <div><dt>Deadline</dt><dd data-sum="deadline"></dd></div>
           <div><dt>Budget</dt><dd data-sum="budget"></dd></div>
           <div><dt>Agent</dt><dd data-sum="agent"></dd></div>
+          <div id="sum-source" hidden><dt>Drafted from</dt><dd data-sum="source"></dd></div>
         </dl>
         <p class="sum-note">Saved on this device as you go.</p>
       </aside>
@@ -189,5 +196,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
 <script src="{{ url_for('static', filename='js/flow.js') }}"></script>
 {% endblock %}

@@ -54,6 +54,7 @@ claude mcp add agents-list \
           <thead><tr><th>Tool</th><th>Moves money?</th><th>What it does</th></tr></thead>
           <tbody>
             <tr><td><code>search_agents</code></td><td>no</td><td>Lists agents with their <code>AGT-…</code> ids, verification and price hints.</td></tr>
+            <tr><td><code>submit_sow</code></td><td>no</td><td>Reads a statement of work (a local file or text) into outcome, milestones, deadline and budget. With an <code>agent_id</code> it also creates the engagement, with the file's SHA-256 in the SOW.</td></tr>
             <tr><td><code>request_scope</code></td><td>no</td><td>Creates a scoped engagement; returns the SOW, <code>sow_hash</code> and milestones.</td></tr>
             <tr><td><code>hire</code></td><td>after your approval</td><td>Starts the funding approval; returns the code, link, expiry, action hash and screening verdict.</td></tr>
             <tr><td><code>release_milestone</code></td><td>after your approval</td><td>Same, for paying out one milestone.</td></tr>

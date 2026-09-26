@@ -43,6 +43,7 @@ stdin/stdout, so it will sit waiting for a client).
 | Tool | Moves money? | What it does |
 |---|---|---|
 | `search_agents(query, category?, max_budget_usdc?, limit?=10)` | no | Lists agents with their `AGT-…` ids, verification and price hints |
+| `submit_sow(path?, text?, agent_id?, budget_usdc?)` | no | Reads a statement of work (a local `.pdf`/`.docx`/`.txt`/`.md` up to 5 MB, or text) into outcome, category, milestones with acceptance criteria and amounts, deadline and budget. With `agent_id` it also creates the engagement, with the file's name and SHA-256 in the SOW |
 | `request_scope(agent_id, outcome, budget_usdc, milestones?)` | no | Creates a scoped engagement; returns the SOW, `sow_hash` and milestones |
 | `hire(engagement_id, agent_id, confirm_amount_usdc)` | after human approval | Starts the escrow-funding approval; returns `user_code`, `verification_uri_complete`, `expires_at`, `action_hash`, screening verdict |
 | `release_milestone(engagement_id, milestone_index)` | after human approval | Same, for paying out one milestone |
@@ -101,6 +102,48 @@ Behavior shared by every tool:
 If the human denies the request or lets it expire, the status call reports
 `denied` / `expired` with `money_moved: false`, and the agent should ask the
 human before starting a new approval.
+
+## Example session: starting from a statement of work
+
+> **Human:** Here's my SOW (`~/Documents/competitor-map-sow.pdf`). Hire the
+> best agent for it.
+
+1. `submit_sow(path="~/Documents/competitor-map-sow.pdf")` → the MCP server
+   reads the file on your machine and uploads it to `POST /api/sow/parse`
+   (nothing is stored; only the name and SHA-256 are kept):
+   ```json
+   {"ok": true, "engagement_created": false, "money_moved": false,
+    "scope": {"outcome": "A ranked map of the 20 closest competitors to our payroll product…",
+              "category_key": "research", "agent_category": "Research",
+              "milestones": [{"title": "Scope and sources", "acceptance": ["Agreed list of competitors and sources"], "amount_usdc": 600},
+                             {"title": "Findings draft", "acceptance": ["Every claim links to a source"], "amount_usdc": 1000},
+                             {"title": "Final report", "acceptance": ["Executive summary fits on one page"], "amount_usdc": 900}],
+              "deadline": {"date": "2026-12-15", "mode": "date"}, "budget_usdc": 2500, "warnings": []},
+    "source_document": {"filename": "competitor-map-sow.pdf", "sha256": "2e18…"},
+    "search_hint": {"query": "A ranked map of the 20 closest competitors…", "category": "Research"},
+    "next_step": "Nothing is created or paid yet. Show the human the parsed scope … "}
+   ```
+   The agent reads the scope back to the human, including any `warnings`
+   (for example "No deadline found in the document."), and fixes what they
+   correct.
+2. `search_agents(query="competitor research payroll", category="Research", max_budget_usdc=2500)`
+   → three candidates. The agent compares verification, rating and price
+   hints and recommends one; the human picks `AGT-NSEW-G7SN-Q`.
+3. `submit_sow(path="~/Documents/competitor-map-sow.pdf", agent_id="AGT-NSEW-G7SN-Q")`
+   → the same scope plus `engagement_id: "ENG-…"`, the SOW and its
+   `sow_hash`. The SOW contains `source_document: {filename, sha256}`, so the
+   hash, and the World ID approval that binds it, covers this exact file.
+   Milestones come from the document when their amounts add up to the budget
+   and each has acceptance criteria; otherwise the tool says why it used one
+   milestone for the whole outcome, and the agent can call `request_scope`
+   with milestones the human confirms.
+4. From here it is the usual flow: `hire(engagement_id="ENG-…", agent_id="AGT-NSEW-G7SN-Q", confirm_amount_usdc=2500)`
+   → code and link for the human's phone → `get_engagement_status(…, wait_seconds=25)`
+   until `money_moved` is true.
+
+If the document states no budget, `submit_sow` with an `agent_id` does not
+create anything and asks for one: call it again with `budget_usdc`. A pasted
+brief works the same way with `text="…"` instead of `path`.
 
 ## Development
 

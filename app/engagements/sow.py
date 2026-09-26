@@ -7,11 +7,16 @@ approval for the engagement.
                     deadline=1790000000, category="Development")
     sow_hash(sow)   # "0x…", stable for the same inputs
 
+When the scope was drafted from an uploaded document, ``source_document=
+{"filename", "sha256"}`` records which file (by digest) it came from, so the
+hash, and every approval bound to it, covers the document too.
+
 Money is integer micro-USDC; ``parse_usdc`` turns "12.5" / 12.5 into 12500000
 through Decimal, never float arithmetic.
 """
 from __future__ import annotations
 
+import re
 import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -85,6 +90,21 @@ def _text(value, field: str, limit: int, *, required: bool = True, multiline: bo
     return text
 
 
+def normalize_source_document(value) -> dict | None:
+    """``{"filename", "sha256"}`` of the document the scope was drafted from
+    (see app/intake/sow_parse.py), or None."""
+    if value in (None, {}, ""):
+        return None
+    if not isinstance(value, dict):
+        raise SowError("source_document must be an object", "source_document")
+    digest = str(value.get("sha256") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SowError("source_document.sha256 must be 64 hex characters", "source_document.sha256")
+    name = re.split(r"[\\/]", str(value.get("filename") or ""))[-1]
+    name = _text(re.sub(r"[\x00-\x1f\x7f]", "", name), "source_document.filename", 200)
+    return {"filename": name, "sha256": digest}
+
+
 def title_hash(title: str) -> str:
     """Milestone title digest bound into approval actions (§1 ``title_hash``)."""
     return sow_hash(title)
@@ -133,7 +153,7 @@ def normalize_milestones(raw, budget_micro: int) -> list[dict]:
 
 def build_sow(*, agent_public_id: str, outcome: str, budget_micro: int,
               milestones: list[dict] | None = None, deadline: int | None = None,
-              category: str | None = None) -> dict:
+              category: str | None = None, source_document: dict | None = None) -> dict:
     """The canonical SOW object. Same inputs → same dict → same hash."""
     outcome = _text(outcome, "outcome", MAX_OUTCOME, multiline=True)
     if isinstance(budget_micro, bool) or not isinstance(budget_micro, int) or budget_micro <= 0:
@@ -152,6 +172,9 @@ def build_sow(*, agent_public_id: str, outcome: str, budget_micro: int,
         sow["category"] = category
     if deadline is not None:
         sow["deadline"] = deadline
+    source = normalize_source_document(source_document)
+    if source:
+        sow["source_document"] = source
     canonical(sow)   # fail fast on anything non-canonical
     return sow
 

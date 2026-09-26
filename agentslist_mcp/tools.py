@@ -12,6 +12,7 @@ on the ledger.
 """
 from __future__ import annotations
 
+import os
 import time
 from decimal import Decimal, InvalidOperation
 
@@ -21,6 +22,9 @@ from agentslist_mcp.client import AgentListAPIError
 MAX_WAIT_SECONDS = 25
 POLL_INTERVAL_SECONDS = 2.0
 MAX_SEARCH_LIMIT = 50
+# Mirrors app/intake/sow_parse.py; checked locally so a wrong file never leaves the machine.
+SOW_EXTENSIONS = (".pdf", ".docx", ".txt", ".md")
+SOW_MAX_BYTES = 5 * 1024 * 1024
 
 # §3 approval states. "approved" is not terminal: the executor runs next and
 # the approval becomes "consumed" (success) or "failed".
@@ -422,3 +426,151 @@ def subhire(client, parent_engagement_id: str, agent_id: str, budget_usdc, categ
             "mandate": body.get("mandate") or child.get("mandate"),
             "mandate_token": body.get("mandate_token"), "chain_page_url": body.get("chain_page_url"),
             "money_moved": False, "message": message}
+
+
+# --- statement of work upload -------------------------------------------------
+
+_SCOPE_KEYS = ("method", "title", "outcome", "brief", "category_key", "category_label", "agent_category",
+               "milestones", "acceptance", "deadline", "budget_usdc", "warnings", "notes")
+
+
+def _read_sow(path: str) -> tuple[str | None, bytes | None, dict | None]:
+    """(filename, bytes, None) for a local SOW file, or (None, None, error)."""
+    full = os.path.abspath(os.path.expanduser(path.strip()))
+    name = os.path.basename(full)
+    if not os.path.isfile(full):
+        return None, None, _error("FILE_NOT_FOUND", f"no file at {full}", "path")
+    if os.path.splitext(name)[1].lower() not in SOW_EXTENSIONS:
+        return None, None, _error("UNSUPPORTED_FILE_TYPE", "the SOW must be a .pdf, .docx, .txt or .md file", "path")
+    size = os.path.getsize(full)
+    if size > SOW_MAX_BYTES:
+        return None, None, _error("FILE_TOO_LARGE", f"{name} is {size} bytes; the limit is 5 MB", "path")
+    if size == 0:
+        return None, None, _error("EMPTY_DOCUMENT", f"{name} is empty", "path")
+    try:
+        with open(full, "rb") as fh:
+            return name, fh.read(), None
+    except OSError as exc:
+        return None, None, _error("FILE_UNREADABLE", f"could not read {full}: {exc.strerror or exc}", "path")
+
+
+def _sow_milestones(scope: dict, budget: Decimal) -> tuple[list | None, str | None]:
+    """Milestones for POST /api/engagements from the parsed scope, or (None,
+    why) when they can't be used as-is (the API then makes one milestone for
+    the whole outcome). Amounts are decimal strings so they sum exactly."""
+    ms = [m for m in (scope.get("milestones") or []) if isinstance(m, dict) and m.get("title")]
+    if not ms:
+        return None, "The document has no milestones, so the SOW uses one milestone for the whole outcome."
+    if any(not m.get("acceptance") for m in ms):
+        return None, ("Some milestones in the document have no acceptance criteria, so the SOW uses one "
+                      "milestone for the whole outcome. To keep the document's milestones, ask the human for "
+                      "the missing criteria and call request_scope with milestones.")
+    amounts = [m.get("amount_usdc") for m in ms]
+    micro = int(budget * 1_000_000)
+    if all(a is None for a in amounts):
+        each = micro // len(ms)
+        parts = [each] * (len(ms) - 1) + [micro - each * (len(ms) - 1)]
+        note = "The document has no milestone amounts, so the budget was split evenly across its milestones."
+    elif any(a is None for a in amounts):
+        return None, ("Some milestones in the document have no amount, so the SOW uses one milestone for the "
+                      "whole outcome. Ask the human for the amounts and call request_scope with milestones.")
+    else:
+        parts = [int(Decimal(str(a)) * 1_000_000) for a in amounts]
+        if sum(parts) != micro:
+            return None, (f"The milestone amounts add up to {Decimal(sum(parts)) / 1_000_000} USDC, not the "
+                          f"budget of {budget} USDC, so the SOW uses one milestone for the whole outcome.")
+        note = None
+    out = [{"title": str(m["title"]).strip(),
+            "acceptance": "\n".join("- " + str(c).strip() for c in m["acceptance"] if str(c).strip()),
+            "amount_usdc": format(Decimal(p).scaleb(-6).normalize(), "f")} for m, p in zip(ms, parts)]
+    return out, note
+
+
+def submit_sow(client, path: str | None = None, text: str | None = None, agent_id: str | None = None,
+               budget_usdc=None) -> dict:
+    """Parse a statement of work (a local file or pasted text) with the app's
+    POST /api/sow/parse. With ``agent_id`` it also creates the engagement,
+    carrying ``source_document`` so the SOW hash (and the World ID approval
+    that ``hire`` starts) covers the document. Never moves money."""
+    has_path = isinstance(path, str) and path.strip()
+    has_text = isinstance(text, str) and text.strip()
+    if bool(has_path) == bool(has_text):
+        return _error("INVALID_REQUEST", "pass exactly one of path (a local .pdf/.docx/.txt/.md file) or text",
+                      "path")
+    if agent_id is not None and str(agent_id).strip():
+        agent_id, err = _check_agent_id(agent_id)
+        if err:
+            return err
+    else:
+        agent_id = None
+    if budget_usdc is not None:
+        budget_usdc, err = _check_usdc(budget_usdc, "budget_usdc")
+        if err:
+            return err
+    try:
+        if has_path:
+            name, data, err = _read_sow(path)
+            if err:
+                return err
+            scope = client.parse_sow(name, data)
+        else:
+            scope = client.parse_sow_text(text)
+    except AgentListAPIError as exc:
+        return _api_error(exc)
+
+    source = scope.get("source") or {}
+    source_document = {"filename": source.get("filename"), "sha256": source.get("sha256")}
+    out = {"ok": True, "scope": {k: scope.get(k) for k in _SCOPE_KEYS}, "source_document": source_document,
+           "engagement_created": False, "money_moved": False, "warnings": []}
+    again = f"path={path!r}" if has_path else "text=<the same text>"
+
+    if agent_id is None:
+        query = scope.get("brief") or scope.get("outcome") or ""
+        out["search_hint"] = {"query": query[:200], "category": scope.get("agent_category")}
+        out["next_step"] = (
+            "Nothing is created or paid yet. Show the human the parsed scope (outcome, milestones, deadline, "
+            "budget and any warnings) and let them correct it. Then call "
+            f"search_agents(query={query[:120]!r}, category={scope.get('agent_category')!r}), pick an agent "
+            f"with the human, and call submit_sow({again}, agent_id=<AGT-...>) to draft the engagement "
+            "bound to this document.")
+        return out
+
+    if not scope.get("outcome"):
+        out["next_step"] = ("The document has no clear outcome, so no engagement was created. Ask the human "
+                            "what result they want, then call request_scope with it.")
+        return out
+    budget = budget_usdc if budget_usdc is not None else scope.get("budget_usdc")
+    if budget is None:
+        out["next_step"] = ("The document states no budget, so no engagement was created. Ask the human for "
+                            f"a budget in USDC and call submit_sow({again}, agent_id={agent_id!r}, budget_usdc=<amount>).")
+        return out
+    budget, err = _check_usdc(budget, "budget_usdc")
+    if err:
+        return err
+    milestones, note = _sow_milestones(scope, Decimal(str(budget)))
+    if note:
+        out["warnings"].append(note)
+    payload = {"agent_id": agent_id, "outcome": scope["outcome"], "budget_usdc": budget,
+               "source_document": source_document}
+    if milestones:
+        payload["milestones"] = milestones
+    deadline = (scope.get("deadline") or {}).get("date")
+    if deadline:
+        payload["deadline"] = deadline
+    try:
+        eng = _engagement(client.create_engagement(payload))
+    except AgentListAPIError as exc:
+        view = _api_error(exc)
+        view["scope"] = out["scope"]
+        return view
+    eid = _engagement_id(eng)
+    out.update({
+        "engagement_created": True, "engagement_id": eid, "agent_id": eng.get("agent_id", agent_id),
+        "status": eng.get("status"), "sow": eng.get("sow"), "sow_hash": eng.get("sow_hash"),
+        "milestones": eng.get("milestones"), "screening": eng.get("screening"),
+        "next_step": ("Nothing is paid yet. Show the human the SOW (it records the document's SHA-256), its "
+                      "milestones and the total. If they agree, call "
+                      f"hire(engagement_id={eid!r}, agent_id={agent_id!r}, confirm_amount_usdc={budget}); "
+                      "that sends a World ID approval to their phone."),
+    })
+    return out

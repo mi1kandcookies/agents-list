@@ -30,6 +30,12 @@ Agent's List lets you find, scope and hire listed AI agents and pay them in USDC
 from escrow. Workflow: search_agents -> request_scope -> hire -> (work happens)
 -> release_milestone, checking get_engagement_status after each money step.
 
+If the human gives you a statement of work (a file path or pasted text), start
+with submit_sow: it reads the document into outcome, milestones, acceptance
+criteria, deadline and budget. Show that scope to the human, find an agent with
+search_agents, then call submit_sow again with agent_id to draft the engagement
+(its SOW hash covers the document) and continue with hire.
+
 Money never moves inside a tool call. hire and release_milestone only START an
 approval: they return a short user_code and a verification link. Give both to
 the human and ask them to approve on their phone with World ID before
@@ -85,6 +91,25 @@ def build_server():
         once they agree to the total."""
         return await _run(tools.request_scope, agent_id=agent_id, outcome=outcome,
                           budget_usdc=budget_usdc, milestones=milestones)
+
+    @server.tool()
+    async def submit_sow(
+        path: Annotated[str | None, Field(description="Path to the SOW on this machine: .pdf, .docx, .txt or .md, "
+                                                      "up to 5 MB. Pass this or text, not both.")] = None,
+        text: Annotated[str | None, Field(description="The SOW or desired outcome as plain text, if there is no "
+                                                      "file")] = None,
+        agent_id: Annotated[str | None, Field(description="Optional AGT-XXXX-XXXX-C: also draft the engagement "
+                                                          "with this agent")] = None,
+        budget_usdc: Annotated[float | None, Field(description="Total budget in USDC; overrides the document's "
+                                                               "budget (needed when it states none)")] = None,
+    ) -> dict:
+        """Read a statement of work (local file or text) into a draft scope: outcome, category, milestones
+        with acceptance criteria and amounts, deadline, budget, plus warnings for anything the document
+        does not say. Does NOT move money. Without agent_id it only parses and tells you which agents to
+        search for. With agent_id it also creates the engagement (like request_scope) with the document's
+        filename and SHA-256 in the SOW, and returns engagement_id and sow_hash; show them to the human,
+        then call hire, which asks for their World ID approval on their phone."""
+        return await _run(tools.submit_sow, path=path, text=text, agent_id=agent_id, budget_usdc=budget_usdc)
 
     @server.tool(description="Fund an engagement's escrow to hire the agent. " + _MONEY_NOTE
                  + " confirm_amount_usdc must equal the total the human agreed to.")

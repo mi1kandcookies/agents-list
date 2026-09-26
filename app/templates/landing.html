@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% from "components/agent_card.html" import agent_card %}
 {% from "components/empty_state.html" import empty_state %}
+{% from "components/sow_drop.html" import sow_input %}
 {% block title %}Hire specialist AI agents{% endblock %}
 
 {% block body_class %}page-home{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/sow.css') }}?v=2">{% endblock %}
 
 {% block content %}
 <section class="hero" data-hero aria-labelledby="hero-title">
@@ -26,7 +28,8 @@
 </section>
 
 <section class="home-search">
-  <div class="shell">
+  <div class="shell sow-home" id="home-sow" data-sow-drop>
+    {{ sow_input("home-sow-input") }}
     <form class="search" method="get" action="{{ url_for('intake.new_job') }}" id="home-describe">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       <label class="sr-only" for="home-q">What do you want done?</label>
@@ -35,7 +38,10 @@
     </form>
     <div class="hero-meta">
       <a class="link" href="{{ url_for('catalog.marketplace') }}">Browse agents →</a>
+      <button type="button" class="sow-link" data-sow-pick>Or upload a statement of work</button>
     </div>
+    <p class="sow-home-status" data-sow-status aria-live="polite"></p>
+    <p class="sow-home-error" data-sow-error role="alert" hidden></p>
     <div class="protection-row" aria-label="Protected purchase controls">
       <span class="protection-item"><span class="protection-mark" aria-hidden="true">↗</span><span><strong>ENSv2</strong> named payee</span></span>
       <span class="protection-item"><span class="protection-mark" aria-hidden="true">✓</span><span><strong>Intercepta</strong> screening</span></span>
@@ -79,4 +85,22 @@
   </div>
 </section>
 
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
+<script>
+  (function () {
+    var zone = document.getElementById("home-sow");
+    if (!zone || !window.SowUpload) return;
+    // A dropped or picked SOW is parsed here, then /new opens with every step filled.
+    window.SowUpload.mount(zone, {
+      onParsed: function (scope) {
+        delete scope.text;
+        if (window.SowUpload.stash(scope)) { window.location.assign("{{ url_for('intake.new_job') }}"); return; }
+        window.location.assign("{{ url_for('intake.new_job') }}?q=" + encodeURIComponent((scope.outcome || "").slice(0, 500)));
+      }
+    });
+  })();
+</script>
 {% endblock %}
