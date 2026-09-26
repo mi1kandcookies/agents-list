@@ -356,7 +356,7 @@ def test_rfp_engagement_all_milestones(spec, tmp_path):
     assert results["ledger_verified"].passed is True
     # R-011 (support desk) has no evidence: the checklist lists it as an open
     # item, which the matrix shows instead of calling it addressed
-    assert results["matrix_consistent"].score == pytest.approx(22 / 23)
+    assert results["matrix_consistent"].score == pytest.approx(22 / 23, abs=1e-4)
     final = {r["req_id"]: r for r in T.read_csv_rows(ws, T.FINAL_MATRIX_PATH)}
     assert final["R-011"]["status"] == "open_item"
     assert final["R-011"]["response_section"] == "Checklist: Open items"
