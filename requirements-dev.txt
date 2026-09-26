@@ -1,2 +1,8 @@
 -r requirements.txt
+# CI installs only this file. The agentkit model adapter tests build real
+# anthropic/openai SDK response types, so the provider SDKs are included
+# here to keep those tests running in CI. Runtime stays unaffected: the web
+# app never imports them and agentkit loads them lazily. (The MCP SDK stays
+# out: tests/test_mcp_tools.py runs the tool logic without it.)
+-r requirements-agents.txt
 pytest>=8.3

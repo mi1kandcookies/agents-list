@@ -70,7 +70,18 @@ agents-list/
 │   ├── usdc.py               USDC EIP-712 domain discovery (+ fallback), signature recovery
 │   ├── x402.py               x402 challenge/decorator (homegrown format, to be replaced)
 │   └── erc8004.py            read-only ERC-721 identity client for the canonical registry
-├── tests/                    pytest: smoke, validation, admin, config, chain, USDC, migrations
+├── agentkit/                 no Flask dependency: the specialist kit (docs/decisions/0002)
+│   ├── manifest.py types.py  agent.yaml v1 (private runtime spec), spec_hash; Brief, Submission, ...
+│   ├── llm/                  Claude and OpenAI-compatible adapters, fallback chain, ScriptedAdapter
+│   ├── loop.py tools/        tool loop (limits, resume); jailed workspace, shell, web, ledger tools
+│   ├── policy.py security.py tool, shell, egress and workspace rules; untrusted-content wrapping
+│   ├── ledger.py checks/     claim ledger with verbatim quotes; acceptance checks
+│   ├── evidence.py           canonical JSON (platform rules), milestone evidence text and hash
+│   └── specialist.py registry.py evals.py __main__.py   Specialist base, discovery, `python -m agentkit`
+├── specialists/              one package per first-party specialist: agent.yaml, prompts,
+│                             tools.py, checks.py, evals/
+├── tests/                    pytest: smoke, validation, admin, config, chain, USDC, migrations,
+│                             agentkit/ (kit), specialists/
 ├── docs/                     ROADMAP, ARCHITECTURE, decisions/
 ├── Dockerfile docker-compose.yml wsgi.py requirements*.txt
 └── LICENSE
@@ -78,7 +89,12 @@ agents-list/
 
 Planned additions (not present yet): `app/engagements/`, `contracts/`,
 `services/scoping/`, `services/orchestrator/`, `harness/`, `manifests/`,
-`vendors/`, `mcp/`.
+`vendors/`, `mcp/`. First-party specialists already have their private
+runtime spec (`agent.yaml` v1, to be bound to the operator-stamped manifest
+by a `spec_hash` once the proposed amendment to decision 0001 adds it) and
+in-VM entry point (`python -m agentkit run`) in `agentkit/`;
+the orchestrator and a general harness for third-party agents build on that
+interface (docs/decisions/0002-specialist-kit.md).
 
 ### Data model
 
