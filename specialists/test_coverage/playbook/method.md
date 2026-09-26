@@ -17,9 +17,14 @@
    profile saved under that name is fine).
 3. `parse_coverage` with `out: deliverables/m1-baseline/coverage-summary.json`.
 4. `run_test_matrix` with `runs: 5`, `runs_dir: deliverables/m1-baseline/runs`
-   and a command that writes JUnit XML to `{junit}` and varies order with
-   `{seed}` when the stack supports it. Then `parse_test_results` with
-   `out: deliverables/m1-baseline/flake-census.json`.
+   and a command that writes JUnit XML to `{junit}` and varies test order
+   with `{seed}` where the stack allows (pytest: install pytest-randomly in
+   the engagement environment, not the repo's pins, and pass
+   `--randomly-seed={seed}`; Jest: `--randomize --seed={seed}`). Then
+   `parse_test_results` with `out: deliverables/m1-baseline/flake-census.json`;
+   its `distinct_orders` shows whether the order really varied. If it could
+   not vary, say so under **Flaky tests**: order-dependent flakes may be
+   missed.
 5. `git_churn` (default 180 days) to `deliverables/m1-baseline/churn.csv`,
    then `rank_targets` to `deliverables/m1-baseline/targets.csv`.
 6. Write `baseline.md` with the sections the milestone lists. Explain every
@@ -35,8 +40,9 @@ git (JaCoCo by package, Go by import path, LCOV often absolutely), so each
 report path takes the churn of the git path it shares the longest path
 suffix with; `rank_targets` lists ambiguous matches, which the plan should
 resolve. The proposed floor per file defaults to the current line coverage
-+ 20pp, rounded up to 5, capped at 90; adjust it in the plan with a reason,
-never silently.
+plus 20pp, rounded up to 5, capped at 90, and never below the current
+coverage rounded down to 5; adjust it in the plan with a reason, never
+silently.
 
 ## Default positions (unless the SOW says otherwise)
 

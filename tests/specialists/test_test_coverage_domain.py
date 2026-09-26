@@ -304,6 +304,8 @@ def test_rank_targets_orders_by_risk(tmp_path):
     assert [r["path"] for r in out["targets"]] == ["ledgerly/rates.py", "ledgerly/util.py"]
     assert out["targets"][1]["risk_score"] == 0.0  # fully covered
     assert out["targets"][0]["proposed_floor_pct"] == 70
+    # +20pp capped at 90, but a floor never sits below today's coverage
+    assert [T.proposed_floor(p) for p in (None, 30.77, 72.0, 88.0, 97.0)] == [20, 55, 90, 90, 95]
     lines = (tmp_path / "deliverables/t.csv").read_text().splitlines()
     assert lines[0] == ",".join(T.TARGET_COLUMNS)
     write(tmp_path, "badchurn.csv", "file,n\n")

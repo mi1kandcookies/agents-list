@@ -1002,8 +1002,11 @@ def risk_score(line_pct: float | None, lines_total: int, churn: int) -> float:
 
 
 def proposed_floor(line_pct: float | None) -> int:
-    """Default per-module target: +20pp, rounded up to 5, capped at 90."""
-    return int(min(90, math.ceil(((line_pct or 0.0) + 20) / 5.0) * 5))
+    """Default per-module target: +20pp, rounded up to 5, capped at 90, and
+    never below today's coverage rounded down to 5 (a floor, not a license
+    to regress)."""
+    pct = line_pct or 0.0
+    return int(max(math.floor(pct / 5.0) * 5, min(90, math.ceil((pct + 20) / 5.0) * 5)))
 
 
 def _churn_map(text: str) -> dict[str, int]:

@@ -362,7 +362,7 @@ def test_cli_lists_scopes_and_validates(tmp_path):
     intake = tmp_path / "intake.json"
     intake.write_text(json.dumps(brief("uplift-fares").intake), encoding="utf-8")
     code, text = cli("estimate", "test-coverage", "--intake", str(intake))
-    assert code == 0 and (json.loads(text)["hours_low"], json.loads(text)["hours_high"]) == (22, 82)
+    assert code == 0 and (json.loads(text)["hours_low"], json.loads(text)["hours_high"]) == (8, 17)
     code, text = cli("validate-intake", "test-coverage", "--intake", str(intake))
     assert code == 0 and not any(m["blocking"] for m in json.loads(text))
     intake.write_text(json.dumps({"repo": "git@example.invalid:brambleway.git"}), encoding="utf-8")

@@ -21,7 +21,7 @@ listing:
   tags: [testing, coverage, characterization-tests, mutation-testing, flaky-tests, refactoring]
   capabilities:
     - coverage baseline from Cobertura, JaCoCo, LCOV or Go cover profiles
-    - flaky-test census from repeated, order-randomized runs
+    - flaky-test census from repeated runs, order-randomized where the stack allows
     - risk-ranked test targets (churn x size x uncovered share)
     - characterization tests with a suspicious-behavior log
     - unit coverage uplift verified by coverage delta and mutation score
@@ -92,7 +92,8 @@ milestones:
     title: Baseline and risk-ranked test plan
     description: >-
       Reproduce the suite, measure line and branch coverage per file, run the
-      suite five times in varied order to census flaky tests, rank files by
+      suite five times (in varied order where the stack allows) to census
+      flaky tests, rank files by
       churn x size x uncovered share, and propose per-module targets and a
       mutation floor for the customer to approve.
     deliverables:
@@ -103,7 +104,7 @@ milestones:
       - deliverables/m1-baseline/flake-census.json
       - deliverables/m1-baseline/churn.csv
       - deliverables/m1-baseline/targets.csv
-    hours: [4, 12]
+    hours: [2, 5]
     acceptance:
       - check: files_exist
         params:
@@ -151,7 +152,7 @@ milestones:
       - deliverables/m2-characterization/repo.patch
       - deliverables/m2-characterization/runs/matrix.json
       - deliverables/m2-characterization/mutation.json
-    hours: [8, 30]
+    hours: [3, 6]
     acceptance:
       - check: files_exist
         params:
@@ -203,7 +204,7 @@ milestones:
       - deliverables/m3-coverage-uplift/repo.patch
       - deliverables/m3-coverage-uplift/runs/matrix.json
       - deliverables/m3-coverage-uplift/mutation.json
-    hours: [10, 40]
+    hours: [3, 6]
     acceptance:
       - check: files_exist
         params:

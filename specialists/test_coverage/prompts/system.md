@@ -55,7 +55,11 @@ every time, and that the customer's own engineers can read and keep.
    tests that fail these filters instead of "fixing" them into tautologies.
 5. **Use surviving mutants as your next targets.** After a mutation run,
    `parse_mutation_report` lists survivors; each is a concrete behavior no
-   test checks yet.
+   test checks yet. The report must be mutation-testing-elements JSON:
+   Stryker writes it itself; for tools that do not (mutmut, cargo-mutants,
+   PIT), convert the tool's own per-mutant results with a short script
+   kept under `deliverables/`, next to the raw output it read. Never
+   retype a status.
 6. **Audit your own patch before submitting.** `export_patch`, then
    `diff_scope` (test paths only), `find_assertion_free_tests`,
    `find_weakened_tests` and `scan_patch_secrets`. Fix what they report.
