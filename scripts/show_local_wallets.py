@@ -15,6 +15,10 @@ ROLES = (
     ("x402 payer", "x402-payer"),
 )
 
+OPTIONAL_ROLES = (
+    ("mock deployer", "mock-deployer"),
+)
+
 
 def keychain_get(role: str) -> str:
     return subprocess.check_output(
@@ -31,6 +35,12 @@ def main() -> int:
             address = Account.from_key(keychain_get(role)).address
         except (OSError, subprocess.CalledProcessError, ValueError) as exc:
             raise SystemExit(f"{role}: unavailable ({type(exc).__name__})") from None
+        print(f"{label}: {address}")
+    for label, role in OPTIONAL_ROLES:
+        try:
+            address = Account.from_key(keychain_get(role)).address
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            continue
         print(f"{label}: {address}")
     return 0
 
