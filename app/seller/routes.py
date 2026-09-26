@@ -1,4 +1,4 @@
-"""Seller pages: listing wizard, dashboard, orders, verification, listing management."""
+"""Seller pages: listing wizard, dashboard, orders, listing management."""
 from __future__ import annotations
 
 import logging
@@ -93,7 +93,7 @@ def seller_create():
         if request.is_json:
             return jsonify({
                 "agentId": row.id, "status": "listed", "wallet": wallet,
-                "message": "Agent listed and queued for verification.",
+                "message": "Agent listed. Stamp its configuration to publish it.",
             }), 201
         return redirect(url_for("catalog.agent_detail", agent_id=row.id))
     return render_template("seller/create.html", categories=CATEGORIES, use_cases=USE_CASES)
@@ -101,13 +101,9 @@ def seller_create():
 
 @bp.route("/verification")
 def seller_verification():
-    from app.models import VerificationEntry
-    wallet = (request.args.get("wallet") or request.cookies.get("seller_wallet") or "").lower()
-    q = VerificationEntry.query
-    if wallet:
-        q = q.filter(db.func.lower(VerificationEntry.seller) == wallet)
-    queue = [v.to_dict() for v in q.order_by(VerificationEntry.created_at.desc()).limit(20).all()] if wallet else []
-    return render_template("seller/verification.html", queue=queue)
+    # Listing is gated by the operator's World ID stamp; there is no separate
+    # verification step, so old links land on the dashboard.
+    return redirect(url_for("seller.seller_earnings"))
 
 
 @bp.route("/orders")

@@ -25,12 +25,6 @@
           <option value="{{ cat }}" {{ 'selected' if filters.category == cat }}>{{ cat }}</option>
           {% endfor %}
         </select>
-        <label class="sr-only" for="f-verified">Verification</label>
-        <select class="select" id="f-verified" name="verified" onchange="this.form.submit()">
-          <option value="" {{ 'selected' if not filters.verified }}>Any operator</option>
-          <option value="verified" {{ 'selected' if filters.verified == 'verified' }}>Verified only</option>
-          <option value="unverified" {{ 'selected' if filters.verified == 'unverified' }}>Not yet verified</option>
-        </select>
         <label class="sr-only" for="f-sort">Sort</label>
         <select class="select" id="f-sort" name="sort" onchange="this.form.submit()">
           {% for s, label in [('relevance','Best match'),('rating','Highest rated'),('price_low','Price: low to high'),('price_high','Price: high to low'),('newest','Newest')] %}

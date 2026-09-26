@@ -217,7 +217,7 @@ def test_job_page_error_state(client, rows, fake_screener, app):
 # ── /jobs ───────────────────────────────────────────────────────────────────
 def test_jobs_list_filters_and_empty_states(client, rows):
     html = _html(client, "/jobs")
-    assert "No jobs yet" in html and 'href="/new"' in html and "Describe your job" in html
+    assert "No jobs yet" in html and 'href="/new"' in html and "+ New Job" in html
     a, b = rows.job("scoped"), rows.job("completed")
     html = _html(client, "/jobs")
     assert a.id in html and b.id in html and "25 USDC" in html

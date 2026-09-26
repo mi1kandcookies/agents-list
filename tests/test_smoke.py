@@ -35,7 +35,7 @@ def test_parameterless_get_routes_do_not_500(app, client, db, seed):
 
 KEPT_PAGES = [
     "/", "/marketplace", "/how-it-works", "/active-jobs", "/past-jobs",
-    "/seller/create", "/seller/earnings", "/seller/orders", "/seller/verification",
+    "/seller/create", "/seller/earnings", "/seller/orders",
     "/admin/dashboard", "/admin/verification-queue", "/admin/moderation", "/admin/payouts",
 ]
 
@@ -64,3 +64,8 @@ def test_dropped_routes_are_gone(client, url):
 def test_health_and_ready(client):
     assert client.get("/api/health").get_json()["service"] == "agents-list"
     assert client.get("/api/ready").get_json()["db"] == "ok"
+
+
+def test_old_verification_page_redirects_to_dashboard(client):
+    resp = client.get("/seller/verification")
+    assert resp.status_code == 302 and resp.headers["Location"].endswith("/seller/earnings")

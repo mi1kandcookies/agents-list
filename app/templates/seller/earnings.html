@@ -56,16 +56,12 @@
     {% if agents %}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Agent</th><th>Category</th><th>Verification</th><th>Price</th><th>Rating</th><th></th></tr></thead>
+        <thead><tr><th>Agent</th><th>Category</th><th>Price</th><th>Rating</th><th></th></tr></thead>
         <tbody>
           {% for agent in agents %}
           <tr>
             <td class="font-bold">{{ agent.name }}</td>
             <td class="text-muted">{{ agent.category }}</td>
-            <td>
-              {% if agent.verified %}<span class="badge badge-verified">{{ agent.verification_tier|title }}</span>
-              {% else %}<span class="badge badge-unverified">{{ agent.verification_tier|replace('_', ' ')|title }}</span>{% endif %}
-            </td>
             <td class="font-mono">${{ "%.4f"|format(agent.current_price) }} per {{ 'token' if agent.billing == 'per_token' else 'min' }}</td>
             <td>{{ "%.1f"|format(agent.rating) }}</td>
             <td><a href="/seller/agents/{{ agent.id }}" class="btn btn-ghost btn-sm">Manage</a></td>
