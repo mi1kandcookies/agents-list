@@ -7,6 +7,7 @@ can be computed is computed here so the numbers in a deliverable come from
 code, not from the model:
 
     inventory_dependencies  parse lockfiles/manifests under repo/ into one list
+                            (files of other ecosystems become "unknown" rows)
     osv_scan                query OSV for every inventoried version, snapshot
                             the answers and the full advisory records
     plan_upgrades           smallest fixing version per vulnerable package,
@@ -14,9 +15,14 @@ code, not from the model:
     package_versions        registry release history (PyPI / npm) for release
                             age and latest-version decisions
     run_tests               run the suite, parse the summary, log the run
+                            with the dependency state it tested
     audit_diff              scope/test-integrity audit of a unified diff
     scan_patterns           old-API detector: regex match counts per rule
     export_patch            git diff of repo/ written to a deliverable
+
+The baseline inventory, the client's test command and upgrade policy, and
+the patch records are written by the specialist (agent.py), not by a tool
+call the model can aim elsewhere.
 
 Tools are plain functions `fn(workspace, *, fetch=None, run=None,
 resolve_path=None, **args)`. Network and subprocess access only go through
@@ -37,32 +43,53 @@ import re
 import shlex
 import tomllib
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
-from agentkit.policy import PolicyGate, jail_path
+from agentkit.policy import PolicyGate, executable_name, jail_path
 
 STATE_DIR = ".agentkit/upgrade_migration"
 OSV_API = "https://api.osv.dev/v1"
 
 # Directories never scanned for manifests (vendored or generated trees).
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "vendor", "dist",
-             "build", "__pycache__", ".tox", ".mypy_cache", ".agentkit"}
+             "build", "__pycache__", ".tox", ".nox", ".mypy_cache", ".agentkit",
+             "site-packages", "dist-packages", "__pypackages__", ".eggs"}
 
-LOCKFILE_NAMES = {"package-lock.json", "poetry.lock", "Pipfile.lock", "go.sum",
+LOCKFILE_NAMES = {"package-lock.json", "poetry.lock", "Pipfile.lock", "go.sum", "uv.lock",
                   "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json"}
+PY_LOCKS = ("poetry.lock", "uv.lock")
+NPM_LOCKS = ("package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml")
+
+# Dependency files of ecosystems v1 does not read. They are reported as
+# "unknown" inventory rows so the plan has to name them (nothing is silently
+# left unscanned). A manifest is not reported when its lockfile is beside it.
+UNSUPPORTED_MANIFESTS = {
+    "Cargo.lock": "Rust", "Cargo.toml": "Rust", "Gemfile.lock": "Ruby", "Gemfile": "Ruby",
+    "composer.lock": "PHP", "composer.json": "PHP", "pom.xml": "Maven", "build.gradle": "Gradle",
+    "build.gradle.kts": "Gradle", "packages.lock.json": "NuGet", "bun.lockb": "Bun",
+    "pubspec.lock": "Dart", "mix.lock": "Elixir", "Package.resolved": "Swift",
+    "environment.yml": "conda", "setup.py": "setup.py", "setup.cfg": "setup.cfg",
+}
+_LOCK_FOR = {"Cargo.toml": "Cargo.lock", "Gemfile": "Gemfile.lock", "composer.json": "composer.lock"}
+REMOVED = "removed"       # upgrade-log `to` for a package taken out of the repo
+UNPINNED = "unpinned"     # upgrade-log `from` for a package that had no exact pin
 
 # Generated trees left out of exported patches (a test run or a local venv
 # must not end up in the customer's diff when the repo has no .gitignore).
 PATCH_EXCLUDES = [f":(exclude,glob)**/{d}/**" for d in
                   ("__pycache__", ".pytest_cache", ".mypy_cache", ".tox", ".venv", "venv", "node_modules")]
 
-# Markers that switch a test off. Adding one in a patch is a test-integrity
-# violation unless the customer approved it.
+# Markers that switch a test off (or narrow what runs). Adding one in a patch
+# is a test-integrity violation unless the customer approved it.
 SKIP_MARKERS = [
-    r"@pytest\.mark\.skip", r"@pytest\.mark\.xfail", r"pytest\.skip\(",
-    r"@unittest\.skip", r"\bit\.skip\(", r"\bdescribe\.skip\(", r"\btest\.skip\(",
-    r"\bxit\(", r"\bxdescribe\(", r"@Disabled\b", r"@Ignore\b", r"\bt\.Skip\(",
+    r"@pytest\.mark\.skip", r"@pytest\.mark\.xfail", r"pytest\.skip\(", r"pytest\.xfail\(",
+    r"\bpytestmark\s*=.*\b(skip|xfail)", r"\bimportorskip\(", r"add_marker\(.*\b(skip|xfail)",
+    r"\bcollect_ignore(_glob)?\b", r"--deselect\b", r"--ignore(-glob)?(=|\s)", r"\baddopts\b.*\s-k\s",
+    r"@unittest\.skip", r"@unittest\.expectedFailure", r"\bskipTest\(", r"\bSkipTest\b",
+    r"\bit\.skip\(", r"\bdescribe\.skip\(", r"\btest\.skip\(", r"\bxit\(", r"\bxdescribe\(",
+    r"\bxtest\(", r"\b(it|test|describe)\.only\(", r"\btestPathIgnorePatterns\b",
+    r"@Disabled\b", r"@Ignore\b", r"\bt\.Skip(Now|f)?\(",
 ]
 TEST_DEF = re.compile(r"^\s*(?:async\s+)?def\s+test_\w*|^\s*(?:it|test)\(\s*['\"`]|"
                       r"^\s*func\s+Test\w+\(|@Test\b")
@@ -196,71 +223,274 @@ def _dep(ecosystem, name, version, source, *, direct=True, dev=False, pinned=Tru
             "pinned": pinned and bool(version)}
 
 
-def _parse_requirements(text: str, source: str) -> list[dict]:
-    out = []
-    dev = bool(re.search(r"(dev|test|lint|ci)", Path(source).name, re.I))
+_DEV_WORD = re.compile(r"(^|[-_.])(dev|develop|test|tests|testing|lint|ci|docs?)([-_.]|$)", re.I)
+_REQ_LINE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)$")
+_EXACT = re.compile(r"===?([A-Za-z0-9.+!_-]+)")
+_COMMENT = re.compile(r"(^|\s)#.*$")
+
+
+def _requirement(line: Any, source: str, *, dev: bool) -> dict | None:
+    """One PEP 508 requirement ("name[extra]==1.0 ; marker") as a row: an
+    exact == pin is its version, anything else is kept as a constraint."""
+    if not isinstance(line, str):
+        return None
+    m = _REQ_LINE.match(line.split(";", 1)[0].strip())
+    if not m:
+        return None
+    name, spec = m.group(1), m.group(2).replace(" ", "")
+    if spec and spec[0] not in "=<>!~@(":
+        return None                       # prose, not a requirement
+    pin = _EXACT.fullmatch(spec)
+    return _dep("PyPI", name, pin.group(1) if pin else None, source,
+                dev=dev, pinned=bool(pin)) | ({} if pin else {"constraint": spec})
+
+
+def _spec_row(name: str, spec: Any, source: str, *, dev: bool, bare_exact: bool) -> dict:
+    """A Poetry / Pipfile table entry (`name = "==1.0"` or `{version = ...}`).
+    Poetry reads a bare "1.2.3" as an exact pin (bare_exact)."""
+    if isinstance(spec, dict):
+        spec = spec.get("version", json.dumps(spec, sort_keys=True))   # git/path/url sources
+    spec = str(spec).replace(" ", "") if not isinstance(spec, list) else json.dumps(spec)
+    pin = _EXACT.fullmatch(spec) or (re.fullmatch(r"(\d[A-Za-z0-9.+!_-]*)", spec) if bare_exact else None)
+    return _dep("PyPI", name, pin.group(1) if pin else None, source,
+                dev=dev, pinned=bool(pin)) | ({} if pin else {"constraint": spec})
+
+
+def _logical_lines(text: str) -> list[str]:
+    """pip requirement-file lines: comments dropped, backslash continuations
+    joined, per-requirement options (--hash=..., --config-settings) cut."""
+    out, buf = [], ""
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line or line.startswith(("-", "git+", "http:", "https:")):
+        line = _COMMENT.sub("", raw).rstrip()
+        if line.endswith("\\"):
+            buf += line[:-1] + " "
             continue
-        line = line.split(";", 1)[0].strip()
-        m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(.*)$", line)
-        if not m:
-            continue
-        name, spec = m.group(1), m.group(2).replace(" ", "")
-        pin = re.fullmatch(r"===?([A-Za-z0-9.+!_-]+)", spec)
-        out.append(_dep("PyPI", name, pin.group(1) if pin else None, source,
-                        dev=dev, pinned=bool(pin)) | ({} if pin else {"constraint": spec}))
+        out.append(re.split(r"\s+--?[A-Za-z]", (buf + line).strip(), maxsplit=1)[0].strip())
+        buf = ""
+    if buf.strip():
+        out.append(re.split(r"\s+--?[A-Za-z]", buf.strip(), maxsplit=1)[0].strip())
     return out
 
 
-def _parse_poetry_lock(text: str, source: str) -> list[dict]:
+def is_requirements_file(rel: str) -> bool:
+    """requirements*.txt, *-requirements.txt, constraints*.txt, and any .txt
+    in a requirements/ folder (pip-compile outputs included)."""
+    p = PurePosixPath(rel)
+    name = p.name.lower()
+    if not name.endswith(".txt"):
+        return False
+    return ("requirements" in name or name.startswith("constraints")
+            or any(part.lower() in ("requirements", "reqs") for part in p.parts[:-1]))
+
+
+def _parse_requirements(text: str, source: str) -> list[dict]:
+    dev = bool(_DEV_WORD.search(PurePosixPath(source).name))
+    out = []
+    for line in _logical_lines(text):
+        if not line or line.startswith(("-", "git+", "http:", "https:")):
+            continue
+        row = _requirement(line, source, dev=dev)
+        if row:
+            out.append(row)
+    return out
+
+
+def _parse_pyproject(text: str, source: str) -> list[dict]:
+    """Declared requirements: [project] dependencies and optional-dependencies,
+    [dependency-groups], [tool.uv] dev-dependencies and Poetry's tables."""
+    data = tomllib.loads(text)
+    tool = data.get("tool") or {}
+    project = data.get("project") or {}
+    rows = [_requirement(r, source, dev=False) for r in project.get("dependencies") or []]
+    for extra, reqs in (project.get("optional-dependencies") or {}).items():
+        rows += [_requirement(r, source, dev=bool(_DEV_WORD.search(extra))) for r in reqs or []]
+    for reqs in (data.get("dependency-groups") or {}).values():
+        rows += [_requirement(r, source, dev=True) for r in reqs or []]
+    rows += [_requirement(r, source, dev=True) for r in (tool.get("uv") or {}).get("dev-dependencies") or []]
+    poetry = tool.get("poetry") or {}
+    tables = [(poetry.get("dependencies"), False), (poetry.get("dev-dependencies"), True)]
+    tables += [((g or {}).get("dependencies"), name != "main") for name, g in (poetry.get("group") or {}).items()]
+    for table, dev in tables:
+        rows += [_spec_row(name, spec, source, dev=dev, bare_exact=True)
+                 for name, spec in (table or {}).items() if name.lower() != "python"]
+    return [r for r in rows if r]
+
+
+def _parse_pipfile(text: str, source: str) -> list[dict]:
+    data = tomllib.loads(text)
+    return [_spec_row(name, spec, source, dev=dev, bare_exact=False)
+            for section, dev in (("packages", False), ("dev-packages", True))
+            for name, spec in (data.get(section) or {}).items()]
+
+
+def _declared_names(rows: list[dict]) -> tuple[set[str], set[str]]:
+    """(every declared name, names declared only as dev dependencies)."""
+    names = {r["name"] for r in rows if r.get("name")}
+    return names, names - {r["name"] for r in rows if not r.get("dev")}
+
+
+def _declared(lock: Path, manifest: str, parse: Callable[[str, str], list[dict]]) -> tuple[set, set] | None:
+    """Direct names from the manifest beside a lockfile; None if there is none."""
+    path = lock.with_name(manifest)
+    if not path.is_file() or _is_link(path):
+        return None
+    try:
+        return _declared_names(parse(path.read_text(encoding="utf-8"), manifest))
+    except (ValueError, KeyError, TypeError, AttributeError, tomllib.TOMLDecodeError):
+        return None
+
+
+def _is_direct(name: str, declared: tuple[set, set] | None) -> bool:
+    """Unknown (no manifest to tell) counts as direct, so a newly added
+    package is never waved through as transitive."""
+    return True if declared is None else name in declared[0]
+
+
+def _parse_poetry_lock(text: str, source: str, declared=None) -> list[dict]:
     data = tomllib.loads(text)
     out = []
     for pkg in data.get("package", []):
         groups = pkg.get("groups") or [pkg.get("category", "main")]
         out.append(_dep("PyPI", pkg["name"], str(pkg["version"]), source,
-                        direct=False, dev="main" not in groups))
+                        direct=_is_direct(normalize_name("PyPI", pkg["name"]), declared),
+                        dev="main" not in groups))
     return out
 
 
-def _parse_pipfile_lock(text: str, source: str) -> list[dict]:
+def _parse_uv_lock(text: str, source: str, declared=None) -> list[dict]:
+    """uv.lock: [[package]] entries; the project's own (editable / virtual)
+    entries name the direct dependencies and are not rows themselves."""
+    pkgs = [p for p in tomllib.loads(text).get("package", []) if isinstance(p, dict) and p.get("name")]
+    roots = [p for p in pkgs if isinstance(p.get("source"), dict) and {"editable", "virtual"} & set(p["source"])]
+    names, dev = (set(declared[0]), set(declared[1])) if declared else (set(), set())
+
+    def dep_names(entries) -> set[str]:
+        return {normalize_name("PyPI", d["name"]) for d in entries or [] if isinstance(d, dict) and d.get("name")}
+    for root in roots:
+        prod = dep_names(root.get("dependencies"))
+        for group in (root.get("optional-dependencies") or {}).values():
+            prod |= dep_names(group)
+        devs = set().union(*(dep_names(g) for g in (root.get("dev-dependencies") or {}).values()))
+        names |= prod | devs
+        dev = (dev | devs) - prod
+    known = declared is not None or bool(roots)
+    root_ids = {id(r) for r in roots}
+    return [_dep("PyPI", p["name"], str(p["version"]), source,
+                 direct=normalize_name("PyPI", p["name"]) in names if known else True,
+                 dev=normalize_name("PyPI", p["name"]) in dev)
+            for p in pkgs if id(p) not in root_ids and p.get("version")]
+
+
+def _parse_pipfile_lock(text: str, source: str, declared=None) -> list[dict]:
     data = json.loads(text)
     out = []
     for section, dev in (("default", False), ("develop", True)):
         for name, info in (data.get(section) or {}).items():
             version = str(info.get("version", "")).lstrip("=") or None
-            out.append(_dep("PyPI", name, version, source, direct=False, dev=dev))
+            out.append(_dep("PyPI", name, version, source,
+                            direct=_is_direct(normalize_name("PyPI", name), declared), dev=dev))
     return out
 
 
-def _parse_package_lock(text: str, source: str, direct_names: set[str]) -> list[dict]:
+def _package_json_rows(data: dict, source: str) -> list[dict]:
+    out = []
+    for section, dev in (("dependencies", False), ("optionalDependencies", False), ("devDependencies", True)):
+        for name, spec in (data.get(section) or {}).items():
+            exact = re.fullmatch(r"=?v?(\d+\.\d+\.\d+[^\s]*)", str(spec))
+            out.append(_dep("npm", name, exact.group(1) if exact else None, source,
+                            dev=dev, pinned=bool(exact)) | ({} if exact else {"constraint": spec}))
+    return out
+
+
+def _parse_package_json(text: str, source: str) -> list[dict]:
+    return _package_json_rows(json.loads(text), source)
+
+
+def _parse_package_lock(text: str, source: str, declared=None) -> list[dict]:
     data = json.loads(text)
     out = []
     packages = data.get("packages")
+    if declared is None and isinstance(packages, dict) and isinstance(packages.get(""), dict):
+        declared = _declared_names(_package_json_rows(packages[""], source))   # the lock's own root
     if isinstance(packages, dict):          # lockfileVersion 2 / 3
         for key, info in packages.items():
             if not key or "node_modules/" not in key or info.get("link"):
                 continue
             name = key.rsplit("node_modules/", 1)[1]
-            direct = key == f"node_modules/{name}" and name in direct_names
+            direct = key == f"node_modules/{name}" and _is_direct(name, declared)
             out.append(_dep("npm", name, info.get("version"), source,
                             direct=direct, dev=bool(info.get("dev"))))
     else:                                   # lockfileVersion 1: top level only
         for name, info in (data.get("dependencies") or {}).items():
             out.append(_dep("npm", name, info.get("version"), source,
-                            direct=name in direct_names, dev=bool(info.get("dev"))))
+                            direct=_is_direct(name, declared), dev=bool(info.get("dev"))))
     return out
 
 
-def _parse_package_json(text: str, source: str) -> list[dict]:
-    data = json.loads(text)
+_YARN_SKIP = re.compile(r"@(workspace|link|portal|patch|file|exec):")
+
+
+def _parse_yarn_lock(text: str, source: str, declared=None) -> list[dict]:
+    """yarn.lock, classic (`version "1.2.3"`) and berry (`version: 1.2.3`):
+    one row per entry, named after its first descriptor."""
+    out, header = [], None
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if not raw[0].isspace():
+            header = raw.strip().rstrip(":")
+            continue
+        m = re.fullmatch(r'  version:?\s+"?([^"\s]+)"?\s*', raw)
+        if header is None or not m or _YARN_SKIP.search(header):
+            continue
+        first = header.split(",")[0].strip().strip('"')
+        at = first.rfind("@")
+        version = m.group(1)
+        if at <= 0 or not version[:1].isdigit() or version.endswith("-use.local"):
+            continue
+        name = first[:at]
+        out.append(_dep("npm", name, version, source, direct=_is_direct(name, declared),
+                        dev=bool(declared) and name in declared[1]))
+    return out
+
+
+def _pnpm_ref(key: Any) -> tuple[str, str] | None:
+    """(name, version) from a pnpm-lock packages key: "/name/1.0.0_peer" (v5),
+    "/name@1.0.0(peer)" (v6) or "name@1.0.0" (v9)."""
+    key = re.sub(r"\(.*$", "", str(key).lstrip("/"))
+    m = re.fullmatch(r"(@[^/@]+/[^/@]+|[^/@]+)@([^/@]+)", key)
+    version = m.group(2) if m else None
+    if not m:
+        m = re.fullmatch(r"(@[^/@]+/[^/@]+|[^/@]+)/([^/]+)", key)
+        version = m.group(2).split("_", 1)[0] if m else None
+    return (m.group(1), version) if m and version[:1].isdigit() else None
+
+
+def _parse_pnpm_lock(text: str, source: str) -> list[dict]:
+    import yaml
+
+    try:
+        data = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(str(exc)) from None
+    if not isinstance(data, dict):
+        raise ValueError("not a mapping")
+    direct, dev, prod = set(), set(), set()
+    for imp in (data.get("importers") or {".": data}).values():
+        for section in ("dependencies", "devDependencies", "optionalDependencies"):
+            for name, ref in ((imp or {}).get(section) or {}).items():
+                version = ref.get("version") if isinstance(ref, dict) else ref
+                pair = (name, re.sub(r"\(.*$", "", str(version)).split("_", 1)[0])
+                direct.add(pair)
+                (dev if section == "devDependencies" else prod).add(pair)
     out = []
-    for section, dev in (("dependencies", False), ("devDependencies", True)):
-        for name, spec in (data.get(section) or {}).items():
-            exact = re.fullmatch(r"=?v?(\d+\.\d+\.\d+[^\s]*)", str(spec))
-            out.append(_dep("npm", name, exact.group(1) if exact else None, source,
-                            dev=dev, pinned=bool(exact)) | ({} if exact else {"constraint": spec}))
+    for key, info in (data.get("packages") or {}).items():
+        ref = _pnpm_ref(key)
+        if ref is None:
+            continue
+        info = info if isinstance(info, dict) else {}
+        is_dev = bool(info["dev"]) if "dev" in info else (ref in dev and ref not in prod)
+        out.append(_dep("npm", ref[0], ref[1], source, direct=ref in direct, dev=is_dev))
     return out
 
 
@@ -283,40 +513,69 @@ def _parse_go_mod(text: str, source: str) -> list[dict]:
     return out
 
 
-def _package_json_names(path: Path) -> set[str]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return set()
-    return set(data.get("dependencies") or {}) | set(data.get("devDependencies") or {})
+def _unsupported(path: Path, source: str) -> dict | None:
+    kind = UNSUPPORTED_MANIFESTS.get(path.name)
+    lock = _LOCK_FOR.get(path.name)
+    if kind is None or (lock and path.with_name(lock).exists()):
+        return None
+    if path.name == "setup.cfg" and "install_requires" not in path.read_text(encoding="utf-8", errors="replace"):
+        return None
+    what = f"dependencies declared in {kind} are" if kind.startswith("setup") else f"{kind} dependencies are"
+    return {"ecosystem": "unknown", "name": source, "version": None, "source": source,
+            "error": f"not read: {what} outside what v1 inventories (PyPI, npm, Go lockfiles/manifests)"}
+
+
+def _parse_file(path: Path, source: str) -> list[dict]:
+    """Rows from one file, chosen by name before anything is read. A
+    manifest beside its lockfile only marks the lockfile's direct entries."""
+    name = path.name
+
+    def text() -> str:
+        return path.read_text(encoding="utf-8")
+
+    def beside(*names: str) -> bool:
+        return any(path.with_name(n).is_file() for n in names)
+    if is_requirements_file(source):
+        return _parse_requirements(text(), source)
+    if name == "pyproject.toml":
+        return [] if beside(*PY_LOCKS) else _parse_pyproject(text(), source)
+    if name == "Pipfile":
+        return [] if beside("Pipfile.lock") else _parse_pipfile(text(), source)
+    if name == "poetry.lock":
+        return _parse_poetry_lock(text(), source, _declared(path, "pyproject.toml", _parse_pyproject))
+    if name == "uv.lock":
+        return _parse_uv_lock(text(), source, _declared(path, "pyproject.toml", _parse_pyproject))
+    if name == "Pipfile.lock":
+        return _parse_pipfile_lock(text(), source, _declared(path, "Pipfile", _parse_pipfile))
+    if name in ("package-lock.json", "npm-shrinkwrap.json"):
+        return _parse_package_lock(text(), source, _declared(path, "package.json", _parse_package_json))
+    if name == "yarn.lock":
+        return _parse_yarn_lock(text(), source, _declared(path, "package.json", _parse_package_json))
+    if name == "pnpm-lock.yaml":
+        return _parse_pnpm_lock(text(), source)
+    if name == "package.json":
+        return [] if beside(*NPM_LOCKS) else _parse_package_json(text(), source)
+    if name == "go.mod":
+        return _parse_go_mod(text(), source)
+    row = _unsupported(path, source)
+    return [row] if row else []
 
 
 def collect_dependencies(repo: Path) -> list[dict]:
     """Every dependency found under `repo`, lockfiles preferred over manifests.
 
-    A package.json is only used for versions when no package-lock.json sits
-    beside it; its names still mark lockfile entries as direct.
+    A manifest (package.json, pyproject.toml, Pipfile) is only used for
+    versions when no lockfile sits beside it; its names still mark lockfile
+    entries as direct. Files of ecosystems v1 does not read, and files that
+    do not parse, become "unknown" rows carrying an error.
     """
     repo = Path(repo)
     found: list[dict] = []
     for path in walk_files(repo):
-        name = path.name
         source = path.relative_to(repo).as_posix()
         try:
-            text = path.read_text(encoding="utf-8")
-            if re.fullmatch(r"requirements.*\.txt", name):
-                found += _parse_requirements(text, source)
-            elif name == "poetry.lock":
-                found += _parse_poetry_lock(text, source)
-            elif name == "Pipfile.lock":
-                found += _parse_pipfile_lock(text, source)
-            elif name == "package-lock.json":
-                found += _parse_package_lock(text, source, _package_json_names(path.with_name("package.json")))
-            elif name == "package.json" and not path.with_name("package-lock.json").exists():
-                found += _parse_package_json(text, source)
-            elif name == "go.mod":
-                found += _parse_go_mod(text, source)
-        except (ValueError, KeyError, tomllib.TOMLDecodeError) as exc:
+            found += _parse_file(path, source)
+        except (ValueError, KeyError, TypeError, AttributeError, tomllib.TOMLDecodeError) as exc:
             found.append({"ecosystem": "unknown", "name": source, "version": None,
                           "source": source, "error": f"unparseable: {exc}"})
     # Same package+version from several files: keep one row, merge flags.
@@ -332,28 +591,73 @@ def collect_dependencies(repo: Path) -> list[dict]:
         else:
             merged[key] = dict(dep, sources=[dep["source"]])
             merged[key].pop("source", None)
-    return sorted(merged.values(), key=lambda d: (d["ecosystem"], d["name"], d["version"] or ""))
+    return sorted(merged.values(), key=lambda d: (d["ecosystem"], d["name"], version_key(d["version"] or ""),
+                                                  d["version"] or "", d["sources"]))
+
+
+def unread_manifests(deps: list[dict]) -> list[str]:
+    """Dependency files the inventory could not read (unsupported or broken)."""
+    return sorted(src for d in deps if d["ecosystem"] == "unknown" for src in d["sources"])
+
+
+def dep_state(deps: list[dict]) -> dict[str, list[str]]:
+    """{"ecosystem|name": sorted exact versions} for every declared package.
+    An empty list means declared but pinned nowhere; a missing key means
+    not declared at all. Every installed copy of a package counts (an npm
+    lockfile can hold several versions of one name)."""
+    state: dict[str, set[str]] = {}
+    for d in deps:
+        if d["ecosystem"] == "unknown":
+            continue
+        versions = state.setdefault(f"{d['ecosystem']}|{d['name']}", set())
+        if d.get("version"):
+            versions.add(d["version"])
+    return {k: sorted(v, key=lambda x: (version_key(x), x)) for k, v in sorted(state.items())}
+
+
+def state_sha256(state: dict[str, list[str]]) -> str:
+    return hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def baseline_path(workspace: Path) -> Path:
+    return Path(workspace) / STATE_DIR / "baseline.json"
+
+
+def record_baseline(workspace: Path, repo: str = "repo") -> bool:
+    """Write the baseline inventory of the whole repo/ once (the specialist
+    does this before the first milestone's loop). Later calls never replace
+    it. Returns True when this call wrote it."""
+    path = baseline_path(workspace)
+    root = Path(workspace) / repo
+    if path.exists() or not root.is_dir():
+        return False
+    _write_json(path, {"recorded_at": _now(), "path": repo, "dependencies": collect_dependencies(root)})
+    return True
+
+
+def _is_repo_root(workspace: Path, resolved: Path) -> bool:
+    return Path(resolved).resolve() == (Path(workspace) / "repo").resolve()
 
 
 def inventory_dependencies(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                            path: str = "repo", output: str | None = None, **_: Any) -> dict:
-    """Parse the repo's dependencies. The first call also writes the baseline
-    snapshot that later OSV-delta and upgrade-log checks compare against."""
+    """Parse the repo's dependencies. If no baseline was recorded yet (the
+    specialist records it before the loop), a call over the whole repo/
+    writes it; a call over a subfolder never does."""
     resolve = _resolver(workspace, resolve_path)
     repo = resolve(path)
     if not repo.is_dir():
         return {"error": f"{path}/ does not exist"}
     deps = collect_dependencies(repo)
-    baseline = _state(workspace) / "baseline.json"
-    if not baseline.exists():
-        _write_json(baseline, {"recorded_at": _now(), "path": path, "dependencies": deps})
+    if _is_repo_root(workspace, repo):
+        record_baseline(workspace)
     result = {
         "count": len(deps),
         "pinned": sum(1 for d in deps if d.get("pinned")),
         "unpinned": [f"{d['ecosystem']}:{d['name']} {d.get('constraint', '')}".strip()
                      for d in deps if not d.get("pinned") and d["ecosystem"] != "unknown"],
-        "errors": [d["error"] for d in deps if d.get("error")],
-        "baseline_recorded": True,
+        "errors": [f"{d['name']}: {d['error']}" for d in deps if d.get("error")],
+        "baseline_recorded": baseline_path(workspace).exists(),
         "dependencies": deps,
     }
     if output:
@@ -440,7 +744,9 @@ def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, resolv
     return {"scanned": len(deps),
             "vulnerable_packages": len({(f["ecosystem"], f["name"], f["version"]) for f in findings}),
             "findings": findings, "errors": errors,
-            "skipped_unpinned": sorted({d["name"] for d in all_deps if not d.get("version")})}
+            "skipped_unpinned": sorted({d["name"] for d in all_deps
+                                        if not d.get("version") and d["ecosystem"] != "unknown"}),
+            "not_read": unread_manifests(all_deps)}
 
 
 def _events_intervals(events: list[dict]) -> list[tuple[str, str | None, bool]]:
@@ -635,15 +941,41 @@ def plan_upgrades(workspace: Path, *, fetch=None, run=None, resolve_path=None, p
 
 # --- registry release history -----------------------------------------------
 
+DEFAULT_MIN_AGE_DAYS = 7
+
+
+def record_policy(workspace: Path, intake: dict | None) -> dict:
+    """Store the parts of the client's upgrade policy the checks enforce as
+    tool-owned evidence: the minimum release age ("... 30 days ..." in
+    upgrade_policy; the default is 7 days, and a policy can only raise it)."""
+    text = str((intake or {}).get("upgrade_policy") or "")
+    days = [int(n) for n in re.findall(r"(\d+)\s*-?\s*days?\b", text, re.I)]
+    policy = {"min_release_age_days": max([DEFAULT_MIN_AGE_DAYS, *days]),
+              "source": "intake.upgrade_policy" if days else "default"}
+    _write_json(_state(workspace) / "policy.json", dict(policy, at=_now()))
+    return policy
+
+
+def min_release_age(workspace: Path) -> int:
+    path = Path(workspace) / STATE_DIR / "policy.json"
+    try:
+        value = int(json.loads(path.read_text(encoding="utf-8")).get("min_release_age_days"))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return DEFAULT_MIN_AGE_DAYS
+    return max(value, DEFAULT_MIN_AGE_DAYS)
+
+
 def package_versions(workspace: Path, *, fetch: Callable | None = None, run=None, ecosystem: str = "",
-                     name: str = "", min_age_days: int = 14, **_: Any) -> dict:
+                     name: str = "", min_age_days: int | None = None, **_: Any) -> dict:
     """Release history from PyPI or npm, snapshotted, with each version's age.
 
-    Versions younger than `min_age_days` are flagged: a fresh release is the
-    usual vector for a compromised package, so the plan should not pick one.
+    Versions younger than `min_age_days` (default: the client's policy, at
+    least 7 days) are flagged: a fresh release is the usual vector for a
+    compromised package, so the plan should not pick one.
     """
     if fetch is None:
         return {"error": "network access is not available to this tool"}
+    min_age_days = min_release_age(workspace) if min_age_days is None else int(min_age_days)
     if ecosystem == "PyPI":
         url = f"https://pypi.org/pypi/{normalize_name('PyPI', name)}/json"
     elif ecosystem == "npm":
@@ -715,26 +1047,38 @@ def parse_test_summary(output: str) -> dict:
 def run_tests(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
               argv: list[str] | None = None, cwd: str = "repo", label: str = "",
               timeout: int | None = None, **_: Any) -> dict:
-    """Run the test command in repo/, parse the summary and append the run to
-    the tool-owned test log (checks use it to prove tests ran after each step)."""
+    """Run the test command, parse the summary and append the run to the
+    tool-owned test log with the repo's dependency state at that moment
+    (checks use both to prove which versions each green run tested)."""
     if run is None:
         return {"error": "command execution is not available to this tool"}
     if not argv:
         return {"error": "argv is required, e.g. [\"python\", \"-m\", \"pytest\", \"-q\"]"}
-    _resolver(workspace, resolve_path)(cwd)
+    resolved = _resolver(workspace, resolve_path)(cwd)
+    cwd_rel = resolved.relative_to(Path(workspace).resolve()).as_posix()
+    repo = Path(workspace) / "repo"
+    state = dep_state(collect_dependencies(repo)) if repo.is_dir() else {}
     res = run(list(argv), cwd=cwd, timeout=timeout)
     out = (res.stdout or "") + "\n" + (res.stderr or "")
     counts = parse_test_summary(out)
     log = _state(workspace) / "test_runs.jsonl"
     n = sum(1 for _ in log.open(encoding="utf-8")) + 1 if log.exists() else 1
-    entry = {"id": f"run-{n}", "label": label, "argv": list(argv), "cwd": cwd,
+    run_id = f"run-{n}"
+    _write_json(_state(workspace) / "test_runs" / f"{run_id}.json", {"id": run_id, "dependencies": state})
+    entry = {"id": run_id, "label": label, "argv": list(argv), "cwd": cwd_rel,
+             "client_command": list(argv) == recorded_test_command(workspace),
              "exit_code": res.exit_code, "timed_out": bool(getattr(res, "timed_out", False)),
              "counts": counts, "output_sha256": hashlib.sha256(out.encode("utf-8")).hexdigest(),
-             "at": _now()}
+             "deps_sha256": state_sha256(state), "at": _now()}
     with log.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, sort_keys=True) + "\n")
-    return dict(entry, green=res.exit_code == 0 and not entry["timed_out"] and counts["failed"] == 0,
-                tail="\n".join(out.strip().splitlines()[-25:]))
+    return dict(entry, green=is_green(entry), tail="\n".join(out.strip().splitlines()[-25:]))
+
+
+def is_green(entry: dict) -> bool:
+    counts = entry.get("counts") or {}
+    return (entry.get("exit_code") == 0 and not entry.get("timed_out")
+            and not counts.get("failed") and not counts.get("errors"))
 
 
 def load_test_runs(workspace: Path) -> list[dict]:
@@ -742,6 +1086,19 @@ def load_test_runs(workspace: Path) -> list[dict]:
     if not log.exists():
         return []
     return [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def load_run_state(workspace: Path, entry: dict) -> dict[str, list[str]] | None:
+    """The dependency state recorded with a test run, or None when it is
+    missing or does not match the hash in the log."""
+    path = Path(workspace) / STATE_DIR / "test_runs" / f"{_safe_id(str(entry.get('id', '')))}.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8")).get("dependencies")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(state, dict) or state_sha256(state) != entry.get("deps_sha256"):
+        return None
+    return state
 
 
 def command_argv(command: Any) -> list[str] | None:
@@ -769,6 +1126,29 @@ def recorded_test_command(workspace: Path) -> list[str] | None:
     if not path.is_file():
         return None
     return command_argv(json.loads(path.read_text(encoding="utf-8")).get("argv"))
+
+
+_SHELL_TOKENS = {"&&", "||", "|", ";", "&", ">", ">>", "<", "2>", "2>&1"}
+
+
+def test_command_problem(command: Any, allowed: list[str]) -> str | None:
+    """Why an intake test_command cannot be run as given, or None. It must be
+    one argv (no shell operators, env assignments or `cd`) whose program is
+    on the specialist's shell allowlist."""
+    try:
+        argv = command_argv(command)
+    except ValueError as exc:
+        return f"the test command does not parse ({exc})"
+    if not argv:
+        return "the test command is empty"
+    if any(a in _SHELL_TOKENS or "$(" in a or "`" in a for a in argv):
+        return "the test command uses shell syntax (&&, |, ;, redirects), which is not run through a shell"
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[0]) or argv[0] == "cd":
+        return "the test command sets environment variables or changes directory, which a single argv cannot do"
+    if executable_name(argv[0]) not in {executable_name(a) for a in allowed}:
+        return (f"the test command runs {argv[0]!r}, which is not one of the programs this "
+                f"specialist may run ({', '.join(sorted(allowed))})")
+    return None
 
 
 # --- diff audit -----------------------------------------------------------------
@@ -970,6 +1350,26 @@ def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, re
             "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
 
 
+def patch_record_path(workspace: Path) -> Path:
+    return Path(workspace) / STATE_DIR / "patches" / "exported.json"
+
+
+def load_patch_records(workspace: Path) -> dict:
+    """{deliverable path: {"sha256", "base", "milestone", "at"} or {"error", ...}}
+    as the specialist's finalize step recorded them."""
+    try:
+        data = json.loads(patch_record_path(workspace).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_patch(workspace: Path, deliverable: str, **fields: Any) -> None:
+    records = load_patch_records(workspace)
+    records[deliverable] = dict(fields, at=_now())
+    _write_json(patch_record_path(workspace), records)
+
+
 # --- tool table -----------------------------------------------------------------------
 
 _DETECTOR_SCHEMA = {"type": "array", "items": {"type": "object", "required": ["id", "regex"], "properties": {
@@ -979,10 +1379,12 @@ _DETECTOR_SCHEMA = {"type": "array", "items": {"type": "object", "required": ["i
 
 TOOL_DEFS: list[dict] = [
     {"name": "inventory_dependencies",
-     "description": "Parse every lockfile and manifest under repo/ (requirements*.txt, poetry.lock, "
-                    "Pipfile.lock, package-lock.json, package.json, go.mod) into one dependency list "
-                    "with ecosystem, version, direct/dev flags. The first call records the baseline "
-                    "used by later checks. Optionally writes the list as JSON to `output`.",
+     "description": "Parse every lockfile and manifest under repo/ (requirements*.txt incl. hashed "
+                    "pip-compile output, pyproject.toml, Pipfile, poetry.lock, uv.lock, Pipfile.lock, "
+                    "package-lock.json, yarn.lock, pnpm-lock.yaml, package.json, go.mod) into one "
+                    "dependency list with ecosystem, version, direct/dev flags. Dependency files of "
+                    "other ecosystems are listed as 'unknown' rows (not read); name them in the plan. "
+                    "Optionally writes the list as JSON to `output`.",
      "input_schema": {"type": "object", "properties": {
          "path": {"type": "string", "default": "repo"},
          "output": {"type": "string", "description": "e.g. deliverables/m1-assess/inventory.json"}}},
@@ -1005,15 +1407,17 @@ TOOL_DEFS: list[dict] = [
      "risk": "write", "function": plan_upgrades},
     {"name": "package_versions",
      "description": "Release history of one package from PyPI or npm with each version's age in "
-                    "days; versions newer than min_age_days are flagged too_new.",
+                    "days; versions newer than min_age_days (default: the client's policy, at least "
+                    "7) are flagged too_new.",
      "input_schema": {"type": "object", "required": ["ecosystem", "name"], "properties": {
          "ecosystem": {"type": "string", "enum": ["PyPI", "npm"]}, "name": {"type": "string"},
-         "min_age_days": {"type": "integer", "default": 14}}},
+         "min_age_days": {"type": "integer"}}},
      "risk": "network", "function": package_versions},
     {"name": "run_tests",
      "description": "Run the test command in repo/ and return exit code and pass/fail/skip counts. "
-                    "Every run is logged with an id; cite the id of the green run after each "
-                    "upgrade step in the upgrade log.",
+                    "Every run is logged with an id and the dependency versions it tested; only runs "
+                    "of the client's exact test command in repo/ count as evidence. Cite the id of "
+                    "the green run after each upgrade step in the upgrade log.",
      "input_schema": {"type": "object", "required": ["argv"], "properties": {
          "argv": {"type": "array", "items": {"type": "string"}},
          "cwd": {"type": "string", "default": "repo"},
@@ -1021,9 +1425,9 @@ TOOL_DEFS: list[dict] = [
          "timeout": {"type": "integer"}}},
      "risk": "exec", "function": run_tests},
     {"name": "audit_diff",
-     "description": "Audit a unified diff: changed lines (lockfiles counted apart), skip/xfail "
-                    "markers added, test functions removed, test files deleted, paths outside "
-                    "`allow` or inside `forbid` globs.",
+     "description": "Audit a unified diff: changed lines (lockfiles counted apart), skip/xfail/"
+                    "deselect markers added, test functions removed, test files deleted, paths "
+                    "outside `allow` or inside `forbid` globs.",
      "input_schema": {"type": "object", "required": ["patch"], "properties": {
          "patch": {"type": "string"}, "allow": {"type": "array", "items": {"type": "string"}},
          "forbid": {"type": "array", "items": {"type": "string"}}}},
