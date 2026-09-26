@@ -164,6 +164,9 @@
       deadline: { mode: null, date: "" },
       budget: { mode: null, amount: 0 },
       agent: null, engagement: null,
+      // The agent the buyer came from (?agent=), offered to the matchmaker
+      // first; `agent` is only set when they accept the matchmaker's answer.
+      preferred: null, match: null, query: outcome || "",
       // Set when the answers were filled from an uploaded statement of work:
       // {filename, sha256, outcome, brief, warnings, notes, msFromFile, jobCriteria}.
       source: null
@@ -275,7 +278,7 @@
   }
 
   // Mirrors app/intake/estimate.py:estimate(). `agent` is a listing card
-  // (from /api/agents) or null while none is picked.
+  // (the matchmaker's agent) or null while none is accepted.
   function estimate(agent) {
     var c = cat(state.category);
     var per = c ? c.days_per_milestone : 4;
@@ -344,8 +347,8 @@
   if (state.step > 8) state.step = 8; // never land on the approve screen from a reload
   // ?agent= (the "Get estimate" link on an agent profile) preselects that agent.
   var picked = JSON.parse($("#flow-agent").textContent || "null");
-  if (picked && (!state.agent || state.agent.id !== agentKey(picked))) {
-    state.agent = agentChoice(picked);
+  if (picked && (!state.preferred || state.preferred.id !== agentKey(picked))) {
+    state.preferred = agentChoice(picked);
     if (picked.category_key && state.step <= 2) { state.category = picked.category_key; state.categoryGuessed = false; }
   }
   // The prefill has been applied; drop the query so a reload restores later edits.
@@ -600,41 +603,17 @@
   $("#f-budget-range").addEventListener("input", function (e) { setBudget(e.target.value); $("#f-budget").value = e.target.value; });
   $("#f-budget").addEventListener("input", function (e) { setBudget(e.target.value); });
 
-  // Step 7
+  // Step 7: the matchmaker (POST /api/intake/match) picks the agent, or
+  // says none can do the job. The server builds the candidates and computes
+  // every number; this only renders the answer.
   var FIT = {
     ok: "Fits your deadline.",
     tight: "Tight: your deadline falls inside this range.",
     "short": "Your deadline is shorter than the lower estimate. Consider fewer milestones or a later date."
   };
-  function renderEstimate() {
-    var e = estimate(state.agent && state.agent.card);
-    var tx = estimateText(e);
-    bind("est-cost", tx.cost);
-    bind("est-cost-note", tx.costNote);
-    bind("est-tok-in", tx.tokensIn);
-    bind("est-tok-out", tx.tokensOut);
-    bind("est-tok-note", "Across " + plural(state.milestones.length, "milestone") + ".");
-    bind("est-cap", tx.cap);
-    bind("est-cap-note", tx.capNote);
-    bind("est-method", tx.method);
-    bind("est-days", e.daysLow === e.daysHigh ? plural(e.daysLow, "day") : e.daysLow + " to " + e.daysHigh + " days");
-    bind("est-fit", e.fit ? FIT[e.fit] :
-      state.deadline.mode === "asap" ? "You asked for the earliest possible start." : "No fixed deadline.");
-    var lvl = $('[data-bind="est-level"]');
-    lvl.textContent = e.level.charAt(0).toUpperCase() + e.level.slice(1);
-    lvl.className = "conf conf-" + e.level;
-    var tips = $('[data-bind="est-tips"]');
-    tips.innerHTML = "";
-    e.tips.forEach(function (t) { tips.appendChild(el("li", { text: t })); });
-  }
+  var MATCH_TIMEOUT_MS = 45000;
+  var matchSeq = 0;
 
-  var agentsFor = null;
-  function agentList(data) { return Array.isArray(data) ? data : (data && data.agents) || []; }
-  function fetchAgents(params) {
-    // Only agents that can be hired right now; others would fail at approval.
-    return fetch("/api/agents?hireable=1&" + params, { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.ok ? r.json() : []; }).then(agentList).catch(function () { return []; });
-  }
   function agentKey(a) { return String(a.agent_id || a.public_id || a.id); }
   function agentChoice(a) { return { id: agentKey(a), name: a.name, card: a }; }
   // Token prices, e.g. "$3 input, $15 output per 1M tokens".
@@ -643,71 +622,164 @@
     if (!pin && !pout) return "On request";
     return (pin || "$0") + " input, " + (pout || "$0") + " output per 1M tokens";
   }
-  function agentEstimateText(a) {
-    var c = estimate(a).cost;
-    if (!c) return "";
-    var lo = fmtUSDC(c.lowMicro / 1e6, { unit: false }), hi = fmtUSDC(c.highMicro / 1e6, { unit: false });
-    return (lo === hi ? lo : lo + " to " + hi) + " USDC";
+  // Only short searches become a marketplace filter; a full job description
+  // would match nothing there.
+  function browseQuery() {
+    var q = String(state.query || "").trim();
+    return q && q.split(/\s+/).length <= 4 ? q : "";
   }
-  function loadAgents() {
-    var c = cat(state.category);
-    if (!c || agentsFor === c.key) return;
-    agentsFor = c.key;
-    var box = $("#agents"), note = $("#agents-note");
-    box.setAttribute("aria-busy", "true");
-    $all(".agent, .agents-empty", box).forEach(function (n) { n.remove(); });
-    note.textContent = "Finding agents…";
-    fetchAgents("category=" + encodeURIComponent(c.agent_category) + "&per_page=3").then(function (list) {
-      if (list.length) return { list: list, exact: true };
-      return fetchAgents("per_page=3").then(function (all) { return { list: all, exact: false }; });
+
+  function matchRequest() {
+    return {
+      outcome: state.outcome.trim(),
+      brief: currentBrief(),
+      category: state.category,
+      budget_usdc: msTotal(),
+      deadline: { mode: state.deadline.mode, date: state.deadline.date || "" },
+      milestones: state.milestones.map(function (m) {
+        return { title: m.title.trim(), amount_usdc: Number(m.amount) || 0,
+          criteria: m.criteria.map(function (c) { return String(c).trim(); }).filter(Boolean) };
+      }),
+      source_document: state.source ? { filename: state.source.filename, text: state.source.text || "" } : null,
+      preferred_agent_id: state.preferred ? state.preferred.id : null,
+      query: browseQuery()
+    };
+  }
+
+  function postMatch(body) {
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, MATCH_TIMEOUT_MS);
+    return fetch("/api/intake/match", {
+      method: "POST", credentials: "same-origin", signal: ctrl ? ctrl.signal : undefined,
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(body)
     }).then(function (res) {
-      box.setAttribute("aria-busy", "false");
-      var list = res.list.slice(0, 3);
-      note.textContent = !list.length ? "" : res.exact
-        ? "Listed under " + c.label + ". Pick one to continue."
-        : "No agents are listed under " + c.label + " yet. These are other available agents; pick one or browse the marketplace.";
-      if (!list.length) {
-        box.appendChild(el("div", { "class": "agents-empty" }, [
-          el("p", { text: "No agents are available right now." }),
-          el("a", { href: "/marketplace", "class": "fbtn fbtn-link", text: "Browse the marketplace" })
-        ]));
-        return;
-      }
-      // Keep an agent chosen from its profile visible even outside this category.
-      var chosen = state.agent && state.agent.card;
-      if (chosen && !list.some(function (a) { return agentKey(a) === state.agent.id; })) list = [chosen].concat(list).slice(0, 3);
-      if (state.agent && !list.some(function (a) { return agentKey(a) === state.agent.id; })) state.agent = null;
-      list.forEach(function (a) { box.appendChild(agentCard(a)); });
-      renderSummary(); renderEstimate();
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok || !data.ok) throw new Error((data && data.error) || "The matchmaker could not check this job (" + res.status + ").");
+        return data;
+      });
+    }, function (err) {
+      throw new Error(err && err.name === "AbortError"
+        ? "The matchmaker took too long to answer. Your answers are saved; try again."
+        : "Could not reach the matchmaker. Check your connection and try again.");
+    }).then(function (d) { clearTimeout(timer); return d; }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  function matchView(mode) {
+    $("#match-wait").hidden = mode !== "wait";
+    $("#match-error").hidden = mode !== "error";
+    $("#match-result").hidden = mode !== "result";
+    $('.flow-step[data-step="7"]').setAttribute("aria-busy", mode === "wait" ? "true" : "false");
+    renderNav();
+  }
+
+  function loadMatch(force) {
+    var body = matchRequest();
+    var key = JSON.stringify(body);
+    if (!force && state.match && state.match.key === key) { renderMatch(); return; }
+    // The job changed since the last answer: the agent is picked again.
+    state.match = null;
+    state.agent = null;
+    save(); renderSummary();
+    $("#s7-h").textContent = "Finding your agent";
+    matchView("wait");
+    var seq = ++matchSeq;
+    postMatch(body).then(function (res) {
+      if (seq !== matchSeq) return;
+      state.match = { key: key, result: res };
+      save();
+      renderMatch();
+      announce(res.headline || "");
+    }).catch(function (err) {
+      if (seq !== matchSeq) return;
+      $("#s7-h").textContent = "Your agent";
+      $("#match-error-text").textContent = err.message;
+      matchView("error");
     });
   }
-  function agentCard(a) {
-    var key = agentKey(a);
-    var rating = Number(a.rating) > 0 ? Number(a.rating).toFixed(1) : "New";
-    var jobs = Number(a.tasks_completed) || 0;
-    var input = el("input", { type: "radio", name: "agent", value: key, checked: state.agent && state.agent.id === key ? "checked" : null,
-      onchange: function () {
-        state.agent = agentChoice(a);
-        save(); renderSummary(); renderEstimate(); showError($("#e-7"), "");
-      } });
-    return el("label", { "class": "agent" }, [
-      input,
-      el("span", { "class": "agent-body" }, [
-        el("span", { "class": "agent-head" }, [
-          el("span", { "class": "agent-name", text: a.name }),
-          a.verified ? el("span", { "class": "badge", text: "Verified" }) : null
-        ]),
-        el("span", { "class": "agent-spec", text: a.description || a.use_case || a.category || "" }),
-        el("span", { "class": "agent-stats" }, [
-          el("span", {}, [el("span", { "class": "stat-label", text: "Tokens " }), el("span", { "class": "mono", text: priceText(a) })]),
-          agentEstimateText(a) ? el("span", {}, [el("span", { "class": "stat-label", text: "This job " }), el("span", { "class": "mono", text: agentEstimateText(a) })]) : null,
-          el("span", {}, [el("span", { "class": "stat-label", text: "Rating " }), el("span", { "class": "mono", text: rating })]),
-          el("span", {}, [el("span", { "class": "stat-label", text: "Jobs " }), el("span", { "class": "mono", text: String(jobs) })]),
-          a.agent_id || a.public_id ? el("span", { "class": "mono agent-id", text: a.agent_id || a.public_id }) : null
-        ])
-      ])
-    ]);
+
+  function usdcRange(lo, hi) {
+    var a = fmtUSDC(lo / 1e6, { unit: false }), b = fmtUSDC(hi / 1e6, { unit: false });
+    return a === b ? a : a + " to " + b;
   }
+
+  function renderMatch() {
+    var r = state.match && state.match.result;
+    if (!r) return;
+    var a = r.agent;
+    $("#s7-h").textContent = a ? "Your agent" : "No agent for this job yet";
+    $("#match-headline").textContent = r.headline;
+    $("#match-agent").hidden = !a;
+    $("#match-why-h").textContent = a ? "Why this agent" : "Why";
+    if (a) {
+      $("#match-name").textContent = a.name;
+      $("#match-spec").textContent = a.description || a.category || "";
+      var stats = $("#match-stats");
+      stats.innerHTML = "";
+      var rating = Number(a.rating) > 0 ? Number(a.rating).toFixed(1) : "New";
+      [["Tokens ", priceText(a)], ["Rating ", rating], ["Jobs ", String(Number(a.tasks_completed) || 0)]].forEach(function (p) {
+        stats.appendChild(el("span", {}, [el("span", { "class": "stat-label", text: p[0] }), el("span", { "class": "mono", text: p[1] })]));
+      });
+      stats.appendChild(el("span", { "class": "mono agent-id", text: a.agent_id }));
+    }
+    var reasons = $("#match-reasons");
+    reasons.innerHTML = "";
+    (r.reasons || []).forEach(function (t) { reasons.appendChild(el("li", { text: t })); });
+
+    $("#match-est").hidden = !a;
+    if (a) {
+      var t = r.tokens;
+      var budget = fmtUSDC(r.budget_micro / 1e6, { unit: false });
+      var priced = r.cost_low_micro !== null && r.cost_low_micro !== undefined;
+      bind("est-cost", priced ? usdcRange(r.cost_low_micro, r.cost_high_micro) : "Not listed");
+      bind("est-cost-note", !priced ? "This agent has not listed token prices."
+        : r.within_budget ? "Within your budget of " + budget + " USDC."
+        : r.cost_low_micro > r.budget_micro ? "Above your budget of " + budget + " USDC, even at the low end."
+        : "The upper figure is above your budget of " + budget + " USDC. The budget still caps what is paid.");
+      function rng(lo, hi) { return lo === hi ? fmtTokens(lo) : fmtTokens(lo) + " to " + fmtTokens(hi); }
+      bind("est-tok-in", rng(t.input.low, t.input.high));
+      bind("est-tok-out", rng(t.output.low, t.output.high));
+      bind("est-tok-note", "Across " + plural(state.milestones.length, "milestone") + ".");
+      bind("est-cap", budget);
+      bind("est-cap-note", "Held in escrow. The agent is never paid more than this.");
+      bind("est-days", r.days_low === r.days_high ? plural(r.days_low, "day") : r.days_low + " to " + r.days_high + " days");
+      bind("est-fit", r.deadline_fit ? FIT[r.deadline_fit] :
+        r.deadline_mode === "asap" ? "You asked for the earliest possible start." : "No fixed deadline.");
+      bind("est-method", r.token_basis === "calibrated"
+        ? "Tokens estimated from " + Number(r.token_runs).toLocaleString("en-US") + " measured run" + (r.token_runs === 1 ? "" : "s") + " of similar jobs, times this agent's token prices."
+        : r.token_basis === "llm"
+          ? "Tokens estimated by the matchmaker within the range of our token model, times this agent's token prices."
+          : "Tokens estimated from your milestones with a rule of thumb for this kind of work, times this agent's token prices, so the range is wide.");
+      var lvl = $('[data-bind="est-level"]');
+      var level = r.confidence === "high" ? "good" : r.confidence;
+      lvl.textContent = r.confidence.charAt(0).toUpperCase() + r.confidence.slice(1);
+      lvl.className = "conf conf-" + level;
+      $('[data-bind="est-tips"]').innerHTML = "";
+    }
+    $("#match-basis").textContent = r.basis === "llm"
+      ? "Checked by the Agent's List matchmaker against " + plural(r.considered, "hireable agent") + "."
+      : "Matched with capability and keyword rules against " + plural(r.considered, "hireable agent") +
+        (r.fallback_reason === "unavailable" ? ", because the matchmaker model did not answer." : ".");
+    $("#match-browse").href = r.browse_url || "/marketplace";
+    matchView("result");
+  }
+
+  // Step 7 replaces Back / Continue with the matchmaker's choices.
+  function renderNav() {
+    var s = state.step, next = $("#flow-next"), back = $("#flow-back");
+    var browse = $("#match-browse"), edit = $("#match-edit");
+    var r = s === 7 && !$("#match-result").hidden && state.match ? state.match.result : null;
+    back.hidden = s === 1 || !!r;
+    next.hidden = s === TOTAL_STEPS || (s === 7 && !(r && r.agent));
+    next.textContent = s === 7 ? "Accept" : s === 8 ? "Looks right" : "Continue";
+    browse.hidden = !r;
+    edit.hidden = !(r && !r.agent);
+    browse.classList.toggle("fbtn-primary", !!(r && !r.agent));
+    browse.classList.toggle("fbtn-ghost", !(r && !r.agent));
+    browse.classList.toggle("fbtn-push", !!(r && !r.agent));
+  }
+  $("#match-retry").addEventListener("click", function () { loadMatch(true); });
+  $("#match-edit").addEventListener("click", function () { show(6, true); });
 
   // Step 8
   function renderContract() {
@@ -720,7 +792,7 @@
     bind("c-deadline", deadlineText() || "Flexible");
     $('[data-bind="c-deadline"]').classList.toggle("mono", !!state.deadline.date && state.deadline.mode !== "asap" && state.deadline.mode !== "flexible");
     bind("c-total", fmtUSDC(msTotal(), { unit: false }));
-    bind("c-usage", estimateText(estimate(state.agent && state.agent.card)).usage);
+    bind("c-usage", matchUsage() || estimateText(estimate(state.agent && state.agent.card)).usage);
     var ol = $('[data-bind="c-milestones"]');
     ol.innerHTML = "";
     state.milestones.forEach(function (m) {
@@ -731,6 +803,16 @@
       ]));
     });
     renderSow();
+  }
+  // The matchmaker's figures for the accepted agent, as one line.
+  function matchUsage() {
+    var r = state.match && state.match.result;
+    if (!r || !r.agent || !state.agent || state.agent.id !== agentKey(r.agent)) return "";
+    function rng(lo, hi) { return lo === hi ? fmtTokens(lo) : fmtTokens(lo) + " to " + fmtTokens(hi); }
+    var usage = "About " + rng(r.tokens.input.low, r.tokens.input.high) + " input and " +
+      rng(r.tokens.output.low, r.tokens.output.high) + " output tokens";
+    return usage + (r.cost_low_micro !== null && r.cost_low_micro !== undefined
+      ? ", " + usdcRange(r.cost_low_micro, r.cost_high_micro) + " USDC at this agent's prices." : ".");
   }
   function renderSow() {
     var e = state.engagement;
@@ -771,7 +853,9 @@
         focus = "#f-budget";
       }
     } else if (step === 7) {
-      if (!state.agent) { err = "Pick an agent to continue."; focus = 'input[name="agent"]'; }
+      var r = state.match && state.match.result;
+      if (!r || !r.agent) { err = "There is no agent to accept for this job."; focus = null; }
+      else { state.agent = agentChoice(r.agent); save(); }
     }
     showError($("#e-" + step), err);
     if (err && focus) { var f = $(focus); if (f) f.focus(); }
@@ -794,7 +878,7 @@
       if (!state.budget.mode) state.budget = { mode: "custom", amount: msTotal() };
       renderBudget();
     }
-    if (step === 7) { renderEstimate(); loadAgents(); }
+    if (step === 7) loadMatch(false);
     if (step === 8 || step === 9) renderContract();
   }
 
@@ -806,10 +890,7 @@
     enter(step);
     renderProgress();
     renderSummary();
-    $("#flow-back").hidden = step === 1;
-    var next = $("#flow-next");
-    next.hidden = step === TOTAL_STEPS;
-    next.textContent = step === 8 ? "Looks right" : "Continue";
+    renderNav();
     save();
     if (moveFocus) {
       var h = $('.flow-step[data-step="' + step + '"] h2');
@@ -842,7 +923,6 @@
 
   $("#f-category").addEventListener("change", function (e) {
     state.category = e.target.value; state.categoryGuessed = false;
-    agentsFor = null;
     $("#f-cat-hint").hidden = true;
     showError($("#e-2"), "");
     save(); renderSummary();
@@ -851,7 +931,6 @@
   $("#flow-reset").addEventListener("click", function () {
     store.clear();
     state = freshState("");
-    agentsFor = null;
     outcomeEl.value = "";
     $("#flow-restore").hidden = true;
     renderSource();
@@ -927,10 +1006,11 @@
   // Fill every step from a parsed scope (POST /api/sow/parse). Anything the
   // document did not state stays empty so its step asks for it.
   function applyScope(scope) {
-    var keepAgent = state.agent;
+    var keepPreferred = state.preferred, keepQuery = state.query;
     var outcome = scope.outcome || state.outcome;
     var s = freshState(outcome);
-    s.agent = keepAgent;
+    s.preferred = keepPreferred;
+    s.query = keepQuery;
     s.category = cat(scope.category_key) ? scope.category_key : guessCategory(outcome);
     s.categoryGuessed = !scope.category_key && !!s.category;
     var warnings = (scope.warnings || []).slice();
@@ -943,7 +1023,9 @@
       filename: scope.source && scope.source.filename, sha256: scope.source && scope.source.sha256,
       outcome: outcome, brief: scope.outcome ? scope.brief : null,
       warnings: warnings, notes: (scope.notes || []).slice(),
-      msFromFile: ms.length > 0, jobCriteria: ms.length ? [] : (scope.acceptance || []).map(String)
+      msFromFile: ms.length > 0, jobCriteria: ms.length ? [] : (scope.acceptance || []).map(String),
+      // An excerpt for the matchmaker; the parsed fields above are what the flow uses.
+      text: String(scope.text || "").slice(0, 6000)
     };
     state = s;
     var budget = Number(scope.budget_usdc) || 0;
@@ -963,7 +1045,6 @@
     else if (budget) state.budget = { mode: "custom", amount: budget };
     var dl = scope.deadline || {};
     if (dl.mode) state.deadline = { mode: dl.mode, date: dl.date || "" };
-    agentsFor = null;
     outcomeEl.value = state.outcome;
     $("#flow-restore").hidden = true;
     renderSource();

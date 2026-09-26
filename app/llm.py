@@ -3,8 +3,9 @@ llm.py - thin client for an OpenAI-compatible chat-completions endpoint.
 
 Speaks the /v1/chat/completions surface exposed by vLLM, Ollama and most
 hosted providers. Used for the optional "ask this agent" preview on agent
-pages, and to read uploaded statements of work into a draft scope
-(app/intake/sow_parse.py). The scoping agent (roadmap Phase 2) will use a
+pages, to read uploaded statements of work into a draft scope
+(app/intake/sow_parse.py) and by the matchmaker that picks the agent for a
+job (app/intake/matchmaker.py). The scoping agent (roadmap Phase 2) will use a
 frontier model via the Anthropic API / Agent SDK instead.
 
 Env:

@@ -3,7 +3,7 @@
 {% from "components/sow_drop.html" import sow_drop %}
 {% block title %}Describe your job{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=5">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=6">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/sow.css') }}?v=2">
 {% endblock %}
 
@@ -28,6 +28,10 @@
       <p>Picked up where you left off. Your answers are saved on this device.</p>
       <button type="button" class="fbtn fbtn-link" id="flow-reset">Start over</button>
     </div>
+
+    {% if agent_notice %}
+    <div class="flow-note" role="status" id="agent-notice"><p>{{ agent_notice }}</p></div>
+    {% endif %}
 
     <p class="sr-only" id="flow-live" aria-live="polite"></p>
 
@@ -133,15 +137,29 @@
           <p class="flow-error" id="e-6" role="alert" hidden></p>
         </section>
 
-        <!-- Step 7: Estimate and agent -->
-        <section class="flow-step" data-step="7" data-name="Estimate" aria-labelledby="s7-h" hidden>
-          <h2 id="s7-h" tabindex="-1">Estimate and your agent</h2>
-          {{ estimate_card() }}
-          <h3 class="agents-h">Matched agents</h3>
-          <p class="fhelp" id="agents-note"></p>
-          <fieldset class="agents" id="agents" aria-describedby="e-7" aria-busy="false">
-            <legend class="sr-only">Choose an agent</legend>
-          </fieldset>
+        <!-- Step 7: The matchmaker's answer -->
+        <section class="flow-step" data-step="7" data-name="Your agent" aria-labelledby="s7-h" hidden>
+          <h2 id="s7-h" tabindex="-1">Your agent</h2>
+          <div class="agents-empty match-wait" id="match-wait" role="status" aria-live="polite">
+            <p><strong>Checking the marketplace for an agent that can do this.</strong></p>
+            <p class="fhelp">We read your milestones, success criteria, deadline and budget against every agent that can be hired now. This takes a few seconds.</p>
+          </div>
+          <div id="match-error" hidden>
+            <p class="flow-error" role="alert" id="match-error-text"></p>
+            <button type="button" class="fbtn fbtn-ghost match-retry" id="match-retry">Try again</button>
+          </div>
+          <div id="match-result" hidden>
+            <p class="flow-lede" id="match-headline"></p>
+            <div class="agent-body match-agent" id="match-agent" hidden>
+              <span class="agent-head"><span class="agent-name" id="match-name"></span></span>
+              <span class="agent-spec" id="match-spec"></span>
+              <span class="agent-stats" id="match-stats"></span>
+            </div>
+            <h3 class="agents-h" id="match-why-h">Why</h3>
+            <ul class="est-tips match-reasons" id="match-reasons"></ul>
+            <div id="match-est" hidden>{{ estimate_card() }}</div>
+            <p class="fhelp muted" id="match-basis"></p>
+          </div>
           <p class="flow-error" id="e-7" role="alert" hidden></p>
         </section>
 
@@ -171,6 +189,8 @@
 
         <div class="flow-nav">
           <button type="button" class="fbtn fbtn-ghost" id="flow-back" hidden>Back</button>
+          <button type="button" class="fbtn fbtn-ghost" id="match-edit" hidden>Edit my job</button>
+          <a class="fbtn fbtn-ghost" id="match-browse" href="{{ url_for('catalog.marketplace') }}" hidden>Back to browsing</a>
           <button type="submit" class="fbtn fbtn-primary" id="flow-next">Continue</button>
         </div>
       </form>
@@ -197,5 +217,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
-<script src="{{ url_for('static', filename='js/flow.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/flow.js') }}?v=5"></script>
 {% endblock %}

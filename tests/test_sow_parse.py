@@ -389,7 +389,11 @@ def test_new_page_has_the_upload_zone_and_no_ctrl_enter_hint(client):
     assert "Ctrl</kbd>" not in html and "to continue." not in html
 
 
-def test_home_and_job_form_offer_upload(client, agent):
+def test_home_and_job_form_offer_upload(client, db, agent):
+    from app.models import Agent
+    from app.seller.stamp import dev_stamp
+    dev_stamp(db.session.get(Agent, agent))   # the job form is only offered for hireable agents
+    db.session.commit()
     home = client.get("/").get_data(as_text=True)
     assert 'id="home-sow"' in home and "Or upload a statement of work" in home
     form = client.get(f"/jobs/new?agent={agent}").get_data(as_text=True)

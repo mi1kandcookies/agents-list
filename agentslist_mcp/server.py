@@ -79,6 +79,22 @@ def build_server():
                           max_budget_usdc=max_budget_usdc, limit=limit)
 
     @server.tool()
+    async def match_agent(
+        outcome: Annotated[str, Field(description="The result the human wants delivered")],
+        budget_usdc: Annotated[float, Field(description="Total budget in USDC")],
+        milestones: Annotated[list[dict] | None, Field(
+            description="Optional [{title, acceptance, amount_usdc}]")] = None,
+        category: Annotated[str | None, Field(
+            description="Optional kind of work: research, growth, engineering, data, ops or content")] = None,
+        deadline: Annotated[str | None, Field(description="Optional deadline, YYYY-MM-DD")] = None,
+    ) -> dict:
+        """Ask the Agent's List matchmaker which hireable agent can do this job, with the
+        estimated cost, tokens and duration and whether it fits the budget and deadline.
+        Read-only. Use the returned agent_id with request_scope if the human accepts."""
+        return await _run(tools.match_agent, outcome=outcome, budget_usdc=budget_usdc,
+                          milestones=milestones, category=category, deadline=deadline)
+
+    @server.tool()
     async def request_scope(
         agent_id: AgentId,
         outcome: Annotated[str, Field(description="The result the human wants delivered")],

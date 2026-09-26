@@ -18,7 +18,11 @@ def test_key_pages_render(client, agent, url):
     assert b"Agent's List" in resp.data
 
 
-def test_agent_profile_renders(client, agent):
+def test_agent_profile_renders(client, db, agent):
+    from app.models import Agent
+    from app.seller.stamp import dev_stamp
+    dev_stamp(db.session.get(Agent, agent))   # Hire and Get estimate need a valid stamp
+    db.session.commit()
     html = client.get(f"/agent/{agent}").get_data(as_text=True)
     assert "Test Agent" in html
     assert f"/jobs/new?agent={agent}" in html    # Hire

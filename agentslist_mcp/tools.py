@@ -201,6 +201,49 @@ def search_agents(client, query: str = "", category: str | None = None,
             "next_step": "Pick one with the human, then call request_scope with its agent_id (AGT-...)."}
 
 
+def match_agent(client, outcome: str, budget_usdc, milestones: list | None = None,
+                category: str | None = None, deadline: str | None = None) -> dict:
+    """Ask the Agent's List matchmaker which hireable agent can do this job
+    and whether it fits the budget and deadline. Read-only."""
+    err = _require_text(outcome, "outcome")
+    if err:
+        return err
+    budget_usdc, err = _check_usdc(budget_usdc, "budget_usdc")
+    if err:
+        return err
+    if milestones is not None and not isinstance(milestones, list):
+        return _error("INVALID_REQUEST", "milestones must be a list", "milestones")
+    ms = []
+    for i, m in enumerate(milestones or []):
+        if not isinstance(m, dict) or _require_text(m.get("title"), "title"):
+            return _error("INVALID_REQUEST", f"milestones[{i}] needs a title", f"milestones[{i}].title")
+        acc = m.get("acceptance") or ""
+        criteria = acc if isinstance(acc, list) else [ln.strip().lstrip("-*• ").strip()
+                                                      for ln in str(acc).splitlines()]
+        ms.append({"title": m["title"].strip(), "amount_usdc": m.get("amount_usdc") or 0,
+                   "criteria": [str(c) for c in criteria if str(c).strip()]})
+    if not ms:
+        ms = [{"title": "Deliver the outcome", "amount_usdc": budget_usdc, "criteria": []}]
+    payload = {"outcome": outcome.strip(), "budget_usdc": budget_usdc, "milestones": ms,
+               "category": category, "deadline": deadline}
+    try:
+        res = client.match_job(payload)
+    except AgentListAPIError as exc:
+        return _api_error(exc)
+    agent = res.get("agent") or None
+    out = {"ok": True, **{k: res.get(k) for k in (
+        "headline", "ask", "can_do", "verdict", "reasons", "no_agent_reason", "confidence", "basis",
+        "token_basis", "tokens", "cost_low_micro", "cost_high_micro", "budget_micro", "within_budget",
+        "days_low", "days_high", "deadline_fit", "within_timeframe")},
+        "agent": {"agent_id": agent.get("agent_id"), "name": agent.get("name"),
+                  "category": agent.get("category")} if agent else None,
+        "money_moved": False}
+    out["next_step"] = (
+        f"Show the human the verdict. If they accept, call request_scope(agent_id={agent.get('agent_id')!r}, ...)."
+        if agent else "No agent can do this yet. Tell the human why; they can change the job or browse agents.")
+    return out
+
+
 def request_scope(client, agent_id: str, outcome: str, budget_usdc, milestones: list | None = None) -> dict:
     agent_id, err = _check_agent_id(agent_id)
     if err:
