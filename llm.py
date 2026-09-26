@@ -28,11 +28,6 @@ Protocol facts you can rely on:
   - Escrow via EscrowPayment at 0xD19990C7...
   - Gasless buyer flow via EIP-3009 transferWithAuthorization
 
-API endpoints on the host app (localhost:8080):
-  POST /api/x402/pay          {fromId, toId, amountUSDC}
-  GET  /api/agents/<id>/erc8004
-  POST /api/sim/post-bid      {tokenBudget, maxPricePerToken, minTier, categoryId}
-  POST /api/sim/slash-agent   {agentId, reason}
 """
 
 

@@ -28,45 +28,6 @@
     {% endfor %}
   </div>
 
-  <!-- Bond notice — live-checks the seller's on-chain stake. Flips to a
-       green "bonded ✓" state when the wallet already has >= $100 staked. -->
-  <div id="bond-notice" style="display:flex; align-items:center; gap:10px; padding:9px 14px; background:rgba(245,158,11,.04); border:1px solid rgba(245,158,11,.15); border-radius:var(--radius); margin-bottom:16px;">
-    <svg id="bond-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    <span id="bond-text" style="font-size:.8125rem; color:var(--text-2);">
-      <strong style="color:#f59e0b; font-weight:600;">Bond required</strong> — $100 USDC account + $25 per agent before going live.
-      <a href="/seller/earnings" style="color:#f59e0b; font-weight:500; margin-left:6px;">Manage →</a>
-    </span>
-  </div>
-  <script>
-  // Live bond check — updates the notice to reflect the seller's real
-  // on-chain stake so a buyer who just bonded on /seller/earnings sees
-  // "Bonded ✓" here instead of the stale "Bond required" banner.
-  (async () => {
-    try {
-      const r = await fetch('/api/seller/bond-status');
-      const d = await r.json();
-      if (d && d.bonded) {
-        const notice = document.getElementById('bond-notice');
-        const text   = document.getElementById('bond-text');
-        const icon   = document.getElementById('bond-icon');
-        if (notice) {
-          notice.style.background = 'rgba(34,197,94,.06)';
-          notice.style.borderColor = 'rgba(34,197,94,.3)';
-        }
-        if (icon) {
-          icon.setAttribute('stroke', 'var(--green)');
-          icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
-        }
-        if (text) {
-          text.innerHTML = '<strong style="color:var(--green); font-weight:600;">Bonded ✓</strong>' +
-                           ' — $' + (d.totalStakedUSDC || 0).toLocaleString() + ' USDC staked on-chain' +
-                           (d.agentCount ? ' across ' + d.agentCount + ' agent(s)' : '') + '.' +
-                           ' <a href="/seller/earnings" style="color:var(--green); font-weight:500; margin-left:6px;">View →</a>';
-        }
-      }
-    } catch (_) {}
-  })();
-  </script>
 
   <!-- ═══ Step 1: Agent Info ═══ -->
   <div class="form-step" id="step-1" style="display:block;">
@@ -116,7 +77,7 @@
                 {% for group, models in model_groups %}
                 <div class="mdl-group-label">{{ group }}</div>
                 {% for val, label in models %}
-                <div class="mdl-option" data-value="{{ val }}">{{ label }}</div>
+                <div class="mdl-option" data-value="{{ group }}|{{ val }}">{{ label }}</div>
                 {% endfor %}
                 {% endfor %}
               </div>
@@ -235,7 +196,7 @@
 
     <div class="card mb-24">
       <h3 style="margin-bottom:8px;">Configure Pricing</h3>
-      <p class="text-sm mb-24">Set your billing model and price range. AgentHire's surge pricing will dynamically adjust within your defined range.</p>
+      <p class="text-sm mb-24">Set your billing model and price range. Buyers see these prices on your listing.</p>
 
       <div class="form-group mb-24">
         <label class="form-label">Billing Model *</label>
@@ -337,66 +298,10 @@
           <span class="font-bold">Verification Fee</span>
           <span class="font-bold text-accent" id="verification-price">Select a tier above</span>
         </div>
-        <p class="text-xs text-muted mt-8">Paid in USDC via your connected wallet. Non-refundable.</p>
+        <p class="text-xs text-muted mt-8">Not charged during this phase.</p>
       </div>
     </div>
 
-    <!-- Required Bond -->
-    <div class="card" style="border-color: var(--red-border);">
-      <div class="flex-between mb-12">
-        <h3 style="margin:0;">Required Bond</h3>
-        <span class="badge" style="background:var(--red-dim); color:var(--red); border:1px solid var(--red-border);">BondingSlashing.sol</span>
-      </div>
-      <p class="text-sm mb-20">Post USDC capital before your listing goes live. Severe buyer disputes (gatekeeper-signed) slash this bond. The bond amount you choose determines the highest <b style="color:var(--text);">auction tier</b> you can serve.</p>
-
-      <input type="hidden" id="selected-bond" name="bond_tier" value="">
-      <div class="grid-3 gap-12 mb-16">
-        <label class="tier-card" data-bond="1" for="bond-t1">
-          <input type="radio" name="bond-radio" id="bond-t1" value="1" style="display:none;">
-          <div style="font-family:var(--font-mono); font-size:.625rem; letter-spacing:.1em; text-transform:uppercase; color:var(--red);">Tier 1</div>
-          <div class="tier-price" style="margin-top:8px;">100 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
-          <div class="font-bold mb-8" style="margin-top:6px;">Baseline</div>
-          <div class="tier-feature">Accept bids with minTier = 1</div>
-          <div class="tier-feature">All categories</div>
-          <div class="tier-feature">Slash cap: 100 USDC total</div>
-        </label>
-        <label class="tier-card" data-bond="2" for="bond-t2">
-          <input type="radio" name="bond-radio" id="bond-t2" value="2" style="display:none;">
-          <div style="font-family:var(--font-mono); font-size:.625rem; letter-spacing:.1em; text-transform:uppercase; color:var(--red);">Tier 2</div>
-          <div class="tier-price" style="margin-top:8px;">250 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
-          <div class="font-bold mb-8" style="margin-top:6px;">Skilled</div>
-          <div class="tier-feature">Gated: score ≥ 700 · 50+ tasks</div>
-          <div class="tier-feature">Accept bids with minTier ≤ 2</div>
-          <div class="tier-feature">Higher deposit caps</div>
-        </label>
-        <label class="tier-card" data-bond="3" for="bond-t3">
-          <input type="radio" name="bond-radio" id="bond-t3" value="3" style="display:none;">
-          <div style="font-family:var(--font-mono); font-size:.625rem; letter-spacing:.1em; text-transform:uppercase; color:var(--red);">Tier 3</div>
-          <div class="tier-price" style="margin-top:8px;">1,000 <span style="font-size:.875rem; font-weight:400; color:var(--text-2);">USDC</span></div>
-          <div class="font-bold mb-8" style="margin-top:6px;">Elite</div>
-          <div class="tier-feature">Gated: score ≥ 900 · 200+ tasks</div>
-          <div class="tier-feature">Accept every bid · unlimited cap</div>
-          <div class="tier-feature">Priority in UI ranking</div>
-        </label>
-      </div>
-
-      <div class="card card-sm" style="background:var(--card-2);">
-        <div class="flex-between mb-8 text-sm">
-          <span class="text-muted">Slash schedule per severe incident</span>
-          <span class="font-mono" style="color:var(--red);">25% → 75% → 100% + ban</span>
-        </div>
-        <div class="flex-between mb-8 text-sm">
-          <span class="text-muted">Distribution</span>
-          <span class="font-mono">60% buyer · 40% insurance</span>
-        </div>
-        <div class="flex-between text-sm">
-          <span class="text-muted">Unbond delay</span>
-          <span class="font-mono">7 days</span>
-        </div>
-      </div>
-
-      <p class="text-xs text-muted mt-12">Bond is held by <span class="font-mono">BondingSlashing</span>. You recover unspent bond anytime after the 7-day unbond window - never by AgentHire or the buyer.</p>
-    </div>
   </div>
 
   <!-- Step 4: Review -->
@@ -411,29 +316,12 @@
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Billing</span><span id="review-billing">Per Token</span></div>
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Price Range</span><span id="review-range">$0.002 - $0.010</span></div>
           <div class="flex-between mb-8 text-sm"><span class="text-muted">Verification</span><span id="review-verification">Basic ($10 USDC)</span></div>
-          <div class="flex-between mb-8 text-sm"><span class="text-muted">Bond Tier</span><span id="review-bond">Tier 1 (100 USDC)</span></div>
-          <div class="flex-between text-sm"><span class="text-muted">Bonding Wallet</span><span class="font-mono" id="review-wallet" style="font-size:.72rem;">not connected</span></div>
+          <div class="flex-between text-sm"><span class="text-muted">Seller Wallet</span><span class="font-mono" id="review-wallet" style="font-size:.72rem;">not connected</span></div>
         </div>
 
         <div class="escrow-notice">
           <span class="icon">ℹ</span>
-          <p>By submitting, you agree to AgentHire's terms. The verification fee is spent. The bond is deposited into <span class="font-mono">BondingSlashing.sol</span> - slashable on severe incidents, otherwise refundable after a 7-day unbond delay.</p>
-        </div>
-
-        <div class="card card-sm" style="background: rgba(34,197,94,.04); border-color: rgba(34,197,94,.15);">
-          <div class="flex-between mb-8">
-            <span class="text-sm text-muted">Verification fee (non-refundable)</span>
-            <span class="font-mono" id="review-fee-val">$10.00 USDC</span>
-          </div>
-          <div class="flex-between mb-10">
-            <span class="text-sm text-muted">Bond deposit (refundable after 7d)</span>
-            <span class="font-mono" id="review-bond-val">$100.00 USDC</span>
-          </div>
-          <div class="divider"></div>
-          <div class="flex-between">
-            <span class="font-bold">Total Due Today</span>
-            <span class="font-bold text-success" id="review-total">$110.00 USDC</span>
-          </div>
+          <p>Your listing goes live as unverified and enters the verification queue. Verification fees are not charged in this phase.</p>
         </div>
       </div>
     </div>
@@ -444,7 +332,7 @@
     <button class="btn btn-ghost" id="step-prev" style="display:none;">← Back</button>
     <div style="margin-left:auto; display:flex; gap:12px;">
       <button class="btn btn-primary" id="step-next">Continue →</button>
-      <button class="btn btn-gradient" id="step-submit" style="display:none;">Submit & Pay Verification Fee</button>
+      <button class="btn btn-gradient" id="step-submit" style="display:none;">Submit Listing</button>
     </div>
   </div>
 </div>
@@ -593,17 +481,11 @@
           return;
         }
       }
-      // Step 3: require verification tier AND bond tier
+      // Step 3: require verification tier
       if (activeStep && activeStep.id === 'step-3') {
         const verifySel = activeStep.querySelector('.tier-card[data-tier].selected');
-        const bondSel  = activeStep.querySelector('.tier-card[data-bond].selected');
         if (!verifySel) {
           showToast('Choose a verification tier before continuing.', 'warning');
-          e.stopImmediatePropagation();
-          return;
-        }
-        if (!bondSel) {
-          showToast('Choose a bond tier before continuing.', 'warning');
           e.stopImmediatePropagation();
           return;
         }
@@ -617,7 +499,6 @@
         const maxV = parseFloat(document.getElementById('create-max-output')?.value) || 0;
         const verifyKind = verifySel.dataset.tier === 'thorough' ? 'Premium Audit' : 'Basic';
         const verifyFee  = verifySel.dataset.tier === 'thorough' ? 50 : 10;
-        const bondUSDC  = bondSel.dataset.bond === '3' ? 1000 : bondSel.dataset.bond === '2' ? 250 : 100;
 
         const set = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
         set('review-name', name);
@@ -625,11 +506,7 @@
         set('review-billing', billingLbl);
         set('review-range', `$${minV.toFixed(5)} - $${maxV.toFixed(5)}`);
         set('review-verification', `${verifyKind} ($${verifyFee} USDC)`);
-        set('review-bond', `Tier ${bondSel.dataset.bond} (${bondUSDC.toLocaleString()} USDC)`);
-        set('review-fee-val', `$${verifyFee.toFixed(2)} USDC`);
-        set('review-bond-val', `$${bondUSDC.toFixed(2)} USDC`);
-        set('review-total', `$${(verifyFee + bondUSDC).toFixed(2)} USDC`);
-        // Show the wallet that will bond
+        // Show the seller wallet
         const w = (window.AgentHire && window.AgentHire.address) || null;
         const wEl = document.getElementById('review-wallet');
         if (wEl) {
@@ -666,11 +543,15 @@
     const step3 = document.getElementById('step-3');
     const billingEl = step2 ? step2.querySelector('[data-tier].selected') : null;
     const verifyEl = step3 ? step3.querySelector('.tier-card[data-tier].selected') : null;
-    const bondEl  = step3 ? step3.querySelector('.tier-card[data-bond].selected') : null;
 
-    // Wallet is optional — server auto-generates a demo wallet if missing,
-    // so the Submit click always produces a real Fuji tx.
-    const walletAddr = (window.AgentHire && window.AgentHire.address) || '';
+    const walletAddr = (window.AgentHire && window.AgentHire.address)
+      || (document.cookie.match(/(?:^|;\s*)seller_wallet=(0x[a-fA-F0-9]{40})/) || [])[1] || '';
+    if (!walletAddr) {
+      showToast('Connect a wallet first — listings are owned by your wallet address.', 'warning');
+      btn.disabled = false;
+      btn.textContent = 'Submit Listing';
+      return;
+    }
 
     const payload = {
       name:              byId('create-name'),
@@ -688,7 +569,7 @@
       min_output_tokens: byId('create-min-output'),
       max_output_tokens: byId('create-max-output'),
       verification_tier: verifyEl ? verifyEl.dataset.tier : 'basic',
-      bond_tier:        bondEl  ? Number(bondEl.dataset.bond) : 1,
+      model:             byId('create-model'),
       wallet:            walletAddr,
       seller:            walletAddr,
     };
@@ -696,14 +577,14 @@
     if (!payload.name || !payload.description || !payload.category) {
       showToast('Please fill in required fields (name, description, category).', 'error');
       btn.disabled = false;
-      btn.textContent = 'Submit & Pay Verification Fee';
+      btn.textContent = 'Submit Listing';
       return;
     }
 
     try {
       const res = await AgentHireAPI.post('/seller/create', payload);
       if (res.agentId) {
-        showToast(`Listed! Bond of ${res.bondUSDC} USDC escrowed.`, 'success');
+        showToast('Listed! Your agent is queued for verification.', 'success');
         // Route straight to the buyer-facing detail page so the seller sees
         // their listing the way buyers will.
         setTimeout(() => window.location = `/agent/${res.agentId}`, 1400);
@@ -713,7 +594,7 @@
     } catch (e) {
       showToast('Submission failed: ' + e.message, 'error');
       btn.disabled = false;
-      btn.textContent = 'Submit & Pay Verification Fee';
+      btn.textContent = 'Submit Listing';
     }
   });
 
@@ -731,19 +612,6 @@
     card.style.cursor = 'pointer';
   });
 
-  // Wire step-3 bond-tier cards (data-bond="1"/"2"/"3"). The cards are <label>
-  // elements wrapping a hidden radio. Clicking the label fires the radio's
-  // change event, but we also need to mark the card with .selected for the
-  // validation queries in step-next / step-submit to pick it up.
-  document.querySelectorAll('#step-3 .tier-card[data-bond]').forEach(card => {
-    card.addEventListener('click', () => {
-      document.querySelectorAll('#step-3 .tier-card[data-bond]').forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-      const hidden = document.getElementById('selected-bond');
-      if (hidden) hidden.value = card.dataset.bond;
-    });
-    card.style.cursor = 'pointer';
-  });
 
   function updateTokenPreview() {
     const minIn  = parseFloat(document.getElementById('create-min-input')?.value);

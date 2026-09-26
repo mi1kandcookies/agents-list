@@ -6,7 +6,6 @@ Tables
 agents              : Registered AI agents (mirrors AGENTS list)
 orders              : Buyer orders / escrow sessions (mirrors ORDERS)
 verification_entries: Verification queue entries (mirrors VERIFICATION_QUEUE)
-auction_bids        : Open auction bids (mirrors _AUCTION_BIDS)
 payouts             : Seller payouts tracked by the admin panel
 moderation_reports  : User-filed reports reviewed by admins
 reviews             : Buyer ratings and feedback per agent
@@ -43,8 +42,6 @@ class Agent(db.Model):
     min_price           = db.Column(db.Float, nullable=False, default=0.001)
     max_price           = db.Column(db.Float, nullable=False, default=0.010)
     current_price       = db.Column(db.Float, nullable=False, default=0.001)
-    surge_active        = db.Column(db.Boolean, nullable=False, default=False)
-    surge_multiplier    = db.Column(db.Float, nullable=False, default=1.0)
     seller              = db.Column(db.String(120), nullable=False, default="")
     seller_rating       = db.Column(db.Float, nullable=False, default=0.0)
     tasks_completed     = db.Column(db.Integer, nullable=False, default=0)
@@ -94,8 +91,6 @@ class Agent(db.Model):
             "min_price": self.min_price,
             "max_price": self.max_price,
             "current_price": self.current_price,
-            "surge_active": self.surge_active,
-            "surge_multiplier": self.surge_multiplier,
             "seller": self.seller,
             "seller_rating": self.seller_rating,
             "tasks_completed": self.tasks_completed,
@@ -181,44 +176,6 @@ class VerificationEntry(db.Model):
 
     def __repr__(self):
         return f"<VerificationEntry {self.id} {self.status}>"
-
-
-# ── AuctionBid ────────────────────────────────────────────────────────────────
-
-class AuctionBid(db.Model):
-    __tablename__ = "auction_bids"
-
-    id                = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    on_chain_bid_id   = db.Column(db.String(80), nullable=True)   # set when on-chain tx succeeds
-    user              = db.Column(db.String(80), nullable=True)
-    deposit_amount    = db.Column(db.BigInteger, nullable=False)   # in USDC micro-units
-    token_budget      = db.Column(db.BigInteger, nullable=False)
-    max_price_per_token = db.Column(db.BigInteger, nullable=False)
-    category_id       = db.Column(db.Integer, nullable=False, default=0)
-    min_tier          = db.Column(db.Integer, nullable=False, default=1)
-    expires_at        = db.Column(db.BigInteger, nullable=False)   # unix timestamp
-    settled           = db.Column(db.Boolean, nullable=False, default=False)
-    cancelled         = db.Column(db.Boolean, nullable=False, default=False)
-    tx_hash           = db.Column(db.String(80), nullable=True)
-    created_at        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    def to_dict(self) -> dict:
-        return {
-            "bidId": self.on_chain_bid_id or str(self.id),
-            "user": self.user,
-            "depositAmount": str(self.deposit_amount),
-            "tokenBudget": str(self.token_budget),
-            "maxPricePerToken": str(self.max_price_per_token),
-            "categoryId": str(self.category_id),
-            "minTier": self.min_tier,
-            "expiresAt": self.expires_at,
-            "settled": self.settled,
-            "cancelled": self.cancelled,
-            "txHash": self.tx_hash,
-        }
-
-    def __repr__(self):
-        return f"<AuctionBid {self.id} settled={self.settled}>"
 
 
 # ── Payout ────────────────────────────────────────────────────────────────────
@@ -310,47 +267,6 @@ class Review(db.Model):
         return f"<Review agent={self.agent_id} {self.rating}*>"
 
 
-# ── OnchainProfile ────────────────────────────────────────────────────────────
-# Mirrors what lives in ReputationContract + StakingSlashing for each agent.
-# When the real on-chain backend is configured, reads fall through to it;
-# otherwise the simulation layer reads/writes these rows as ground truth.
-
-class OnchainProfile(db.Model):
-    __tablename__ = "onchain_profiles"
-
-    agent_id          = db.Column(db.Integer, db.ForeignKey("agents.id"), primary_key=True)
-    wallet_address    = db.Column(db.String(64), nullable=False, default="")
-    # Reputation side
-    score             = db.Column(db.Integer, nullable=False, default=500)    # 0–1000
-    tier              = db.Column(db.Integer, nullable=False, default=1)      # 1/2/3
-    tasks_completed   = db.Column(db.Integer, nullable=False, default=0)
-    rep_incident_count= db.Column(db.Integer, nullable=False, default=0)
-    last_decay_ts     = db.Column(db.BigInteger, nullable=False, default=0)
-    # Staking side (USDC micro-units, 6 decimals)
-    staked_amount     = db.Column(db.BigInteger, nullable=False, default=0)
-    stake_incident_count = db.Column(db.Integer, nullable=False, default=0)
-    banned            = db.Column(db.Boolean, nullable=False, default=False)
-    # Listing side
-    accepting_work    = db.Column(db.Boolean, nullable=False, default=True)
-    created_at        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    def to_dict(self) -> dict:
-        return {
-            "agentId": self.agent_id,
-            "wallet": self.wallet_address,
-            "score": self.score,
-            "tier": self.tier,
-            "tasksCompleted": self.tasks_completed,
-            "repIncidentCount": self.rep_incident_count,
-            "lastDecayTs": self.last_decay_ts,
-            "stakedUSDC": str(self.staked_amount),
-            "stakedUSDCDisplay": round(self.staked_amount / 1_000_000, 2),
-            "stakeIncidentCount": self.stake_incident_count,
-            "banned": self.banned,
-            "acceptingWork": self.accepting_work,
-        }
-
-
 # ── Transaction ───────────────────────────────────────────────────────────────
 # Full on-chain activity log. Populated from real chain events when a node
 # listener is wired up, or by the simulator for demo data.
@@ -387,27 +303,31 @@ class ChainTransaction(db.Model):
         }
 
 
-# ── PricePoint ────────────────────────────────────────────────────────────────
-# One sample per agent per minute-ish. Drives the price-history chart and
-# the surge-pricing engine's rolling-window lookups.
+# ── Schema helper ─────────────────────────────────────────────────────────────
 
-class PricePoint(db.Model):
-    __tablename__ = "price_points"
+def _ensure_columns(app) -> None:
+    """Add any missing columns to the agents table (idempotent).
 
-    id              = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    agent_id        = db.Column(db.Integer, db.ForeignKey("agents.id"), nullable=False, index=True)
-    ts              = db.Column(db.BigInteger, nullable=False, index=True)
-    price_per_token = db.Column(db.Float, nullable=False)         # USDC
-    utilization     = db.Column(db.Float, nullable=False, default=0.0)
-    surge           = db.Column(db.Float, nullable=False, default=1.0)
-
-    def to_dict(self) -> dict:
-        return {
-            "ts": self.ts,
-            "price": self.price_per_token,
-            "utilization": self.utilization,
-            "surge": self.surge,
+    Flask-SQLAlchemy's create_all does not ALTER existing tables, so we run
+    targeted ALTERs for columns introduced after the first schema.
+    Stopgap until real migrations land.
+    """
+    with app.app_context():
+        if db.engine.dialect.name != "sqlite":
+            return
+        cols = {c[1] for c in db.session.execute(db.text("PRAGMA table_info(agents)")).fetchall()}
+        needed = {
+            "model_provider":      "VARCHAR(40)",
+            "model_name":          "VARCHAR(80)",
+            "deployer_wallet":     "VARCHAR(64)",
+            "input_price_per_1m":  "INTEGER NOT NULL DEFAULT 0",
+            "output_price_per_1m": "INTEGER NOT NULL DEFAULT 0",
         }
+        for col, ddl in needed.items():
+            if cols and col not in cols:
+                app.logger.info("ALTER TABLE agents ADD COLUMN %s", col)
+                db.session.execute(db.text(f"ALTER TABLE agents ADD COLUMN {col} {ddl}"))
+        db.session.commit()
 
 
 # ── Seed helper ───────────────────────────────────────────────────────────────
@@ -439,8 +359,7 @@ def seed_db(app) -> None:
                     verified=a["verified"], verification_tier=a.get("verification_tier", "none"),
                     featured=a["featured"], rating=a["rating"], reviews=a["reviews"],
                     billing=a["billing"], min_price=a["min_price"], max_price=a["max_price"],
-                    current_price=a["current_price"], surge_active=a["surge_active"],
-                    surge_multiplier=a["surge_multiplier"], seller=a["seller"],
+                    current_price=a["current_price"], seller=a["seller"],
                     seller_rating=a["seller_rating"], tasks_completed=a["tasks_completed"],
                     avg_completion_time=a.get("avg_completion_time", " - "),
                 )

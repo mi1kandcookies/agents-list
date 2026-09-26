@@ -20,7 +20,7 @@
         <p>Reports, complaints, and flagged agents</p>
       </div>
       <div class="flex-center gap-10">
-        <span class="badge badge-rejected" style="font-size:.875rem; padding:6px 14px;">2 Open Reports</span>
+        <span class="badge badge-rejected" style="font-size:.875rem; padding:6px 14px;">{{ reports|selectattr('status','equalto','open')|list|length }} Open Reports</span>
       </div>
     </div>
 

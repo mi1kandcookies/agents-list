@@ -38,9 +38,9 @@
         <div class="stat-change up mt-8">{{ stats.settle_count }} settle events</div>
       </div>
       <div class="stat-card">
-        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Slashed (cumulative)</div>
-        <div class="stat-value" style="color:var(--error);">{{ stats.slash_count }}</div>
-        <div class="text-xs text-muted mt-8">Gatekeeper-signed incidents</div>
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">On Hold</div>
+        <div class="stat-value" style="color:var(--error);">{{ payouts|selectattr('status','equalto','held')|list|length }}</div>
+        <div class="text-xs text-muted mt-8">payouts held for review</div>
       </div>
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Protocol Revenue</div>

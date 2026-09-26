@@ -46,7 +46,6 @@
               <span class="badge badge-unverified">Unverified</span>
               {% endif %}
               {% if agent.featured %}<span class="badge badge-featured">Featured</span>{% endif %}
-              {% if agent.surge_active %}<span class="badge badge-surge">Surge</span>{% endif %}
             </div>
             <div class="flex-center gap-16">
               <div class="rating" title="{{ agent.rating }} out of 5">
@@ -57,213 +56,40 @@
               <span class="text-sm text-muted">{{ "{:,}".format(agent.tasks_completed) }} tasks</span>
               <span class="text-sm text-muted">Avg. {{ agent.avg_completion_time }}</span>
             </div>
-            <!-- Live on-chain reputation panel - reads ReputationContract.getCreditProfile -->
-            <div id="onchain-rep-banner" style="display:none; margin-top:12px; padding:10px 14px; background:var(--surface-1); border:1px solid var(--border-2); border-radius:var(--radius-sm); font-family:var(--font-mono); font-size:.75rem; display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
-              <div style="display:flex; align-items:center; gap:6px;">
-                <div style="width:6px; height:6px; border-radius:50%; background:var(--green); animation:pulse 1.5s infinite;"></div>
-                <span style="color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-size:.625rem;">On-chain</span>
-              </div>
-              <span>Score <b id="oc-score" style="color:var(--text-1)"> - </b></span>
-              <span>Tier <b id="oc-tier" style="color:var(--text-1)"> - </b></span>
-              <span>Tasks <b id="oc-tasks" style="color:var(--text-1)"> - </b></span>
-              <span>Incidents <b id="oc-inc" style="color:var(--text-1)"> - </b></span>
-              <span>Bond <b id="oc-bond" style="color:var(--text-1)"> - </b></span>
-              <a id="oc-link" href="#" target="_blank" style="color:var(--text-3); margin-left:auto;">snowtrace ↗</a>
-            </div>
-            <!-- Per-category tier badges - ERC-8004-style specialization -->
-            <div id="oc-categories" style="display:none; margin-top:8px; font-family:var(--font-mono); font-size:.6875rem; color:var(--text-3);">
-              <span style="text-transform:uppercase; letter-spacing:.06em;">Specialization:</span>
-              <span id="oc-cat-badges" style="display:inline-flex; gap:6px; margin-left:6px;"></span>
-            </div>
-            <script>
-            (async () => {
-              const ocAgentId = {{ agent.id }};
-              const b = document.getElementById('onchain-rep-banner');
-              const fillBanner = ({ score, tier, tasks, incidents, bond, simulated }) => {
-                b.style.display = 'flex';
-                document.getElementById('oc-score').textContent = score + '/1000';
-                document.getElementById('oc-tier').textContent = 'T' + tier;
-                document.getElementById('oc-tasks').textContent = Number(tasks).toLocaleString();
-                document.getElementById('oc-inc').textContent = incidents;
-                document.getElementById('oc-bond').textContent = Number(bond).toLocaleString() + ' USDC';
-                if (simulated) {
-                  const tag = document.createElement('span');
-                  tag.textContent = 'sim';
-                  tag.title = 'Simulated profile (no live signer configured)';
-                  tag.style.cssText = 'padding:1px 6px; border-radius:999px; background:var(--surface-0); color:var(--text-3); font-size:.5625rem; text-transform:uppercase; letter-spacing:.06em;';
-                  b.appendChild(tag);
-                }
-              };
-
-              // 1) Try the live chain first (works when real signer keys are present).
-              let filled = false;
-              try {
-                if (window.AgentHire && window.AgentHire.getAgentProfile) {
-                  const p = await window.AgentHire.getAgentProfile(ocAgentId);
-                  if (p && p.active) {
-                    fillBanner({
-                      score: p.reputation.score, tier: p.reputation.tier,
-                      tasks: p.reputation.tasks, incidents: p.reputation.incidents,
-                      bond: p.bond.amountUSDC.toFixed(0), simulated: false,
-                    });
-                    filled = true;
-                  }
-                }
-              } catch (e) { /* fall through to simulation */ }
-
-              // 2) Fall back to the simulated profile from the Flask backend.
-              if (!filled) {
-                try {
-                  const sim = await fetch(`/api/agents/${ocAgentId}/profile`).then(r => r.ok ? r.json() : null);
-                  if (sim) {
-                    fillBanner({
-                      score: sim.score, tier: sim.tier,
-                      tasks: sim.tasksCompleted, incidents: sim.repIncidentCount,
-                      bond: sim.bonddUSDCDisplay, simulated: true,
-                    });
-                    filled = true;
-                  }
-                } catch (e) { console.warn('sim profile fetch failed:', e); }
-              }
-
-              // Link to Snowtrace either way.
-              try {
-                const info = await fetch('/api/onchain/info').then(r => r.json()).catch(() => null);
-                if (info) document.getElementById('oc-link').href = info.explorer + '/address/' + info.contracts.ReputationContract;
-              } catch (_) {}
-            })();
-            </script>
           </div>
         </div>
-        <div class="flex-center gap-8 flex-wrap">
-          {% for tag in agent.tags %}
-          <span class="badge badge-pending">{{ tag }}</span>
-          {% endfor %}
+        <p style="color:var(--text-2); line-height:1.7;">{{ agent.long_description or agent.description }}</p>
+        {% if agent.tags %}
+        <div class="flex-center gap-8 mt-16" style="flex-wrap:wrap;">
+          {% for tag in agent.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
         </div>
-        <div class="divider"></div>
-        <div class="flex-between text-sm">
-          <span class="text-muted">Seller: <strong style="color:var(--text);">{{ agent.seller }}</strong></span>
-          <span class="text-muted">Category: <strong style="color:var(--text);">{{ agent.category }}</strong></span>
-          <span class="text-muted">Use Case: <strong style="color:var(--text);">{{ agent.use_case }}</strong></span>
-        </div>
+        {% endif %}
+        <div class="text-xs text-muted mt-16">Listed by <span class="font-mono">{{ agent.seller }}</span></div>
       </div>
 
-      <!-- Description -->
-      <div class="card mb-24 anim-on-scroll">
-        <h3 style="margin-bottom:16px;">About This Agent</h3>
-        <p style="color: var(--text); line-height: 1.8;">{{ agent.long_description }}</p>
-      </div>
-
-      <!-- ── How this agent works - SubagentWorkflow ────────────────────── -->
-      <div class="card mb-24" style="padding:0; overflow:hidden;">
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--card-2);">
-          <div class="flex-center gap-12">
-            <h3 style="font-size:.9375rem;">How this agent works</h3>
-            {% if a2a.composable %}
-            <span class="exec-type-badge exec-type-composable">A2A · {{ a2a.workflow_label }}</span>
-            {% else %}
-            <span class="exec-type-badge exec-type-standalone">{{ a2a.workflow_label }}</span>
-            {% endif %}
-          </div>
-          {% if a2a.composable %}
-          <div class="flex-center gap-6">
-            <button class="btn btn-ghost btn-sm" onclick="openModal('subagents-modal')">Sub-Agents</button>
-            <button class="btn btn-ghost btn-sm" onclick="openModal('cost-breakdown-modal')">Cost</button>
-          </div>
-          {% endif %}
-        </div>
-
-        <div style="padding:20px;">
-          {% if a2a.composable %}
-          <p class="text-sm mb-20" style="color:var(--text-2); line-height:1.65;">{{ a2a.workflow_summary }}</p>
-          {% endif %}
-
-          <!-- Expandable stage list -->
-          <div class="stage-list">
-            {% for stage in a2a.stages %}
-            <div class="stage-item {{ 'subagent' if stage.type == 'subagent' }}" id="stage-{{ stage.id }}">
-              <button class="stage-trigger">
-                <div class="stage-num">{{ stage.order }}</div>
-                <div style="flex:1; min-width:0;">
-                  <div class="flex-center gap-8">
-                    <span class="stage-title">{{ stage.name }}</span>
-                    {% if stage.type == 'subagent' %}
-                    <span class="badge badge-approved" style="font-size:.5rem;">sub-agent</span>
-                    {% endif %}
-                    {% if stage.conditional %}
-                    <span class="badge badge-review" style="font-size:.5rem;">conditional</span>
-                    {% endif %}
-                  </div>
-                  <div class="stage-purpose-preview">{{ stage.purpose[:72] }}{% if stage.purpose|length > 72 %}...{% endif %}</div>
-                </div>
-                <span class="stage-chevron">▶</span>
-              </button>
-              <div class="stage-body">
-                <p class="stage-detail">{{ stage.detail }}</p>
-                <div class="stage-tags">
-                  <span class="badge {{ 'badge-approved' if stage.type == 'subagent' else 'badge-testing' }}">{{ stage.type }}</span>
-                  {% if stage.conditional %}<span class="badge badge-review">conditional</span>{% endif %}
-                  <span class="badge badge-pending">stage {{ stage.order }} of {{ a2a.stages|length }}</span>
-                </div>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
-
+      {% if agent.capabilities %}
       <!-- Capabilities -->
-      <div class="card mb-24 anim-on-scroll delay-1">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
-          <h3>Capabilities</h3>
-          <span style="font-family:var(--font-mono); font-size:.5rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3);">{{ agent.capabilities|length }} modules</span>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+      <div class="card mb-24">
+        <h3 class="mb-16">Capabilities</h3>
+        <div class="flex-col gap-8">
           {% for cap in agent.capabilities %}
-          <div class="cap-chip">
-            <span class="cap-chip-accent"></span>
-            <span class="cap-chip-label">{{ cap }}</span>
-          </div>
+          <div class="tier-feature">{{ cap }}</div>
           {% endfor %}
         </div>
       </div>
+      {% endif %}
 
-      <!-- On-chain activity - price history + recent transactions -->
-      <div class="card mb-24" id="oc-activity-card">
-        <div class="flex-between mb-16">
-          <div>
-            <h3 style="margin-bottom:4px;">On-chain activity</h3>
-            <p class="text-sm text-muted" style="margin:0;">Price curve is simulated for density. Transactions below are real Fuji txs only — empty is honest.</p>
-          </div>
-          <span class="live-indicator"><span class="live-dot"></span> Live</span>
-        </div>
-        <div style="height:220px; margin-bottom:20px;"><canvas id="priceHistoryChart"></canvas></div>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px; margin-bottom:20px;">
-          <div style="background:var(--card-2); border:1px solid var(--border); border-radius:8px; padding:10px 14px;">
-            <div class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:.06em;">Current surge</div>
-            <div class="font-bold" id="oc-stat-surge" style="font-size:1.1rem; margin-top:4px;">-</div>
-          </div>
-          <div style="background:var(--card-2); border:1px solid var(--border); border-radius:8px; padding:10px 14px;">
-            <div class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:.06em;">Utilization</div>
-            <div class="font-bold" id="oc-stat-util" style="font-size:1.1rem; margin-top:4px;">-</div>
-          </div>
-          <div style="background:var(--card-2); border:1px solid var(--border); border-radius:8px; padding:10px 14px;">
-            <div class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:.06em;">Revenue (live on-chain)</div>
-            <div class="font-bold" id="oc-stat-revenue" style="font-size:1.1rem; margin-top:4px;">-</div>
-          </div>
-          <div style="background:var(--card-2); border:1px solid var(--border); border-radius:8px; padding:10px 14px;">
-            <div class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:.06em;">Bond slashed</div>
-            <div class="font-bold" id="oc-stat-slashed" style="font-size:1.1rem; margin-top:4px;">-</div>
-          </div>
-        </div>
-        <div style="font-family:var(--font-mono); font-size:.625rem; text-transform:uppercase; letter-spacing:.09em; color:var(--text-3); margin-bottom:10px;">Recent transactions</div>
+      <!-- On-chain activity (ChainTransaction audit log) -->
+      <div class="card mb-24">
+        <h3 style="margin-bottom:4px;">On-chain activity</h3>
+        <p class="text-sm text-muted mb-16">Payments and settlements recorded for this agent.</p>
         <div id="oc-tx-list" style="display:flex; flex-direction:column; gap:6px; font-family:var(--font-mono); font-size:.75rem;">
-          <div class="text-muted">Loading on-chain activity…</div>
+          <div class="text-muted">Loading…</div>
         </div>
       </div>
 
       <!-- Reviews -->
-      <div class="card anim-on-scroll delay-2">
+      <div class="card">
         <div class="flex-between mb-20">
           <h3>Reviews</h3>
           <div class="rating" title="{{ agent.rating }} out of 5">
@@ -273,21 +99,13 @@
           </div>
         </div>
         {% for review in reviews %}
-        {% set bots_used = ((review.user | length * 7 + loop.index * 13) % 76) + 1 %}
         <div style="padding: 18px 0; border-bottom: 1px solid {{ 'var(--border)' if not loop.last else 'transparent' }};">
           <div class="flex-between mb-10">
             <div class="flex-center gap-12">
               <div style="width:36px; height:36px; border-radius:50%; background:var(--card-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:.6875rem; font-weight:700; color:var(--text-2); flex-shrink:0;">
                 {{ review.user[:2] | upper }}
               </div>
-              <div>
-                <div style="font-size:.875rem; font-weight:600; color:var(--text);">{{ review.user }}</div>
-                <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
-                  <span style="font-family:var(--font-mono); font-size:.5rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3);">{{ bots_used }} agents hired</span>
-                  <span style="width:3px; height:3px; border-radius:50%; background:var(--border-2); display:inline-block;"></span>
-                  <span style="font-family:var(--font-mono); font-size:.5rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3);">verified buyer</span>
-                </div>
-              </div>
+              <div style="font-size:.875rem; font-weight:600; color:var(--text);">{{ review.user }}</div>
             </div>
             <div class="flex-center gap-10">
               <span class="rating-stars" style="--star-fill:{{ ((review.rating / 5) * 100) | round(1) }}%;" aria-label="{{ review.rating }} out of 5">★★★★★</span>
@@ -296,17 +114,31 @@
           </div>
           <p class="text-sm" style="color:var(--text-2); padding-left:48px; line-height:1.65;">{{ review.comment }}</p>
         </div>
+        {% else %}
+        <p class="text-sm text-muted">No reviews yet.</p>
         {% endfor %}
       </div>
+
+      {% if collaborators %}
+      <div class="card mt-24">
+        <h3 class="mb-16">Works well with</h3>
+        <div class="grid-3 gap-16">
+          {% for c in collaborators %}
+          <a href="/agent/{{ c.id }}" class="card card-sm card-hover" style="text-decoration:none;">
+            <div class="font-bold mb-4">{{ c.name }}</div>
+            <div class="text-xs text-muted mb-8">{{ c.category }}</div>
+            <div class="font-mono text-sm">{{ fmt_spot(c.current_price, c.billing) }} / {{ 'token' if c.billing == 'per_token' else 'min' }}</div>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Pricing Sidebar -->
     <div style="position:sticky; top:24px;">
       <div class="price-box mb-16">
-        <div class="flex-between mb-8">
-          <span class="text-sm text-muted">Current Price</span>
-          <span class="live-indicator"><span class="live-dot"></span> Live</span>
-        </div>
+        <div class="text-sm text-muted mb-8">List price</div>
         <div class="flex-center gap-8 mb-4">
           <span class="price-live" id="live-price">{{ fmt_spot(agent.current_price, agent.billing) }}</span>
           <span class="price-unit">/ {{ 'token' if agent.billing == 'per_token' else 'minute' }}</span>
@@ -314,15 +146,6 @@
         <div class="price-range text-xs mb-16">
           Range: {{ fmt_spot(agent.min_price, agent.billing) }} - {{ fmt_spot(agent.max_price, agent.billing) }} / {{ 'token' if agent.billing == 'per_token' else 'min' }}
         </div>
-
-        {% if agent.surge_active %}
-        <div class="surge-banner mb-16">
-          <div>
-            <div style="font-weight:700; margin-bottom:2px;">Surge Pricing Active</div>
-            <div style="font-size:.75rem; opacity:.8;">Price adjusted due to peak demand · {{ agent.surge_multiplier }}x multiplier</div>
-          </div>
-        </div>
-        {% endif %}
 
         <div class="flex-between mb-16 text-sm">
           <span class="text-muted">Billing model</span>
@@ -333,20 +156,18 @@
         <div style="border-top:1px solid var(--border-1); padding-top:12px; margin-bottom:12px;">
           <div class="flex-between mb-8 text-sm">
             <span class="text-muted">Model</span>
-            <span class="font-mono" style="font-size:.75rem; color:{{ 'var(--amber)' if agent.model_provider == 'Undisclosed' else 'var(--text)' }};">
-              {% if agent.model_provider == 'Undisclosed' %}Undisclosed{% else %}{{ agent.model_provider }} · {{ agent.model_name }}{% endif %}
-            </span>
+            <span class="font-mono" style="font-size:.75rem;">{{ agent.model_provider }} · {{ agent.model_name }}</span>
           </div>
-          {% if agent.input_price_per_1m %}
-          <div class="flex-between mb-6 text-sm">
-            <span class="text-muted">Input tokens</span>
-            <span class="font-mono" style="font-size:.78rem;">${{ "%.2f"|format(agent.input_price_per_1m / 1000000) }} / 1M</span>
-          </div>
-          <div class="flex-between mb-12 text-sm">
-            <span class="text-muted">Output tokens</span>
-            <span class="font-mono" style="font-size:.78rem;">${{ "%.2f"|format(agent.output_price_per_1m / 1000000) }} / 1M</span>
-          </div>
-          {% endif %}
+        </div>
+        {% endif %}
+        {% if agent.input_price_per_1m %}
+        <div class="flex-between mb-6 text-sm">
+          <span class="text-muted">Input tokens</span>
+          <span class="font-mono" style="font-size:.78rem;">${{ "%.2f"|format(agent.input_price_per_1m / 1000000) }} / 1M</span>
+        </div>
+        <div class="flex-between mb-12 text-sm">
+          <span class="text-muted">Output tokens</span>
+          <span class="font-mono" style="font-size:.78rem;">${{ "%.2f"|format(agent.output_price_per_1m / 1000000) }} / 1M</span>
         </div>
         {% endif %}
 
@@ -354,377 +175,85 @@
           <span class="text-muted">Platform fee</span>
           <span>10 bps</span>
         </div>
-        {% set io_in = ((agent.input_price_per_1m / 1000000) if agent.input_price_per_1m else (agent.min_price or 0)) %}
-        {% set io_out = ((agent.output_price_per_1m / 1000000) if agent.output_price_per_1m else (agent.max_price or 0)) %}
-        {% set typical = ((io_in * 0.005) + (io_out * 0.002)) if agent.billing == 'per_token' else ((agent.current_price or 0) * 3) %}
-        <div class="flex-between mb-20 text-sm">
-          <span class="text-muted">{{ 'Typical task estimate' if agent.billing == 'per_token' else 'Typical run estimate' }}</span>
-          <span class="font-bold text-accent">${{ "%.2f"|format(typical) }}</span>
-        </div>
 
         <div class="escrow-notice mb-16">
-          <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">ESC</span>
-          <p>Funds held in escrow. Released only after task completion.</p>
+          <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">USDC</span>
+          <p>Paid in USDC with a signed EIP-3009 authorization. Milestone escrow is on the roadmap.</p>
         </div>
 
-        <a href="/checkout/{{ agent.id }}" class="btn btn-gradient btn-full btn-lg">Rent This Agent</a>
+        <a href="/checkout/{{ agent.id }}" class="btn btn-gradient btn-full btn-lg">Hire This Agent</a>
 
-        <!-- Live LLM preview — hits Akash vLLM with a per-agent system prompt -->
+        <!-- Optional LLM preview (only works when LLM_URL is configured) -->
         <div style="margin-top:18px; padding:14px 16px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm);">
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-            <span style="font-family:var(--font-mono); font-size:.5rem; font-weight:700; color:var(--accent); letter-spacing:.1em; text-transform:uppercase;">Ask this agent · Akash-hosted Qwen</span>
-            <span id="llm-meta-{{ agent.id }}" style="font-family:var(--font-mono); font-size:.55rem; color:var(--text-3);">—</span>
+            <span style="font-family:var(--font-mono); font-size:.5rem; font-weight:700; color:var(--accent); letter-spacing:.1em; text-transform:uppercase;">Ask this agent</span>
+            <span id="llm-meta" style="font-family:var(--font-mono); font-size:.55rem; color:var(--text-3);">—</span>
           </div>
-          <textarea id="llm-prompt-{{ agent.id }}" rows="2" placeholder="Ask {{ agent.name }} anything — it'll reply as itself." style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:6px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; margin-bottom:8px;"></textarea>
-          <button id="llm-btn-{{ agent.id }}" onclick="runAgentLLM({{ agent.id }})" class="btn btn-ghost btn-sm" style="font-size:.75rem; width:100%;">▶ Generate</button>
-          <pre id="llm-out-{{ agent.id }}" style="display:none; margin-top:10px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono); font-size:.72rem; white-space:pre-wrap; word-break:break-word; max-height:280px; overflow:auto; color:var(--text-2);"></pre>
+          <textarea id="llm-prompt" rows="2" placeholder="Ask {{ agent.name }} about scope, cost or approach." style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:6px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; margin-bottom:8px;"></textarea>
+          <button id="llm-btn" type="button" class="btn btn-ghost btn-sm" style="font-size:.75rem; width:100%;">▶ Generate</button>
+          <pre id="llm-out" style="display:none; margin-top:10px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono); font-size:.72rem; white-space:pre-wrap; word-break:break-word; max-height:280px; overflow:auto; color:var(--text-2);"></pre>
         </div>
-        <!-- ERC-8004 on-chain identity inspector — one button, live RPC reads -->
-        <div style="margin-top:10px; padding:14px 16px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm);">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-            <span style="font-family:var(--font-mono); font-size:.5rem; font-weight:700; color:var(--blue); letter-spacing:.1em; text-transform:uppercase;">ERC-8004 · on-chain identity</span>
-            <span id="erc-meta-{{ agent.id }}" style="font-family:var(--font-mono); font-size:.55rem; color:var(--text-3);">—</span>
-          </div>
-          <button id="erc-btn-{{ agent.id }}" onclick="runErc8004({{ agent.id }})" class="btn btn-ghost btn-sm" style="font-size:.75rem; width:100%;">▶ Probe AgentRegistry + ReputationContract</button>
-          <pre id="erc-out-{{ agent.id }}" style="display:none; margin-top:10px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono); font-size:.68rem; max-height:240px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text-2);"></pre>
-        </div>
-
-        <script>
-        async function runErc8004(id) {
-          const out  = document.getElementById('erc-out-' + id);
-          const btn  = document.getElementById('erc-btn-' + id);
-          const meta = document.getElementById('erc-meta-' + id);
-          out.style.display = 'block';
-          out.textContent = '→ Reading AgentRegistry.getAgent + ReputationContract.getCreditProfile from Fuji...';
-          btn.disabled = true; btn.textContent = '… probing';
-          meta.textContent = 'pending';
-          try {
-            const r = await fetch('/api/agents/' + id + '/erc8004');
-            const d = await r.json();
-            if (!r.ok) { out.textContent = 'error: ' + (d.error || r.status); meta.textContent = 'error'; return; }
-            let txt = '';
-            txt += 'standard:    ' + d.standard + '\n';
-            txt += 'interfaceId: ' + d.interfaceId + '\n\n';
-            txt += 'getIdentity(' + id + '):\n  ' + JSON.stringify(d.identity, null, 2).replace(/\n/g, '\n  ') + '\n\n';
-            txt += 'getScore(' + id + '):\n  ' + JSON.stringify(d.score, null, 2).replace(/\n/g, '\n  ') + '\n\n';
-            txt += 'getReputation(' + id + '):\n  ' + JSON.stringify(d.reputation, null, 2).replace(/\n/g, '\n  ') + '\n';
-            if (d.categoryScores) {
-              txt += '\ngetCategoryScore (per-category specialization):\n';
-              for (const [name, cs] of Object.entries(d.categoryScores)) {
-                const marker = cs.isSpecialistCategory ? ' ← SPECIALIST' : '';
-                txt += '  ' + name.padEnd(18) + ' score ' + String(cs.score).padEnd(5) + ' tier T' + cs.tier + marker + '\n';
-              }
-            }
-            out.textContent = txt;
-            meta.textContent = 'live on Fuji';
-          } catch (e) {
-            out.textContent = 'error: ' + e.message;
-            meta.textContent = 'network error';
-          } finally {
-            btn.disabled = false; btn.textContent = '▶ Probe AgentRegistry + ReputationContract';
-          }
-        }
-
-        async function runAgentLLM(id) {
-          const prompt = document.getElementById('llm-prompt-' + id).value.trim();
-          if (!prompt) return;
-          const out = document.getElementById('llm-out-' + id);
-          const btn = document.getElementById('llm-btn-' + id);
-          const meta = document.getElementById('llm-meta-' + id);
-          out.style.display = 'block';
-          out.textContent = 'Generating on Akash…';
-          btn.disabled = true; btn.textContent = '… generating';
-          meta.textContent = 'pending';
-          try {
-            const r = await fetch('/api/agents/' + id + '/generate', {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ prompt, maxTokens: 400 }),
-            });
-            const d = await r.json();
-            if (!r.ok) { out.textContent = 'error: ' + (d.error || r.status); meta.textContent = 'error'; return; }
-            out.textContent = d.response;
-            meta.textContent = d.totalTokens + ' tok · ' + (d.latencyMs/1000).toFixed(1) + 's · ' + (d.model || '');
-          } catch (e) {
-            out.textContent = 'error: ' + e.message;
-            meta.textContent = 'network error';
-          } finally {
-            btn.disabled = false; btn.textContent = '▶ Generate';
-          }
-        }
-        </script>
-      </div>
-
-      <!-- Works Well With (agent-to-agent discovery) -->
-      {% if collaborators %}
-      <div class="card card-sm" style="border-color:var(--border-2);">
-        <div class="flex-between mb-12">
-          <h4 style="margin:0;">Works well with</h4>
-          <span class="badge" style="font-family:var(--font-mono); font-size:.6rem; padding:3px 8px; background:var(--surface-1); border:1px solid var(--border-2); border-radius:999px; color:var(--blue);">A2A</span>
-        </div>
-        <div class="text-xs text-muted mb-12">Composable partners across related categories. Bids routed here cascade via AuctionMarket hooks.</div>
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          {% for c in collaborators %}
-          <a href="/agent/{{ c.id }}" style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:var(--surface-1); border:1px solid var(--border-1); border-radius:6px; text-decoration:none; transition:all .15s;"
-             onmouseover="this.style.borderColor='var(--border-2)'; this.style.background='var(--surface-2)';"
-             onmouseout="this.style.borderColor='var(--border-1)'; this.style.background='var(--surface-1)';">
-            <div style="flex:1; min-width:0;">
-              <div style="font-weight:600; font-size:.82rem; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.name }}</div>
-              <div style="font-size:.68rem; color:var(--text-3); font-family:var(--font-mono);">{{ c.category }}</div>
-            </div>
-            <span style="font-family:var(--font-mono); font-size:.7rem; color:var(--text-2);">
-              {% if c.surge_active %}<span style="color:var(--amber);">×{{ "%.2f"|format(c.surge_multiplier) }}</span>{% else %}${{ "%.4f"|format(c.current_price) }}{% endif %}
-            </span>
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-
-      <!-- Seller Info -->
-      <div class="card card-sm">
-        <h4 class="mb-12">About the Deployer</h4>
-        <div class="flex-between mb-8">
-          <span class="text-sm font-bold">{{ agent.seller }}</span>
-          <div class="rating" title="{{ agent.seller_rating }} out of 5">
-            <span class="rating-stars" style="--star-fill:{{ ((agent.seller_rating / 5) * 100) | round(1) }}%;" aria-label="{{ agent.seller_rating }} out of 5">★★★★★</span>
-            <span class="rating-value text-sm">{{ "%.1f"|format(agent.seller_rating) }}</span>
-          </div>
-        </div>
-        {% if agent.deployer_wallet %}
-        <div class="flex-between mb-8 text-xs">
-          <span class="text-muted">Deployer wallet</span>
-          <a href="https://testnet.snowtrace.io/address/{{ agent.deployer_wallet }}" target="_blank" rel="noopener"
-             class="font-mono" style="font-size:.7rem; color:var(--blue);"
-             title="View on Snowtrace">{{ agent.deployer_wallet[:6] }}…{{ agent.deployer_wallet[-4:] }}</a>
-        </div>
-        {% endif %}
-        <div class="text-xs text-muted">{{ "{:,}".format(agent.tasks_completed) }} total tasks completed</div>
       </div>
     </div>
   </div>
 </div>
 {% endblock %}
 
-<!-- ── A2A Modals ─────────────────────────────────────────────────────────── -->
-{% if a2a.composable %}
-
-<!-- Workflow Modal -->
-<div class="modal-overlay" id="workflow-modal">
-  <div class="modal" style="max-width:640px;">
-    <div class="modal-header">
-      <h3>Execution Workflow</h3>
-      <button class="modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="text-sm mb-20">This agent follows a deterministic workflow. Sub-agents are called only when specific conditions are met, never randomly.</p>
-      <div style="overflow-x:auto; padding-bottom:8px;">
-        <div class="workflow-diagram" style="min-width:max-content;">
-          {% for step in a2a.steps %}
-          <div class="wf-step">
-            <div class="wf-node" style="min-width:130px;">
-              <div class="wf-box {{ step.role }}">{{ step.name }}</div>
-              <div class="wf-role">{{ step.role }}</div>
-              <div class="wf-action">{{ step.action }}</div>
-            </div>
-            {% if not loop.last %}<div class="wf-arrow">→</div>{% endif %}
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="divider"></div>
-      <div style="font-family:var(--font-mono); font-size:.625rem; text-transform:uppercase; letter-spacing:.09em; color:var(--text-3); margin-bottom:12px;">Trigger Conditions</div>
-      {% for rule in a2a.trigger_rules %}
-      <div class="flex-between py-10" style="border-bottom:1px solid var(--border); {{ 'border-bottom:none;' if loop.last }}">
-        <span class="text-sm" style="color:var(--text);">{{ rule.condition }}</span>
-        <div class="flex-center gap-8">
-          <span class="badge badge-verified">{{ rule.calls }}</span>
-          <span class="badge badge-testing">{{ rule.trigger }}</span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="closeModal('workflow-modal')">Close</button>
-      <a href="/checkout/{{ agent.id }}" class="btn btn-gradient btn-sm">Hire This Agent</a>
-    </div>
-  </div>
-</div>
-
-<!-- Sub-Agents Modal -->
-<div class="modal-overlay" id="subagents-modal">
-  <div class="modal" style="max-width:560px;">
-    <div class="modal-header">
-      <h3>Sub-Agents</h3>
-      <button class="modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="text-sm mb-20">These agents may be called during execution. Their costs are included in the estimated total shown at checkout.</p>
-      {% for sa in a2a.sub_agents %}
-      <div class="subagent-row">
-        <div class="flex-center gap-12">
-          <div style="width:32px; height:32px; border-radius:var(--radius-sm); background:var(--green-dim); border:1px solid var(--green-border); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:.6875rem; color:var(--green);">
-            {{ sa.name[:3].upper() }}
-          </div>
-          <div>
-            <div class="subagent-name flex-center gap-8">
-              {{ sa.name }}
-              {% if sa.verified %}<span class="badge badge-verified">✓</span>{% endif %}
-            </div>
-            <div class="subagent-role">{{ sa.role }}</div>
-          </div>
-        </div>
-        <div class="subagent-cost">
-          <div>${{ "%.3f"|format(sa.est_cost_low) }} - ${{ "%.3f"|format(sa.est_cost_high) }}</div>
-          <div style="font-size:.5625rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">est. cost range</div>
-        </div>
-      </div>
-      {% endfor %}
-      <div class="escrow-notice mt-16">
-        <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">INF</span>
-        <p>All sub-agent costs are paid within your approved budget. You set a hard spending cap at checkout.</p>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="closeModal('subagents-modal')">Close</button>
-      <a href="/checkout/{{ agent.id }}" class="btn btn-gradient btn-sm">Hire This Agent</a>
-    </div>
-  </div>
-</div>
-
-<!-- Cost Breakdown Modal -->
-<div class="modal-overlay" id="cost-breakdown-modal">
-  <div class="modal" style="max-width:480px;">
-    <div class="modal-header">
-      <h3>Cost Breakdown</h3>
-      <button class="modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="cost-breakdown mb-16">
-        <div class="cost-row">
-          <span class="cost-label">Base agent</span>
-          <span class="cost-value">{{ a2a.base_cost_label }}</span>
-        </div>
-        {% for sa in a2a.sub_agents %}
-        <div class="cost-row">
-          <span class="cost-label">{{ sa.name }} (est.)</span>
-          <span class="cost-value range">${{ "%.3f"|format(sa.est_cost_low) }} - ${{ "%.3f"|format(sa.est_cost_high) }}</span>
-        </div>
-        {% endfor %}
-        <div class="cost-row" style="border-top:1px solid var(--border-2); background:var(--card-3);">
-          <div>
-            <div class="cost-label font-bold">Estimated Total</div>
-            <div class="cost-variable-note">Final cost depends on sub-agent usage</div>
-          </div>
-          <span class="cost-value range">{{ a2a.total_range_label }}</span>
-        </div>
-      </div>
-      <div class="escrow-notice">
-        <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">ESC</span>
-        <p>You set a hard <strong style="color:var(--text);">Max Spend Limit</strong> at checkout. The agent cannot exceed it under any circumstances.</p>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary btn-sm" onclick="closeModal('cost-breakdown-modal')">Close</button>
-      <a href="/checkout/{{ agent.id }}" class="btn btn-gradient btn-sm">Continue to Checkout</a>
-    </div>
-  </div>
-</div>
-
-{% endif %}
-
 {% block scripts %}
 <script>
-  startLivePriceTicker({{ agent.id }});
+window._ratingAgentId = {{ agent.id }};
+(function () {
+  const agentId = {{ agent.id }};
 
-  // ── On-chain activity: price history chart + recent transactions ──────────
-  (async () => {
-    const agentId = {{ agent.id }};
+  document.getElementById('llm-btn').addEventListener('click', async () => {
+    const out = document.getElementById('llm-out');
+    const btn = document.getElementById('llm-btn');
+    const meta = document.getElementById('llm-meta');
+    const prompt = document.getElementById('llm-prompt').value.trim();
+    if (!prompt) { showToast('Type a question first.', 'warning'); return; }
+    out.style.display = 'block';
+    out.textContent = 'Thinking…';
+    btn.disabled = true;
     try {
-      const [priceRes, profile, quote] = await Promise.all([
-        fetch(`/api/agents/${agentId}/price-history?hours=24`).then(r => r.json()),
-        fetch(`/api/agents/${agentId}/profile`).then(r => r.ok ? r.json() : null),
-        fetch(`/api/pricing/quote/${agentId}`).then(r => r.ok ? r.json() : null),
-      ]);
-
-      // Chart
-      if (priceRes && priceRes.points && priceRes.points.length) {
-        const labels = priceRes.points.map(p => {
-          const d = new Date(p.ts * 1000);
-          return d.getUTCHours().toString().padStart(2,'0') + ':' + d.getUTCMinutes().toString().padStart(2,'0');
-        });
-        const prices = priceRes.points.map(p => p.price);
-        const surges = priceRes.points.map(p => p.surge);
-        if (typeof makeLineChart === 'function') {
-          makeLineChart('priceHistoryChart', labels, [
-            { label: 'Price (USDC/token)', data: prices, borderColor: '#7fb3ff', backgroundColor: 'rgba(127,179,255,0.08)', tension: 0.3, yAxisID: 'y' },
-            { label: 'Surge ×', data: surges, borderColor: '#ffdb7f', backgroundColor: 'rgba(255,219,127,0.04)', tension: 0.3, yAxisID: 'y1' },
-          ], {
-            scales: {
-              y:  { position: 'left',  ticks: { callback: v => '$' + Number(v).toFixed(4) } },
-              y1: { position: 'right', ticks: { callback: v => Number(v).toFixed(2) + '×' }, grid: { drawOnChartArea: false } },
-            },
-            plugins: { legend: { labels: { boxWidth: 10, color: '#9aa4b2' } } },
-          });
-        }
-      }
-
-      // Stat cards — real on-chain numbers only; sim data is shown on the chart.
-      if (quote) {
-        document.getElementById('oc-stat-surge').textContent = quote.surgeMultiplier.toFixed(2) + '×';
-        document.getElementById('oc-stat-util').textContent  = (quote.utilization * 100).toFixed(0) + '%';
-      }
-      if (profile) {
-        const realRev = Number(profile.realRevenueUSDC || 0);
-        const revEl = document.getElementById('oc-stat-revenue');
-        // Relabel to "Revenue (live)" and show real value or em-dash
-        const revLabelEl = revEl.parentElement.querySelector('.text-muted');
-        if (revLabelEl) revLabelEl.textContent = 'Revenue (live on-chain)';
-        revEl.textContent = realRev > 0
-          ? '$' + realRev.toLocaleString(undefined, { maximumFractionDigits: 2 })
-          : '—';
-        const slashAmt = (profile.recentTransactions || [])
-          .filter(tx => tx.kind === 'slash' && tx.meta && tx.meta.real === true)
-          .reduce((s, t) => s + (t.amountUSDCDisplay || 0), 0);
-        document.getElementById('oc-stat-slashed').textContent = slashAmt > 0 ? '$' + slashAmt.toFixed(2) : '—';
-      }
-
-      // Transactions list — real Fuji txs only. Empty state is honest.
-      const txRes = await fetch(`/api/agents/${agentId}/transactions?limit=12&real_only=1`).then(r => r.ok ? r.json() : null);
-      const list = document.getElementById('oc-tx-list');
-      if (txRes && txRes.transactions && txRes.transactions.length) {
-        const KIND = {
-          deposit: { label: 'Deposit', color: '#7fb3ff' },
-          settle:  { label: 'Settlement', color: '#5ade7a' },
-          refund:  { label: 'Refund', color: '#ffdb7f' },
-          bond:   { label: 'Bond', color: '#7fb3ff' },
-          unbond: { label: 'Unbond', color: '#ffdb7f' },
-          slash:   { label: 'Slash', color: '#ff7f7f' },
-          register:{ label: 'Register', color: '#9aa4b2' },
-          incident:{ label: 'Incident', color: '#ff7f7f' },
-          bid_post:{ label: 'Bid Posted', color: '#7fb3ff' },
-          bid_claim:{ label: 'Bid Claim', color: '#5ade7a' },
-          bid_cancel:{ label: 'Bid Cancel', color: '#ffdb7f' },
-          listing_update: { label: 'Listing', color: '#9aa4b2' },
-        };
-        list.innerHTML = txRes.transactions.map(tx => {
-          const k = KIND[tx.kind] || { label: tx.kind, color: '#9aa4b2' };
-          const age = Math.max(0, Math.floor((Date.now()/1000 - tx.ts)));
-          const ago = age < 60 ? age + 's ago' : age < 3600 ? Math.floor(age/60)+'m ago' : age < 86400 ? Math.floor(age/3600)+'h ago' : Math.floor(age/86400)+'d ago';
-          const amt = tx.amountUSDCDisplay ? '$' + Number(tx.amountUSDCDisplay).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '';
-          const short = (s) => s ? (s.slice(0,6) + '…' + s.slice(-4)) : '';
-          return `<div style="display:grid; grid-template-columns:90px 1fr auto auto; align-items:center; gap:12px; padding:6px 8px; background:var(--card-2); border:1px solid var(--border); border-radius:6px;">
-            <span style="color:${k.color}; font-weight:700;">${k.label}</span>
-            <span class="text-muted">${short(tx.txHash)}</span>
-            <span>${amt}</span>
-            <span class="text-muted text-xs">${ago}</span>
-          </div>`;
-        }).join('');
-      } else {
-        list.innerHTML = '<div class="text-muted" style="padding:10px 0;">No real Fuji txs for this agent yet. Hire it via <a href="/demo" style="color:var(--accent);">/demo</a> to see entries appear here, live.</div>';
-      }
+      const r = await fetch('/api/agents/' + agentId + '/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      out.textContent = d.response || '(empty response)';
+      meta.textContent = (d.model || '') + (d.latencyMs ? ' · ' + d.latencyMs + 'ms' : '');
     } catch (e) {
-      console.warn('agent-detail on-chain activity load failed:', e);
+      out.textContent = 'Unavailable: ' + e.message;
+      meta.textContent = 'offline';
+    } finally {
+      btn.disabled = false;
     }
-  })();
+  });
+
+  async function loadTx() {
+    const list = document.getElementById('oc-tx-list');
+    try {
+      const r = await fetch('/api/agents/' + agentId + '/transactions?limit=12');
+      const d = r.ok ? await r.json() : { transactions: [] };
+      const txs = d.transactions || [];
+      if (!txs.length) {
+        list.innerHTML = '<div class="text-muted" style="padding:10px 0;">No on-chain activity for this agent yet.</div>';
+        return;
+      }
+      list.innerHTML = txs.map(tx => {
+        const when = tx.ts ? new Date(tx.ts * 1000).toLocaleString() : '';
+        const hash = tx.txHash ? tx.txHash.slice(0, 10) + '…' : '';
+        const link = tx.explorerUrl ? `<a href="${tx.explorerUrl}" target="_blank" rel="noopener" style="color:var(--accent);">${hash}</a>` : hash;
+        return `<div class="flex-between" style="padding:6px 0; border-bottom:1px solid var(--border);">
+          <span>${tx.kind}</span><span>$${Number(tx.amountUSDCDisplay || 0).toFixed(2)}</span><span>${link}</span><span class="text-muted">${when}</span>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = '<div class="text-muted">Could not load activity.</div>';
+    }
+  }
+  loadTx();
+})();
 </script>
 {% endblock %}

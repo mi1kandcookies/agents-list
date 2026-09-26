@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260420e">
+  <!-- /config.js is server-rendered from env (chain + contract addresses) -->
+  <script src="{{ url_for('config_js') }}"></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -53,10 +55,6 @@
       <li><a href="/seller/orders"       class="{{ 'active' if request.path == '/seller/orders' }}">Orders</a></li>
       <li><a href="/seller/verification" class="{{ 'active' if request.path == '/seller/verification' }}">Verification</a></li>
       <li><a href="/how-it-works?role=seller" class="{{ 'active' if request.path == '/how-it-works' }}">How It Works</a></li>
-    {% elif request.path.startswith('/agent-mode') or request.path == '/sim' %}
-      <li><a href="/sim"         class="{{ 'active' if request.path == '/sim' }}">Overview</a></li>
-      <li><a href="/marketplace" class="{{ 'active' if request.path == '/marketplace' }}">Marketplace</a></li>
-      <li><a href="/how-it-works?role=agent" class="{{ 'active' if request.path == '/how-it-works' }}">How It Works</a></li>
     {% else %}
       <li><a href="/marketplace"  class="{{ 'active' if request.path == '/marketplace' }}">Marketplace</a></li>
       <li><a href="/active-jobs"  class="{{ 'active' if request.path == '/active-jobs' }}">Active Jobs</a></li>
@@ -66,15 +64,9 @@
   </ul>
 
   <div class="nav-right">
-    <style>
-      @keyframes nav-demo-pulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.55;transform:scale(1.3);} }
-      .nav-demo-btn { transition:filter .12s ease,transform .12s ease; }
-      .nav-demo-btn:hover { filter:brightness(1.1); transform:translateY(-1px); }
-    </style>
-    {% set _on_agent = request.path.startswith('/agent-mode') or request.path == '/sim' %}
     {% set _on_seller = request.path.startswith('/seller') %}
     <div class="role-switcher">
-      <button class="role-btn {{ 'active' if not _on_agent and not _on_seller }}" data-role="buyer">Buyer</button>
+      <button class="role-btn {{ 'active' if not _on_seller }}" data-role="buyer">Buyer</button>
       <button class="role-btn {{ 'active' if _on_seller }}" data-role="seller">Seller</button>
     </div>
     <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark mode">
@@ -97,14 +89,6 @@
         <div style="font-family:var(--font-mono); font-size:.56rem; text-transform:uppercase; letter-spacing:.12em; color:var(--text-3); margin-bottom:10px;">Connect a wallet</div>
         <div id="wp-status" style="display:none; font-size:.72rem; color:var(--text-2); background:rgba(95,227,227,.06); border:1px solid rgba(95,227,227,.18); border-radius:6px; padding:8px 10px; margin-bottom:10px; line-height:1.5;"></div>
         <div id="wp-options" style="display:flex; flex-direction:column; gap:8px;"></div>
-        <div style="height:1px; background:rgba(255,255,255,.08); margin:12px 0;"></div>
-        <button type="button" onclick="__connectDemo(event)" style="width:100%; display:flex; align-items:center; gap:10px; background:rgba(232,65,66,.12); border:1px solid rgba(232,65,66,.3); border-radius:8px; padding:10px 12px; color:inherit; cursor:pointer; font-size:.8rem; text-align:left;">
-          <span style="width:28px; height:28px; border-radius:6px; background:#e84142; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.75rem; color:white;">◆</span>
-          <div style="display:flex; flex-direction:column; gap:2px;">
-            <span style="font-weight:600;">Demo wallet</span>
-            <span style="font-size:.68rem; color:var(--text-3);">Funded on Fuji · no MetaMask needed</span>
-          </div>
-        </button>
       </div>
       <!-- Connected-state menu — shown when wallet is connected -->
       <div id="wallet-menu" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:260px; background:#0f1115; border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.6); padding:14px; z-index:9000;">
@@ -113,24 +97,17 @@
           <span id="wm-addr" style="font-family:var(--font-mono); font-size:.85rem; font-weight:600;">—</span>
           <span id="wm-kind" style="font-size:.68rem; color:var(--text-3);">—</span>
         </div>
-        <a id="wm-explorer" href="#" target="_blank" style="display:block; padding:8px 10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:6px; color:var(--accent); font-size:.75rem; text-decoration:none; margin-bottom:8px;">View on Ava Labs Explorer ↗</a>
+        <a id="wm-explorer" href="#" target="_blank" style="display:block; padding:8px 10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:6px; color:var(--accent); font-size:.75rem; text-decoration:none; margin-bottom:8px;">View on block explorer ↗</a>
         <button type="button" onclick="__disconnectWallet(event)" style="width:100%; background:transparent; border:1px solid rgba(255,255,255,.12); border-radius:6px; padding:8px; color:var(--text-3); cursor:pointer; font-size:.75rem;">Disconnect</button>
       </div>
     </div>
-    <a href="/demo" class="nav-demo-btn" title="Fire a real Avalanche Fuji transaction in one click" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; background:var(--red); color:#fff; border-radius:6px; font-size:.78rem; font-weight:600; text-decoration:none; letter-spacing:.02em; margin-left:4px; {{ 'box-shadow:0 0 0 2px rgba(239,68,68,.25);' if request.path == '/demo' }}">
-      <span style="width:6px; height:6px; border-radius:50%; background:#fff; animation:nav-demo-pulse 2s ease-in-out infinite;"></span>
-      Live Demo
-    </a>
   </div>
 </nav>
 
-<!-- Wallet connect fallback — inline so nothing can silently break it.
-     If web3.js already wired via addEventListener, this still runs; the two
-     paths are idempotent (both check AgentHire.connected). -->
+<!-- Wallet connect: picker pre-connect, account menu post-connect.
+     Chain metadata comes from window.AGENTHIRE_CHAIN (/config.js). -->
 <script>
-// ═══ Wallet menu — picker pre-connect, account + balances post-connect ═══
-const __DEMO_WALLET = '0xdb4135c6884D81497769440788306EE985DD1A6e';
-const __CHAIN_ID_HEX = '0xa869'; // Avalanche Fuji (43113)
+function __chain() { return window.AGENTHIRE_CHAIN || {}; }
 
 function __walletClick(e) {
   if (e && e.preventDefault) e.preventDefault();
@@ -140,25 +117,15 @@ function __walletClick(e) {
   const menu   = document.getElementById('wallet-menu');
   const connected = btn.getAttribute('data-connected') === 'true';
   if (connected) {
-    // Toggle connected menu
     picker.style.display = 'none';
     menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
     return;
   }
-  // Build picker options with whatever injected wallets are available
   __renderPickerOptions();
-  // Clear any stale status from a previous failed attempt
   const status = document.getElementById('wp-status');
   if (status) { status.style.display = 'none'; status.innerHTML = ''; }
   menu.style.display = 'none';
   picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
-}
-
-function __connectDemo(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  if (e && e.stopPropagation) e.stopPropagation();
-  document.getElementById('wallet-picker').style.display = 'none';
-  __setWalletConnected(__DEMO_WALLET, { demo: true });
 }
 
 function __disconnectWallet(e) {
@@ -172,9 +139,9 @@ function __disconnectWallet(e) {
   document.cookie = 'seller_wallet=; path=/; max-age=0';
   document.cookie = 'agenthire_wallet_active=; path=/; max-age=0';
   if (window.AgentHire) { window.AgentHire.connected = false; window.AgentHire.address = null; }
+  if (location.search.includes('wallet=')) location.href = location.pathname;
 }
 
-// Close popups on outside click
 document.addEventListener('click', (e) => {
   const wrap = document.getElementById('wallet-wrap');
   if (!wrap || wrap.contains(e.target)) return;
@@ -182,9 +149,7 @@ document.addEventListener('click', (e) => {
   const m = document.getElementById('wallet-menu');   if (m) m.style.display = 'none';
 });
 
-// Detect individual wallet providers. MetaMask, Rabby, and Coinbase each
-// expose their own flag on window.ethereum; multiple extensions may share
-// window.ethereum.providers.
+// Detect injected EIP-1193 providers (several extensions may share window.ethereum.providers).
 function __detectWallets() {
   const out = [];
   const eth = window.ethereum;
@@ -192,7 +157,7 @@ function __detectWallets() {
     const providers = Array.isArray(eth.providers) ? eth.providers : [eth];
     for (const p of providers) {
       if (p.isRabby)            out.push({ id: 'rabby',    name: 'Rabby',           icon: 'R', bg: '#7084FF', p });
-      else if (p.isMetaMask && !p.isBraveWallet) out.push({ id: 'metamask', name: 'MetaMask',        icon: 'M', bg: '#f6851b', p });
+      else if (p.isMetaMask && !p.isBraveWallet) out.push({ id: 'metamask', name: 'MetaMask', icon: 'M', bg: '#f6851b', p });
       else if (p.isCoinbaseWallet) out.push({ id: 'coinbase', name: 'Coinbase Wallet', icon: 'C', bg: '#0052ff', p });
       else if (p.isBraveWallet) out.push({ id: 'brave',    name: 'Brave Wallet',    icon: 'B', bg: '#fb542b', p });
     }
@@ -205,22 +170,22 @@ function __renderPickerOptions() {
   const wrap = document.getElementById('wp-options');
   if (!wrap) return;
   const detected = __detectWallets();
+  const chainName = __chain().name || 'the configured network';
   wrap.innerHTML = '';
   const OPT_STYLE = 'display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:10px 12px; color:inherit; cursor:pointer; font-size:.8rem; text-align:left; width:100%; transition:background .12s;';
   const ICON_STYLE = 'width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.8rem; color:white; flex-shrink:0;';
   if (detected.length) {
     detected.forEach(w => {
       wrap.insertAdjacentHTML('beforeend', `
-        <button class="wp-opt" data-wallet="${w.id}" type="button" style="${OPT_STYLE}" onmouseover="this.style.background='rgba(255,255,255,.08)'" onmouseout="this.style.background='rgba(255,255,255,.03)'">
+        <button class="wp-opt" data-wallet="${w.id}" type="button" style="${OPT_STYLE}">
           <span style="${ICON_STYLE} background:${w.bg};">${w.icon}</span>
           <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
             <span style="font-weight:600;">${w.name} <span style="color:var(--green); font-size:.6rem; margin-left:4px;">● detected</span></span>
-            <span style="font-size:.68rem; color:var(--text-3);">Click to connect on Fuji</span>
+            <span style="font-size:.68rem; color:var(--text-3);">Connect on ${chainName}</span>
           </div>
         </button>`);
     });
   } else {
-    // No wallet detected — show install suggestions
     const installs = [
       ['rabby',    'Rabby',           'R', '#7084FF', 'https://rabby.io/'],
       ['metamask', 'MetaMask',        'M', '#f6851b', 'https://metamask.io/download/'],
@@ -228,11 +193,11 @@ function __renderPickerOptions() {
     ];
     installs.forEach(([id,n,i,b,u]) => {
       wrap.insertAdjacentHTML('beforeend', `
-        <a href="${u}" target="_blank" rel="noopener" style="${OPT_STYLE} text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,.08)'" onmouseout="this.style.background='rgba(255,255,255,.03)'">
+        <a href="${u}" target="_blank" rel="noopener" style="${OPT_STYLE} text-decoration:none;">
           <span style="${ICON_STYLE} background:${b};">${i}</span>
           <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
             <span style="font-weight:600;">${n} <span style="color:var(--text-3); font-size:.6rem; margin-left:4px;">not detected</span></span>
-            <span style="font-size:.68rem; color:var(--text-3);">Click to install extension ↗</span>
+            <span style="font-size:.68rem; color:var(--text-3);">Install extension ↗</span>
           </div>
         </a>`);
     });
@@ -241,11 +206,11 @@ function __renderPickerOptions() {
     b.addEventListener('click', async (evt) => {
       evt.preventDefault(); evt.stopPropagation();
       const w = detected.find(x => x.id === b.dataset.wallet);
-      if (!w) { console.error('[wallet] no provider match for', b.dataset.wallet); return; }
+      if (!w) return;
       const status = document.getElementById('wp-status');
       if (status) {
         status.style.display = 'block';
-        status.innerHTML = `<strong>Connecting to ${w.name}…</strong><br><span style="color:var(--text-3);">Check your browser toolbar for the ${w.name} approval popup. Click the extension icon if you don't see it.</span>`;
+        status.innerHTML = `<strong>Connecting to ${w.name}…</strong><br><span style="color:var(--text-3);">Approve the request in the ${w.name} popup.</span>`;
       }
       try {
         await __connectProvider(w);
@@ -256,269 +221,76 @@ function __renderPickerOptions() {
   });
 }
 
+async function __switchToConfiguredChain(prov) {
+  const c = __chain();
+  if (!c.chainIdHex) return;
+  try {
+    await prov.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: c.chainIdHex }] });
+  } catch (err) {
+    if (err && err.code === 4902) {
+      try {
+        await prov.request({ method: 'wallet_addEthereumChain', params: [{
+          chainId: c.chainIdHex, chainName: c.name,
+          nativeCurrency: c.nativeCurrency,
+          rpcUrls: [c.rpcUrl],
+          blockExplorerUrls: [c.explorer],
+        }]});
+      } catch (_) {}
+    }
+  }
+}
+
 async function __connectProvider(w) {
   const prov = w.p;
-  console.log('[wallet] __connectProvider start', w.id, 'provider=', !!prov);
-  if (!prov) {
-    alert(w.name + ' provider object missing — try installing the extension and reloading.');
-    return;
-  }
-  // 1) Try eth_accounts first — if user has already authorized this site,
-  //    we can skip the popup entirely. Useful when Rabby is already unlocked.
+  if (!prov) throw new Error(w.name + ' provider missing — install the extension and reload.');
   let accounts = [];
   try {
     const existing = await prov.request({ method: 'eth_accounts' });
-    console.log('[wallet] eth_accounts returned', existing);
-    if (Array.isArray(existing) && existing.length && existing[0]) {
-      accounts = existing;
-    }
-  } catch (err) { console.warn('[wallet] eth_accounts error', err); }
-  // 2) If not already authorized, ask for permission explicitly.
+    if (Array.isArray(existing) && existing.length && existing[0]) accounts = existing;
+  } catch (_) {}
   if (!accounts.length) {
-    console.log('[wallet] requesting accounts...');
-    try {
-      accounts = await prov.request({ method: 'eth_requestAccounts' });
-      console.log('[wallet] eth_requestAccounts returned', accounts);
-    } catch (err) {
-      console.warn('[wallet] eth_requestAccounts error', err);
-      const msg = (err && err.message) || String(err);
-      if (/reject|denied|user rejected/i.test(msg)) {
-        alert(w.name + ' rejected the connection. Approve it next time, or pick Demo wallet to continue.');
-      } else if (/no account|at least one account/i.test(msg)) {
-        __showEmptyWalletHelp(w.name);
-      } else if (/unlock|locked/i.test(msg)) {
-        alert('Unlock ' + w.name + ' first (enter your password in the extension), then click Connect again.');
-      } else {
-        alert('Connect failed in ' + w.name + ': ' + msg);
-      }
-      return;
-    }
+    accounts = await prov.request({ method: 'eth_requestAccounts' });
   }
-  if (!accounts || !accounts[0]) { __showEmptyWalletHelp(w.name); return; }
-  console.log('[wallet] account acquired', accounts[0]);
-  // Attempt Fuji switch (non-fatal)
-  try { await prov.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: __CHAIN_ID_HEX }] }); }
-  catch (err) {
-    if (err && err.code === 4902) {
-      try { await prov.request({ method: 'wallet_addEthereumChain', params: [{
-        chainId: __CHAIN_ID_HEX, chainName: 'Avalanche Fuji C-Chain',
-        nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-        rpcUrls: ['https://avalanche-fuji-c-chain-rpc.publicnode.com'],
-        blockExplorerUrls: ['https://testnet.snowtrace.io'],
-      }]}); } catch (_) {}
-    }
-  }
-  __setWalletConnected(accounts[0], { demo: false, provider: w.id });
-  // Hide picker + clear status after successful connect
+  if (!accounts || !accounts[0]) throw new Error(w.name + ' returned no account. Create or unlock an account first.');
+  await __switchToConfiguredChain(prov);
+  __setWalletConnected(accounts[0], { provider: w.id });
   const picker = document.getElementById('wallet-picker');
   const status = document.getElementById('wp-status');
   if (picker) picker.style.display = 'none';
   if (status) { status.style.display = 'none'; status.innerHTML = ''; }
 }
 
-function __showEmptyWalletHelp(walletName) {
-  // Rabby/MetaMask is installed but has no accounts — auto-fall-back to the
-  // pre-funded demo wallet so the demo keeps flowing. Status banner inside
-  // the picker explains what happened (no backdrop blur over the page).
-  const status = document.getElementById('wp-status');
-  if (status) {
-    status.style.display = 'block';
-    status.style.background = 'rgba(245,158,11,.08)';
-    status.style.borderColor = 'rgba(245,158,11,.3)';
-    status.innerHTML = `<strong style="color:#f59e0b;">${walletName} has no accounts yet.</strong><br>Falling back to the pre-funded demo wallet so the demo keeps working.`;
-  }
-  setTimeout(() => __setWalletConnected(__DEMO_WALLET, { demo: true }), 600);
-  return;
-  // (legacy modal below — kept as dead code in case we ever want it back)
-  const existing = document.getElementById('wallet-help-modal');
-  if (existing) existing.remove();
-  const DEMO_KEY = '0xff319427edeb7b9410081e8cb2c61ee4c1081fb1bd422353704fec7eb020f23e';
-  const modal = document.createElement('div');
-  modal.id = 'wallet-help-modal';
-  modal.innerHTML = `
-    <div style="position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:24px;" onclick="if(event.target===this)this.remove()">
-      <div style="max-width:440px; width:100%; background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px; font-family:var(--font-body);">
-        <div style="font-size:1.05rem; font-weight:700; margin-bottom:6px;">${walletName} has no accounts</div>
-        <div style="color:var(--text-2); font-size:.85rem; line-height:1.5; margin-bottom:16px;">
-          ${walletName} is installed but hasn't been set up with an account yet. Either finish setup, or skip straight to the demo wallet — it's pre-funded with 2 AVAX and 10,408 MockUSDC.
-        </div>
-        <button type="button" id="wh-demo-btn" style="width:100%; padding:12px; background:linear-gradient(135deg, #f59e0b, #E84142); color:#fff; border:none; border-radius:8px; font-weight:700; font-size:.875rem; cursor:pointer; margin-bottom:14px;">
-          Use demo wallet now (recommended)
-        </button>
-
-        <details style="margin-top:8px;">
-          <summary style="cursor:pointer; font-size:.78rem; color:var(--text-3); font-family:var(--font-mono); padding:8px 0;">Or set up ${walletName} manually (30 seconds) ▸</summary>
-          <ol style="font-size:.78rem; color:var(--text-2); line-height:1.65; padding-left:18px; margin-top:8px;">
-            <li>Click the ${walletName} icon in your browser toolbar</li>
-            <li>Create a new account <em>or</em> import this demo key:
-              <div style="display:flex; gap:6px; margin-top:6px; align-items:center;">
-                <code id="wh-key" style="flex:1; background:var(--bg); border:1px solid var(--border); padding:6px 8px; border-radius:5px; font-size:.62rem; word-break:break-all; font-family:var(--font-mono);">${DEMO_KEY}</code>
-                <button type="button" id="wh-copy-btn" style="padding:6px 10px; background:var(--bg); border:1px solid var(--border); border-radius:5px; cursor:pointer; font-size:.7rem; font-family:var(--font-mono); color:var(--text);">Copy</button>
-              </div>
-            </li>
-            <li>Add the Avalanche Fuji network if prompted</li>
-            <li>Return here and click Connect Wallet again</li>
-          </ol>
-        </details>
-
-        <div style="margin-top:16px; display:flex; justify-content:flex-end;">
-          <button type="button" onclick="document.getElementById('wallet-help-modal').remove()" style="padding:8px 14px; background:transparent; border:1px solid var(--border); border-radius:6px; color:var(--text-2); cursor:pointer; font-size:.78rem;">Close</button>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  document.getElementById('wh-demo-btn').addEventListener('click', () => {
-    modal.remove();
-    __setWalletConnected(__DEMO_WALLET, { demo: true });
-  });
-  document.getElementById('wh-copy-btn').addEventListener('click', () => {
-    navigator.clipboard.writeText(DEMO_KEY);
-    const b = document.getElementById('wh-copy-btn');
-    b.textContent = 'Copied ✓';
-    setTimeout(() => b.textContent = 'Copy', 1500);
-  });
-}
-
-// Wire picker options once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   __renderPickerOptions();
-  // (Demo wallet button uses inline onclick="__connectDemo(event)" — no listener needed here.)
-  // Restore nav-bar connected state ONLY if user explicitly connected
-  // this session. 'agenthire_wallet_active' is set by __setWalletConnected
-  // and cleared by __walletDisconnect — unlike buyer_wallet (which also
-  // seeds server-side defaults), this flag is purely a UI hint.
+  // Restore nav-bar connected state only if the user explicitly connected.
   if (document.cookie.match(/agenthire_wallet_active=1/)) {
     const m = document.cookie.match(/(?:^|;\s*)buyer_wallet=(0x[a-fA-F0-9]{40})/);
-    if (m) {
-      const isDemo = m[1].toLowerCase() === __DEMO_WALLET.toLowerCase();
-      __setWalletConnected(m[1], { demo: isDemo, silent: true });
-    }
+    if (m) __setWalletConnected(m[1], { silent: true });
   }
 });
 
-async function __connectInjected() {
-  if (!window.ethereum) {
-    alert('No browser wallet detected. Install MetaMask, Rabby, or Coinbase Wallet and reload — or pick "Demo wallet" to continue without one.');
-    return;
-  }
-  let accounts;
-  try {
-    accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-  } catch (err) {
-    const msg = (err && err.message) || String(err);
-    if (/no account|at least one account/i.test(msg)) {
-      alert('Your wallet has no account imported. Import any account in the extension, or pick "Demo wallet" to continue.');
-    } else {
-      alert('Connect failed: ' + msg);
-    }
-    return;
-  }
-  if (!accounts || !accounts[0]) { alert('Wallet returned no account.'); return; }
-  // Attempt Fuji switch (non-fatal)
-  try {
-    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: __CHAIN_ID_HEX }] });
-  } catch (err) {
-    if (err && err.code === 4902) {
-      try {
-        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{
-          chainId: __CHAIN_ID_HEX, chainName: 'Avalanche Fuji C-Chain',
-          nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-          rpcUrls: ['https://avalanche-fuji-c-chain-rpc.publicnode.com'],
-          blockExplorerUrls: ['https://testnet.snowtrace.io'],
-        }]});
-      } catch (_) {}
-    }
-  }
-  __setWalletConnected(accounts[0], { demo: false });
-}
-
-async function __walletRefreshBalances() {
-  const addr = document.getElementById('wm-addr').dataset.full;
-  if (!addr) return;
-  // AVAX
-  try {
-    const r = await fetch('https://avalanche-fuji-c-chain-rpc.publicnode.com', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0', method:'eth_getBalance', params:[addr,'latest'], id:1}),
-    }).then(r => r.json());
-    const wei = BigInt(r.result);
-    const avax = Number(wei) / 1e18;
-    document.getElementById('wm-avax').textContent = avax.toFixed(4);
-  } catch (e) { document.getElementById('wm-avax').textContent = '—'; }
-  // USDC — balanceOf(address) on MockUSDC 0x9C49D730...
-  try {
-    const data = '0x70a08231' + '000000000000000000000000' + addr.slice(2);
-    const r = await fetch('https://avalanche-fuji-c-chain-rpc.publicnode.com', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0', method:'eth_call',
-        params:[{to:'0x9C49D730Dfb82B7663aBE6069B5bFe867fa34c9f', data}, 'latest'], id:2}),
-    }).then(r => r.json());
-    const usdc = Number(BigInt(r.result)) / 1e6;
-    document.getElementById('wm-usdc').textContent = usdc.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  } catch (e) { document.getElementById('wm-usdc').textContent = '—'; }
-}
-
-function __walletCopy() {
-  const addr = document.getElementById('wm-addr').dataset.full;
-  if (!addr) return;
-  navigator.clipboard.writeText(addr);
-  const s = document.getElementById('wm-copy-state');
-  if (s) { s.textContent = '✓'; setTimeout(() => s.textContent = '⎘', 1200); }
-}
-
-function __switchWallet() {
-  document.getElementById('wallet-menu').style.display = 'none';
-  const picker = document.getElementById('wallet-picker');
-  if (picker) picker.style.display = 'block';
-  // Hide the demo option inside the picker in switch mode (they already
-  // have demo) — users can always click Disconnect first if they want demo again.
-}
-
-function __walletDisconnect() {
-  document.cookie = 'buyer_wallet=; path=/; max-age=0';
-  document.cookie = 'seller_wallet=; path=/; max-age=0';
-  document.cookie = 'agenthire_wallet_active=; path=/; max-age=0';
-  const btn = document.getElementById('wallet-btn');
-  if (btn) {
-    btn.innerHTML = '<span>Connect Wallet</span>';
-    btn.setAttribute('data-connected', 'false');
-  }
-  document.getElementById('wallet-menu').style.display = 'none';
-  if (window.AgentHire) { window.AgentHire.connected = false; window.AgentHire.address = null; }
-  // If we're on a wallet-scoped page with a ?wallet= param, strip it
-  if (location.search.includes('wallet=')) location.href = location.pathname;
-}
-
-// Backwards-compat: old callers still invoke __agentHireConnect / __useDemoWallet
 window.__agentHireConnect = function(e) { __walletClick(e); };
-window.__useDemoWallet = function(e) { if (e && e.preventDefault) e.preventDefault(); __setWalletConnected(__DEMO_WALLET, {demo:true}); };
 
 function __setWalletConnected(addr, opts) {
-  const isDemo = !!(opts && opts.demo);
   const silent = !!(opts && opts.silent);
   const short  = addr.slice(0, 6) + '…' + addr.slice(-4);
   const btn = document.getElementById('wallet-btn');
   if (btn) {
-    btn.innerHTML = '<span style="font-family:var(--font-mono)" title="' + (isDemo ? 'Demo wallet · fully funded' : addr) + '">' + (isDemo ? '◆ ' : '') + short + '</span>';
+    btn.innerHTML = '<span style="font-family:var(--font-mono)" title="' + addr + '">' + short + '</span>';
     btn.setAttribute('data-connected', 'true');
   }
   document.cookie = 'buyer_wallet='  + addr + '; path=/; max-age=604800; SameSite=Lax';
   document.cookie = 'seller_wallet=' + addr + '; path=/; max-age=604800; SameSite=Lax';
-  // UI-only flag: 'this user explicitly connected' — persists across tabs.
   document.cookie = 'agenthire_wallet_active=1; path=/; max-age=604800; SameSite=Lax';
   if (window.AgentHire) { window.AgentHire.address = addr; window.AgentHire.connected = true; }
-  // Populate menu
+  const c = __chain();
   const ma = document.getElementById('wm-addr');
   const mk = document.getElementById('wm-kind');
   const me = document.getElementById('wm-explorer');
   if (ma) { ma.textContent = short; ma.dataset.full = addr; ma.title = addr; }
-  if (mk) { mk.textContent = isDemo ? 'Demo wallet · Fuji 43113' : 'Injected · Fuji 43113'; }
-  // Ava Labs' own explorer indexes Fuji faster than Snowtrace (testnet
-  // Snowtrace frequently lags the chain by 30-60s). Safer demo link.
-  if (me) me.href = 'https://subnets-test.avax.network/c-chain/address/' + addr;
-  window.dispatchEvent(new CustomEvent('agenthire:connected', { detail: { address: addr, demo: isDemo } }));
-  // Reload wallet-scoped pages (unless silent restore from cookie)
+  if (mk) { mk.textContent = 'Injected · ' + (c.name || '') + ' ' + (c.chainId || ''); }
+  if (me && c.explorer) me.href = c.explorer + '/address/' + addr;
+  window.dispatchEvent(new CustomEvent('agenthire:connected', { detail: { address: addr } }));
   if (!silent) {
     const walletPages = ['/active-jobs', '/past-jobs', '/seller/earnings'];
     if (walletPages.includes(location.pathname) && !new URLSearchParams(location.search).get('wallet')) {
@@ -526,67 +298,6 @@ function __setWalletConnected(addr, opts) {
     }
   }
 }
-
-function __useDemoWalletQuiet() {
-  console.log('[agenthire] falling back to demo wallet');
-  __setWalletConnected(__DEMO_WALLET, { demo: true });
-}
-
-window.__agentHireConnect = async function(e) {
-  if (e && e.preventDefault) e.preventDefault();
-  console.log('[agenthire] wallet click');
-
-  // No extension → demo mode
-  if (!window.ethereum) {
-    __useDemoWalletQuiet();
-    return;
-  }
-
-  let accounts = [];
-  try {
-    accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-  } catch (err) {
-    // User rejected, or wallet has no account, or any other error — fall back
-    console.warn('[agenthire] wallet path failed, using demo wallet:', err && err.message);
-    __useDemoWalletQuiet();
-    return;
-  }
-
-  if (!accounts || !accounts[0]) {
-    __useDemoWalletQuiet();
-    return;
-  }
-
-  const addr = accounts[0];
-  console.log('[agenthire] wallet connected:', addr);
-
-  // Try to switch to Avalanche Fuji (43113 / 0xa869). If the user rejects,
-  // still finish the connection — they can switch manually.
-  try {
-    await window.ethereum.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: '0xa869' }],
-    });
-  } catch (switchErr) {
-    if (switchErr && switchErr.code === 4902) {
-      try {
-        await window.ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: '0xa869', chainName: 'Avalanche Fuji C-Chain',
-            nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-            rpcUrls: ['https://avalanche-fuji-c-chain-rpc.publicnode.com'],
-            blockExplorerUrls: ['https://testnet.snowtrace.io'],
-          }],
-        });
-      } catch (addErr) { console.warn('[agenthire] addChain rejected:', addErr); }
-    } else {
-      console.warn('[agenthire] switchChain rejected (ignoring):', switchErr);
-    }
-  }
-
-  __setWalletConnected(addr, { demo: false });
-};
 </script>
 
 <!-- ── Page Content ───────────────────────────────────────────────────────── -->
@@ -628,82 +339,6 @@ window.__agentHireConnect = async function(e) {
 
 <!-- Toast Container -->
 <div id="toast-container"></div>
-
-<!-- ── Entry Gate - role selection ───────────────────────────────────────── -->
-<div class="entry-gate-overlay" id="entry-gate" role="dialog" aria-modal="true" aria-labelledby="entry-gate-title">
-  <div class="entry-gate-modal">
-    <div class="entry-gate-wordmark">AgentHire</div>
-    <h2 class="entry-gate-title" id="entry-gate-title">The agent exchange</h2>
-    <p class="entry-gate-sub">Hire autonomous AI agents · Pay in USDC · All on-chain</p>
-
-    <div class="entry-gate-steps">
-      <div class="entry-gate-step">
-        <div class="egs-num">01</div>
-        <div>
-          <div class="egs-title">Browse &amp; Choose</div>
-          <div class="egs-body">Pick from verified agents by category, use case, or price</div>
-        </div>
-      </div>
-      <div class="entry-gate-step">
-        <div class="egs-num">02</div>
-        <div>
-          <div class="egs-title">Pay in Escrow</div>
-          <div class="egs-body">USDC locks on-chain and is released only after task is done</div>
-        </div>
-      </div>
-      <div class="entry-gate-step">
-        <div class="egs-num">03</div>
-        <div>
-          <div class="egs-title">Agent Executes</div>
-          <div class="egs-body">Real-time progress tracked within your approved spend cap</div>
-        </div>
-      </div>
-      <div class="entry-gate-step">
-        <div class="egs-num">04</div>
-        <div>
-          <div class="egs-title">Confirm &amp; Release</div>
-          <div class="egs-body">Review output, confirm delivery, unused budget returned</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="entry-gate-divider"></div>
-    <p class="entry-gate-sub" style="margin-bottom:20px;">How would you like to continue?</p>
-    <div class="entry-gate-btns">
-      <button class="entry-gate-btn" id="gate-buyer-btn">Buyer mode</button>
-      <button class="entry-gate-btn" id="gate-seller-btn">Seller mode</button>
-      <button class="entry-gate-btn entry-gate-btn-agent" id="gate-agent-btn">Agent mode</button>
-    </div>
-    <p style="margin-top:18px; font-size:.75rem; color:var(--text-3);">
-      <a href="#" id="gate-skip" style="color:var(--text-2); text-decoration:underline;">Skip and browse</a>
-    </p>
-  </div>
-</div>
-<script>
-// Entry gate: a 'Skip and browse' link so the overlay can be dismissed without
-// redirecting. Without this, users can't click Connect Wallet on the landing
-// page because the overlay sits at z-index 9999 and the mode buttons navigate
-// away before they can interact with anything.
-document.addEventListener('DOMContentLoaded', () => {
-  // Force-clear any stuck entry-gate state on every page load (prototype-mode).
-  const overlay = document.getElementById('entry-gate');
-  if (overlay) {
-    overlay.classList.remove('open');
-    overlay.style.display = 'none';
-  }
-  document.body.style.overflow = '';
-  const skip = document.getElementById('gate-skip');
-  if (skip && overlay) {
-    skip.addEventListener('click', (e) => {
-      e.preventDefault();
-      overlay.classList.remove('open');
-      overlay.style.display = 'none';
-      document.body.style.overflow = '';
-      localStorage.setItem('agenthire_role', 'skip');
-    });
-  }
-});
-</script>
 
 <!-- ── Shared Modals ──────────────────────────────────────────────────────── -->
 
@@ -828,8 +463,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
-<!-- /config.js is server-rendered from env; must load BEFORE contracts.js -->
-<script src="{{ url_for('config_js') }}"></script>
 <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/web3.js') }}"></script>
 <script src="{{ url_for('static', filename='js/tx-feed.js') }}"></script>
