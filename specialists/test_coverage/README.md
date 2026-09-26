@@ -50,6 +50,31 @@ Domain tools (`tools.py`, deterministic):
 | `git_churn` / `rank_targets` | churn x size x uncovered-share risk ranking |
 | `scan_patch_secrets` | secret-looking values in added lines (reports location, never the value) |
 
+Domain tools resolve every path through the kit's policy gate
+(`resolve_path`): no escape from the workspace, `inputs/` read-only,
+`.agentkit/` off limits. git writes patches and churn logs straight to disk,
+so the kit's cap on command output never truncates them.
+
+## The harness owns the patch (`agent.py`)
+
+`CoverageSpecialist` adds two run hooks to the kit's defaults:
+
+- `prepare` records the commit `repo/` is at when a milestone that delivers
+  a `repo.patch` starts (kept under `.agentkit/test-coverage/`, and kept
+  across a resumed run).
+- `finalize` rebuilds each `repo.patch` from `git diff <that commit>` over
+  `repo/`, new files included, and overwrites what the model wrote. The
+  patch checks therefore grader the real change: a production edit that the
+  model committed, or left out of a hand-written patch, still fails
+  `diff_test_paths_only`. If the patch cannot be rebuilt (for example
+  `repo/.git` was moved away) it is removed and the patch checks fail
+  closed. A `patch_rebuilt` event records the commit, whether the model's
+  patch matched, and any paths outside the test globs.
+
+This needs `repo/` to be a git checkout with a commit; for an uploaded
+archive without history the platform should commit it once before M2, or
+the patch is checked as the model wrote it (a `patch_base` event says so).
+
 ## Human gate
 
 No licensed reviewer is needed (`human_gate.required: false`), but the
@@ -80,3 +105,10 @@ writing. A pinned behavior is not a claim that the behavior is correct.
   and there is no branch metric.
 - Integration tests (containers, recorded traffic) and a CI coverage ratchet
   are not milestones yet.
+- The checks recompute every number from the JUnit, coverage and mutation
+  files in the workspace, but they cannot tell a file a tool produced from
+  one the model edited by hand; only the patch is rebuilt by the harness.
+  Re-running the suite and coverage on the platform's side would close
+  that gap. An allowlisted interpreter or git can also touch files outside
+  the tools' rules, so this specialist must run in an OS sandbox (see
+  "Containment" in docs/decisions/0002-specialist-kit.md).

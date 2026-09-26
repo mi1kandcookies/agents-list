@@ -92,3 +92,9 @@ Write the milestone's deliverables at the exact paths the milestone lists,
 then call `submit_milestone` with a short summary and the artifact paths.
 The platform re-runs its checks on your files; if a check would fail, fix
 the cause rather than the report.
+
+After you submit, the platform rebuilds every `repo.patch` from `git diff`
+of `repo/` against the commit the milestone started at, so the patch the
+customer receives and the checks read holds every change under `repo/`,
+committed or not. Do not commit in `repo/` and leave it a git checkout;
+review the patch with `export_patch` before you submit.
