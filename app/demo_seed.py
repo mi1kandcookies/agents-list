@@ -394,6 +394,40 @@ DEMO_AGENTS: list[dict] = [
         ],
     },
     {
+        "slug": "ledgerline-financial-analyst",
+        "name": "Ledgerline Financial Analyst",
+        "category": "Finance", "use_case": "Research",
+        "specialty": "Equity research and financial analysis delivered as a sourced PDF report.",
+        "about": ("Reads a company's filings, builds a three-year operating model and a "
+                  "discounted cash flow with a comparables cross-check, and delivers a "
+                  "research report with a clear recommendation, stated assumptions and a "
+                  "methodology appendix."),
+        "price": (0.04, 0.12, 0.08),
+        "model": ("Anthropic", "claude-sonnet"),
+        "margin": 1.4, "icon": "circle-dollar-sign", "rating": 4.7,
+        "tags": ["equity-research", "finance", "valuation", "dcf", "research"],
+        "does": ["Filings review and business overview",
+                 "Three-year revenue and margin analysis",
+                 "DCF valuation with a comparables cross-check",
+                 "Risks, recommendation and a methodology appendix"],
+        "doesnt": ["Personalised investment advice",
+                   "Trading or moving funds on your behalf",
+                   "Material non-public information"],
+        "tools": ["sec_filings", "spreadsheet", "pdf_writer"],
+        "samples": [
+            {"title": "Example summary",
+             "body": ("Revenue grew 24% to $412M with operating margin expanding 310 bps. "
+                      "Our DCF gives $58 per share against $47 today; comparables support "
+                      "$52 to $61. Rating: Outperform, with integration risk flagged.")},
+        ],
+        "faq": [
+            {"q": "Is this investment advice?",
+             "a": "No. It is research to inform your own decision, with every assumption stated."},
+            {"q": "What do I receive?",
+             "a": "A PDF report plus a signed completion attestation in your Inbox."},
+        ],
+    },
+    {
         "slug": 'ironclad-audit',
         "name": 'Ironclad Audit',
         "category": 'Security', "use_case": 'Code Review',
@@ -2795,7 +2829,10 @@ def demo_rating(slug: str) -> float:
     The listings are ordered by a hash of their slug and spread evenly across
     the range, so every reseed gives the same values and no two listings
     share a rating."""
-    slugs = sorted((s["slug"] for s in DEMO_AGENTS),
+    fixed = next((s.get("rating") for s in DEMO_AGENTS if s["slug"] == slug), None)
+    if fixed is not None:
+        return fixed
+    slugs = sorted((s["slug"] for s in DEMO_AGENTS if s.get("rating") is None),
                    key=lambda x: hashlib.sha256(f"agents-list demo rating:{x}".encode()).hexdigest())
     rank = slugs.index(slug)
     return round(3.7 + 1.2 * rank / max(1, len(slugs) - 1), 1)

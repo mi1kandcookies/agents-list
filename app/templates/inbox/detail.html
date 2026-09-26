@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ d.title }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926n">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/inbox.css') }}?v=20260927a">{% endblock %}
+
+{% macro check_icon() -%}
+<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+{%- endmacro %}
+
+{% block content %}
+<div class="jobs-page inbox-page" data-delivery="{{ d.id }}">
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="{{ url_for('inbox.inbox') }}">Inbox</a><span aria-hidden="true">/</span>
+    <span class="mono">{{ d.id }}</span>
+  </nav>
+
+  <header class="dlv-head">
+    <div>
+      <h1>{{ d.title }}</h1>
+      <div class="job-meta">
+        {% if agent %}<span>Agent <a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a> <span class="mono">{{ agent.public_id }}</span></span>{% endif %}
+        <span>Job <a class="mono" href="{{ url_for('engagements.jobs_detail', engagement_id=d.engagement_id) }}">{{ d.engagement_id }}</a></span>
+        <span>Delivered <span class="mono">{{ d.available_at.strftime('%Y-%m-%d %H:%M UTC') }}</span></span>
+      </div>
+    </div>
+    <div class="dlv-actions">
+      <a class="btn btn-primary" href="{{ url_for('inbox.detail', delivery_id=d.id) }}/report.pdf" download>Download PDF</a>
+      <a class="btn btn-secondary" href="{{ url_for('static', filename=d.pdf_path) }}" target="_blank" rel="noopener">Open in browser</a>
+    </div>
+  </header>
+
+  <p class="dlv-summary">{{ d.summary }}</p>
+
+  <div class="dlv-grid">
+    <section class="card dlv-card" aria-labelledby="att-h">
+      <h2 id="att-h">SOW completion attestation <span class="att-ok">{{ check_icon() }} Verified</span></h2>
+      <dl class="att-rows">
+        <dt>SOW id</dt><dd class="mono">{{ att.engagement_id }}</dd>
+        <dt>SOW hash</dt><dd class="mono">{{ att.sow_hash or 'not recorded' }}</dd>
+        <dt>Agent</dt><dd class="mono">{{ att.agent_id }}</dd>
+        <dt>Completed at</dt><dd class="mono">{{ att.completed_at }}</dd>
+        <dt>Milestones</dt><dd>{% if att.all_milestones_met %}All {{ att.milestones|length }} met{% else %}Not all met{% endif %}</dd>
+        <dt>Deliverable</dt><dd class="mono">{{ (att.deliverable.sha256 or '')[:24] }}{% if att.deliverable.sha256 %}...{% endif %}</dd>
+      </dl>
+      <div style="margin-top:16px">
+        <div class="muted" style="font-size:var(--fs-xs);margin-bottom:6px">Attestation hash (sha256 of the canonical JSON payload)</div>
+        <div class="att-hash" data-att-hash>{{ att_hash }}</div>
+      </div>
+    </section>
+
+    <section class="card dlv-card" aria-labelledby="ms-h">
+      <h2 id="ms-h">Milestones</h2>
+      <ul class="ms-check">
+        {% for m in d.milestones_met %}
+        <li>
+          <span class="tick">{{ check_icon() }}</span>
+          <div>
+            <strong>{{ m.idx + 1 }}. {{ m.title }}</strong>
+            {% set lines = (m.acceptance or '').splitlines()|map('trim')|reject('equalto', '')|list %}
+            {% if lines %}<ul>{% for c in lines %}<li>{{ c.lstrip('-*• ') }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card dlv-card span-2" aria-labelledby="log-h">
+      <h2 id="log-h">Agent run log</h2>
+      <pre class="runlog">{% for l in d.logs %}<span class="ts">{{ l.ts }}</span> <span class="lvl">{{ l.level|upper }}</span> {{ l.msg }}
+{% endfor %}</pre>
+    </section>
+  </div>
+</div>
+{% endblock %}

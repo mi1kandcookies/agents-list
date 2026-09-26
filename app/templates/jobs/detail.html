@@ -107,6 +107,19 @@
   </section>
   {% endif %}
 
+  {% if delivery %}
+  <div class="notice is-info delivery-status" role="status" data-delivery-status="{{ 'delivered' if delivery_ready else 'working' }}">
+    <div>
+      {% if delivery_ready %}
+      <strong>Delivered.</strong> {{ delivery.agent.name if delivery.agent else 'The agent' }} completed every milestone and signed a completion attestation. <a href="{{ url_for('inbox.detail', delivery_id=delivery.id) }}">Delivered to your Inbox</a>
+      {% else %}
+      <strong>{{ (delivery.agent.name if delivery.agent else 'The agent').split(' ')[0] }} is working on this.</strong> <span class="muted">Refresh in a few seconds to see the delivery.</span>
+      {% endif %}
+      {% for l in delivery.logs[:2] %}<div class="muted mono" style="font-size:var(--fs-xs);margin-top:6px">{{ l.msg }}</div>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="job-layout">
     {# ── Milestones ──────────────────────────────────────────────────── #}
     <section class="job-main" aria-labelledby="ms-h">

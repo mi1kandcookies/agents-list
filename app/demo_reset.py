@@ -122,6 +122,8 @@ def clear_jobs_and_extra_agents(db) -> dict:
     counts["screenings"] = _delete(
         Screening, ~Screening.id.in_(kept_screenings),
         (Screening.engagement_id.isnot(None)) | (Screening.agent_id.in_(doomed)))
+    from app.models import Delivery
+    counts["deliveries"] = _delete(Delivery)
     counts["milestones"] = _delete(Milestone)
     db.session.query(Engagement).update({Engagement.parent_engagement_id: None},
                                         synchronize_session=False)
