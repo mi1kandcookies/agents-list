@@ -1,0 +1,23 @@
+{
+  "name": "hvac-plan",
+  "milestone": "m1-plan",
+  "brief": {
+    "engagement_id": "eval-mr-001",
+    "specialist": "market-research",
+    "objective": "Decide whether to launch HVAC scheduling software in the US at $40-$70 per technician per month.",
+    "intake": {
+      "research_objective": "US launch and pricing decision",
+      "market_definition": "Scheduling and dispatch software for HVAC contractors with fewer than 20 employees; excludes enterprise suites, plumbing and electrical",
+      "geography": "United States",
+      "competitors": [
+        "Brightwrench",
+        "Tallyho Dispatch"
+      ],
+      "evidence_cutoff": "2026-09-01"
+    }
+  },
+  "fixtures": {
+    "inputs/brief.md": "hvac-scheduling/inputs/brief.md"
+  },
+  "notes": "Workspace: inputs/brief.md only; m1 has no network. Expect 2-6 key questions covering size, adoption, pricing, switching drivers and regulation; every leaf with a primary source type; source_domains naming concrete sites (statistics offices, the named competitors, trade press) with their types. questions.json in the fixture is one acceptable plan, not the only one."
+}

@@ -1,0 +1,36 @@
+{
+  "as_of": {
+    "C1": "2025",
+    "C2": "2025",
+    "C3": "2026-09-01",
+    "C4": "2026-09-01",
+    "C5": "2026-03",
+    "C6": "2025",
+    "C7": "2025",
+    "C8": "2026",
+    "C9": "2026"
+  },
+  "claims": {
+    "C1": [
+      "Q1.1"
+    ],
+    "C2": [
+      "Q1.1"
+    ],
+    "C3": [
+      "Q2.1"
+    ],
+    "C4": [
+      "Q2.1"
+    ],
+    "C5": [
+      "Q1.2"
+    ],
+    "C8": [
+      "Q1.1"
+    ]
+  },
+  "notes": {
+    "Q1.2": "Insufficient evidence: one trade survey (S4) only; no government or vendor adoption figure found"
+  }
+}
