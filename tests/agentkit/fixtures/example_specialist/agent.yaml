@@ -1,0 +1,42 @@
+schema_version: 1
+slug: example-specialist
+name: Example Specialist
+version: 0.0.1
+summary: Writes a short, cited market brief. Test fixture only.
+listing:
+  category: Research
+  description: Fixture used by the agentkit end-to-end tests.
+  tags: [example]
+  capabilities: [cited briefs]
+  pricing: {model: per_milestone, currency: USDC, typical_low: 50, typical_high: 150}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: research
+prompts: {system: prompts/system.md, include: [playbook/method.md]}
+tools: [read_document, read_file, write_file, list_files, record_source, record_claim,
+        http_fetch, run_command, ask_client, post_progress, submit_milestone, word_stats]
+# python is allowlisted only so the tests can exercise run_command. An
+# allowlisted interpreter runs arbitrary code, which the policy gate cannot
+# contain: a real specialist that allowlists one needs the OS sandbox
+# described in docs/decisions/0002-specialist-kit.md ("Containment").
+shell: {allow: [python], timeout_seconds: 30}
+egress: {mode: allowlist, allow: ["*.example.org"]}
+limits: {max_steps: 20, max_tokens: 200000, max_usd: 2, max_wall_minutes: 10}
+human_gate: {required: false}
+intake:
+  - {field: market, question: "Which market should the brief cover?", required: true}
+estimate: {usd_per_hour: 4.0}
+milestones:
+  - id: m1-brief
+    title: Market brief
+    description: One-page brief with cited figures.
+    deliverables: [deliverables/m1-brief/brief.md]
+    hours: [1, 2]
+    acceptance:
+      - {check: file_exists, params: {path: deliverables/m1-brief/brief.md}}
+      - {check: markdown_sections, params: {path: deliverables/m1-brief/brief.md, sections: [Summary, Figures]}}
+      - {check: no_placeholders, params: {path: deliverables/m1-brief/brief.md}}
+      - {check: ledger_verified, params: {min_claims: 2}}
+      - {check: citations_resolve, params: {path: deliverables/m1-brief/brief.md, min_citations: 2}}
+      - {check: disclaimer_present, params: {path: deliverables/m1-brief/brief.md, text: Not investment advice.}}
+      - {check: cites_every_claim, params: {path: deliverables/m1-brief/brief.md}}
+      - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/brief.yaml, paths: [deliverables/m1-brief/brief.md], threshold: 0.7}}
