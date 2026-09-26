@@ -2,6 +2,8 @@
 in simulated escrow mode, with the fake screener."""
 from __future__ import annotations
 
+import json
+
 import pytest
 from eth_account import Account
 
@@ -12,7 +14,7 @@ from tests.conftest import WALLET
 from tests.test_mandates import _approval, _exp, signing_pem  # noqa: F401  (fixture)
 
 PAYEE = WALLET.lower()
-PRICE = 50_000                 # AGENT_TASK_PRICE_USDC default 0.05
+PRICE = 50_000                 # the stamped manifest's price_min_micro (min_price 0.05)
 BUDGET = 1_000_000
 PER_TX = 200_000
 
@@ -25,8 +27,20 @@ def screener(app, fake_screener):
 
 @pytest.fixture()
 def callee(db, agent):
+    """The test agent, operator-stamped (price_min 0.05 USDC) so it is hireable."""
     from app.models import Agent
-    return db.session.get(Agent, agent)
+    from app.seller.stamp import dev_stamp
+    row = db.session.get(Agent, agent)
+    dev_stamp(row)
+    db.session.commit()
+    return row
+
+
+def _restamp(db, agent, **manifest_fields):
+    from app.seller.stamp import dev_stamp
+    agent.manifest_json = json.dumps({**json.loads(agent.manifest_json), **manifest_fields})
+    dev_stamp(agent)
+    db.session.commit()
 
 
 @pytest.fixture()
@@ -103,10 +117,17 @@ def test_unpaid_request_gets_v2_requirements(client, callee):
     assert x402_v2.decode_header(resp.headers["PAYMENT-REQUIRED"]) == body
 
 
-def test_price_from_manifest(client, db, callee):
-    callee.manifest_json = '{"x402_price_usdc": "0.25"}'
-    db.session.commit()
+def test_price_defaults_without_a_stamped_price(client, db, app, callee):
+    _restamp(db, callee, price_min_micro=0)
+    app.config["AGENT_TASK_PRICE_USDC"] = "0.25"
     assert _challenge(client, callee).get_json()["accepts"][0]["amount"] == "250000"
+
+
+def test_unstamped_agent_cannot_take_paid_tasks(client, db, agent):
+    from app.models import Agent
+    row = db.session.get(Agent, agent)
+    resp = client.post(_url(row), json={"task": "t"})
+    assert resp.status_code == 409 and resp.get_json()["code"] == "NOT_STAMPED"
 
 
 def test_task_required(client, callee):
@@ -200,7 +221,7 @@ def test_screening_refusal_fails_closed(client, db, callee, payer_key, mandate, 
 
 
 def test_amount_over_per_tx_cap_refused(client, db, app, callee, payer_key, mandate, screener):
-    app.config["AGENT_TASK_PRICE_USDC"] = "0.5"          # > PER_TX 0.2
+    _restamp(db, callee, price_min_micro=500_000, price_max_micro=500_000)   # > PER_TX 0.2
     resp, _ = _pay(client, callee, payer_key, mandate, amount=500_000)
     assert resp.status_code == 403 and resp.get_json()["code"] == "MAX_AMOUNT_EXCEEDED"
     assert _spent(db, mandate) == 0

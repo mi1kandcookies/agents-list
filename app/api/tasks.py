@@ -14,13 +14,13 @@ remaining budget, X402_MAX_PAYMENT_USDC) and the payees; the payee is
 screened (hop ``subhire.hop``, fail closed); the nonce is burned; the
 mandate is charged; then the authorization is settled through the escrow
 service's facilitator path (simulated without keys) and recorded in the
-root engagement's ledger. The payee comes from ``resolve_payee`` (ENS or
-profile; a mismatch refuses).
+root engagement's ledger. The callee must be hireable (operator-stamped
+manifest, ``assert_hireable``); its price is the stamped ``price_min_micro``.
+The payee comes from ``resolve_payee`` (ENS or profile; a mismatch refuses).
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 
 from flask import current_app, jsonify, request
@@ -49,18 +49,13 @@ def _usdc_setting(name: str) -> int:
 
 
 def _price_micro(agent) -> int:
-    """The manifest's ``x402_price_usdc``, else AGENT_TASK_PRICE_USDC."""
-    from app.engagements.sow import SowError, parse_usdc
-    try:
-        manifest = json.loads(agent.manifest_json or "{}")
-    except ValueError:
-        manifest = {}
-    price = manifest.get("x402_price_usdc") if isinstance(manifest, dict) else None
-    if price is not None:
-        try:
-            return parse_usdc(price, "x402_price_usdc")
-        except SowError:
-            log.warning("agent %s has an invalid x402_price_usdc; using the default", agent.public_id)
+    """The operator-stamped manifest's ``price_min_micro`` (the caller has
+    already checked the stamp covers the current manifest), else
+    AGENT_TASK_PRICE_USDC."""
+    from app.seller.stamp import current_manifest
+    price = (current_manifest(agent) or {}).get("price_min_micro")
+    if isinstance(price, int) and not isinstance(price, bool) and price > 0:
+        return price
     return _usdc_setting("AGENT_TASK_PRICE_USDC")
 
 
@@ -106,8 +101,11 @@ def api_agent_task(agent_ref):
     from app.models import Agent, Engagement, Mandate
     from app.screening import policy as screening_policy
 
+    from app.seller.stamp import assert_hireable
+
     try:
         agent = eng_svc.resolve_agent(agent_ref)
+        assert_hireable(agent)      # stamped manifest, operator not banned, payee not refused
         payee = eng_svc.resolve_payee(agent)
     except EngagementError as exc:
         return api_error(exc.message, exc.status, code=exc.code, field=exc.field)
