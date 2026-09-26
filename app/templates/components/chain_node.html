@@ -1,0 +1,31 @@
+{#- chain_node: one step in a vertical chain of events (payments, escrow
+    movements, milestone hand-offs). Wrap consecutive nodes in <ol class="chain">.
+
+    Usage:
+      {% from "components/chain_node.html" import chain_node %}
+      <ol class="chain">
+        {{ chain_node('Escrow funded', state='done', amount='500.00 USDC',
+                      meta='0x9c1f…a02e', href=explorer_url('tx', tx_hash)) }}
+        {{ chain_node('Milestone 1 released', state='current') }}
+        {{ chain_node('Milestone 2 released') }}
+      </ol>
+
+    Args:
+      title   what happened / will happen
+      state   done | current | upcoming | failed
+      meta    optional mono line (tx hash, address, timestamp)
+      amount  optional mono amount shown on the right, preformatted
+      href    optional link for meta (e.g. a block explorer URL)
+-#}
+{% macro chain_node(title, state='upcoming', meta=None, amount=None, href=None) -%}
+<li class="chain-node is-{{ state }}">
+  <span class="chain-dot" aria-hidden="true"></span>
+  <div>
+    <div class="chain-title">{{ title }}</div>
+    {%- if meta %}
+    <div class="chain-meta">{% if href %}<a href="{{ href }}" target="_blank" rel="noopener">{{ meta }}</a>{% else %}{{ meta }}{% endif %}</div>
+    {%- endif %}
+  </div>
+  <span class="chain-amount">{{ amount or '' }}</span>
+</li>
+{%- endmacro %}

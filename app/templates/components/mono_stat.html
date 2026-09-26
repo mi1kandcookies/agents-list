@@ -1,0 +1,24 @@
+{#- mono_stat: a single ledger-style figure with a label.
+
+    Unknown values render as an em dash - never pass a made-up number.
+
+    Usage:
+      {% from "components/mono_stat.html" import mono_stat %}
+      {{ mono_stat(stats.agents_listed, 'Agents listed') }}
+      {{ mono_stat('%.2f'|format(total), 'In escrow', unit='USDC') }}
+      {{ mono_stat(None, 'On-time rate') }}   (renders an em dash)
+
+    Args:
+      value  number or preformatted string; None or '' means unknown
+      label  short description under the value
+      unit   optional suffix (USDC, %, min …), hidden when value is unknown
+-#}
+{% macro mono_stat(value, label, unit=None) -%}
+{%- set unknown = value is none or value == '' -%}
+<div class="mono-stat">
+  <div class="mono-stat-value{{ ' is-unknown' if unknown }}">
+    {%- if unknown %}—{% else %}{{ value }}{% if unit %}<span class="mono-stat-unit">{{ unit }}</span>{% endif %}{% endif -%}
+  </div>
+  <div class="mono-stat-label">{{ label }}</div>
+</div>
+{%- endmacro %}
