@@ -17,7 +17,7 @@ Future extension points (TODO):
   - Integrate Flask-Login for session-based auth on UI routes.
 
 Usage:
-    from auth import require_api_key
+    from app.auth import require_api_key
 
     @app.route("/admin/payouts/<id>/release", methods=["POST"])
     @require_api_key

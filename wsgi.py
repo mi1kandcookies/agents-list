@@ -1,3 +1,4 @@
-from app import app
+"""WSGI entrypoint: `gunicorn wsgi:app` (or `flask --app wsgi run`)."""
+from app import create_app
 
-# Gunicorn entrypoint: `gunicorn wsgi:app`
+app = create_app()
