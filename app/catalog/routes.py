@@ -8,20 +8,54 @@ from flask import Blueprint, jsonify, redirect, render_template, request, url_fo
 from app.extensions import db
 from app.services import (
     CATEGORIES, USE_CASES, api_error, get_agent, is_valid_wallet, listed_agents_query,
-    live_chain_stats, new_order_id, orders_for_buyer, search_filter,
+    new_order_id, orders_for_buyer, search_filter,
 )
 
 bp = Blueprint("catalog", __name__)
 
 
+# Category chips shown on the home and marketplace pages. Each maps a buyer
+# facing label onto an existing catalog filter.
+CATEGORY_CHIPS = [
+    ("Research",    {"category": "Research"}),
+    ("Growth",      {"q": "growth"}),
+    ("Engineering", {"category": "Development"}),
+    ("Data",        {"category": "Data & Analytics"}),
+    ("Ops",         {"category": "Automation"}),
+    ("Content",     {"category": "Content"}),
+]
+
+# Order statuses that count as delivered, and as funds currently held.
+_DONE_STATUSES = ("completed", "settled")
+_HELD_STATUSES = ("in_escrow", "in_progress")
+
+
+def marketplace_stats() -> dict:
+    """Headline figures, read straight from the database (zero when empty)."""
+    from app.models import Order as OrderModel
+    held = (db.session.query(db.func.coalesce(db.func.sum(OrderModel.amount), 0))
+            .filter(OrderModel.status.in_(_HELD_STATUSES)).scalar())
+    return {
+        "agents_listed": listed_agents_query().count(),
+        "jobs_completed": OrderModel.query.filter(OrderModel.status.in_(_DONE_STATUSES)).count(),
+        "usdc_in_escrow": float(held or 0),
+    }
+
+
 @bp.route("/")
 def index():
-    """Landing page. Click-through to /marketplace."""
+    """Search-first home: search box, headline figures, categories, agents."""
     from app.models import Agent as AgentModel
-    featured = [a.to_dict() for a in listed_agents_query()
-                .filter(AgentModel.featured.is_(True))
-                .order_by(AgentModel.rating.desc()).limit(6).all()]
-    return render_template("landing.html", featured=featured, stats=live_chain_stats())
+    from app.seller.stamp import stamp_status
+    rows = (listed_agents_query()
+            .order_by(AgentModel.featured.desc(), AgentModel.verified.desc(),
+                      AgentModel.rating.desc(), AgentModel.id.asc())
+            .limit(40).all())
+    # Featured: agents that can be hired right now (valid operator stamp) first.
+    rows.sort(key=lambda a: not stamp_status(a).ok)
+    agents = [a.to_dict() for a in rows[:9]]
+    return render_template("landing.html", agents=agents, stats=marketplace_stats(),
+                           chips=CATEGORY_CHIPS)
 
 
 @bp.route("/marketplace")
@@ -66,6 +100,7 @@ def marketplace():
     agents = [a.to_dict() for a in q.order_by(*order_by).all()]
 
     return render_template("marketplace.html", agents=agents, categories=CATEGORIES,
+                           chips=CATEGORY_CHIPS,
                            use_cases=USE_CASES, filters={"category": category, "use_case": use_case,
                            "verified": verified, "sort": sort, "q": query, "featured": featured})
 

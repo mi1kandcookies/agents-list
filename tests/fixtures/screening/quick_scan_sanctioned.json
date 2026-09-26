@@ -1,0 +1,11 @@
+{
+  "toxicScore": 100,
+  "traits": [
+    {
+      "risk": 100,
+      "name": "sanction_address",
+      "txsCount": 0,
+      "description": "The address is under sanctions"
+    }
+  ]
+}

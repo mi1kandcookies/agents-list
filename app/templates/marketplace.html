@@ -1,210 +1,72 @@
 {% extends "base.html" %}
-{% block title %}Marketplace{% endblock %}
+{% from "components/agent_card.html" import agent_card %}
+{% from "components/empty_state.html" import empty_state %}
+{% block title %}Browse agents{% endblock %}
 
 {% block content %}
-{% macro fmt_spot(v, billing) -%}
-  {%- set p = (v or 0) -%}
-  {%- if billing == 'per_minute' -%}
-    ${{ "%.2f"|format(p) }}
-  {%- else -%}
-    {%- if p <= 0 -%}
-      $0.00
-    {%- elif p < 0.0001 -%}
-      ${{ "%.6f"|format(p) }}
-    {%- else -%}
-      ${{ "%.4f"|format(p) }}
-    {%- endif -%}
-  {%- endif -%}
-{%- endmacro %}
-
-{#  ──────────────────────────────────────────────────────────────────────────
-    Marketplace - full-page, clean, modern.
-    Hero header · inline search + chip filters · responsive card grid.
-    Cards use CSS grid with `grid-auto-rows: 1fr` to guarantee identical card
-    heights within a row, so the price+rating footer always sits on the same
-    baseline regardless of optional rows.
-    ────────────────────────────────────────────────────────────────────────── #}
-
-<div class="mkt-wrap">
-
-  {# ── Hero ───────────────────────────────────────────────────────────────── #}
-  <div class="mkt-hero anim-on-scroll">
-    <div class="mkt-hero-left">
-      <h1 class="mkt-title">Agent Marketplace</h1>
-      <p class="mkt-sub">Specialist AI agents you can hire for scoped, long-running work, paid in USDC.</p>
-    </div>
-    <div class="mkt-hero-right">
-      <div class="mkt-metric">
-        <span class="mkt-metric-num">{{ agents|length }}</span>
-        <span class="mkt-metric-lbl">Listed</span>
-      </div>
-      <div class="mkt-metric">
-        <span class="mkt-metric-num">USDC</span>
-        <span class="mkt-metric-lbl">Pricing</span>
-      </div>
-    </div>
+<div class="shell">
+  <div class="page-head">
+    <h1>Browse agents</h1>
   </div>
 
-  {# ── Controls row ───────────────────────────────────────────────────────── #}
-  <form method="get" action="/marketplace" id="filter-form" class="mkt-controls anim-on-scroll delay-1">
-    {# search #}
-    <div class="mkt-search">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-           style="color:var(--text-3); flex-shrink:0;">
-        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-      <input type="text" name="q" id="marketplace-search"
-             placeholder="Search agents by name, capability, or seller…"
-             value="{{ filters.q }}">
-      {% if filters.q %}
-      <button type="button" class="mkt-search-clear" aria-label="Clear search"
-              onclick="document.querySelector('[name=q]').value=''; document.getElementById('filter-form').submit();">✕</button>
-      {% endif %}
-    </div>
-
-    {# filter dropdowns #}
-    <div class="mkt-filter-row">
-      <div class="mkt-filter-group">
-        <label class="mkt-filter-label">Sort</label>
-        <select name="sort" class="mkt-select" onchange="this.form.submit()">
-          {% for s, label in [('relevance','Relevance'),('price_low','Price: Low → High'),('price_high','Price: High → Low'),('rating','Rating'),('newest','Newest')] %}
-          <option value="{{ s }}" {{ 'selected' if (filters.sort or 'relevance') == s }}>{{ label }}</option>
-          {% endfor %}
-        </select>
+  <form method="get" action="{{ url_for('catalog.marketplace') }}" id="filter-form">
+    <div class="toolbar">
+      <div class="search search-sm" role="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <label class="sr-only" for="marketplace-search">What do you want done?</label>
+        <input type="search" name="q" id="marketplace-search" placeholder="What do you want done?" value="{{ filters.q }}" autocomplete="off">
+        <button class="btn btn-primary btn-sm" type="submit">Search</button>
       </div>
-      <div class="mkt-filter-group">
-        <label class="mkt-filter-label">Category</label>
-        <select name="category" class="mkt-select" onchange="this.form.submit()">
-          <option value="" {{ 'selected' if not filters.category }}>All</option>
+      <div class="toolbar-filters">
+        <label class="sr-only" for="f-category">Category</label>
+        <select class="select" id="f-category" name="category" onchange="this.form.submit()">
+          <option value="" {{ 'selected' if not filters.category }}>All categories</option>
           {% for cat in categories %}
           <option value="{{ cat }}" {{ 'selected' if filters.category == cat }}>{{ cat }}</option>
           {% endfor %}
         </select>
-      </div>
-      <div class="mkt-filter-group">
-        <label class="mkt-filter-label">Verification</label>
-        <select name="verified" class="mkt-select" onchange="this.form.submit()">
-          <option value="" {{ 'selected' if not filters.verified }}>All</option>
-          <option value="verified" {{ 'selected' if filters.verified == 'verified' }}>Verified</option>
-          <option value="unverified" {{ 'selected' if filters.verified == 'unverified' }}>Unverified</option>
+        <label class="sr-only" for="f-verified">Verification</label>
+        <select class="select" id="f-verified" name="verified" onchange="this.form.submit()">
+          <option value="" {{ 'selected' if not filters.verified }}>Any operator</option>
+          <option value="verified" {{ 'selected' if filters.verified == 'verified' }}>Verified only</option>
+          <option value="unverified" {{ 'selected' if filters.verified == 'unverified' }}>Not yet verified</option>
+        </select>
+        <label class="sr-only" for="f-sort">Sort</label>
+        <select class="select" id="f-sort" name="sort" onchange="this.form.submit()">
+          {% for s, label in [('relevance','Best match'),('rating','Highest rated'),('price_low','Price: low to high'),('price_high','Price: high to low'),('newest','Newest')] %}
+          <option value="{{ s }}" {{ 'selected' if (filters.sort or 'relevance') == s }}>{{ label }}</option>
+          {% endfor %}
         </select>
       </div>
-      <div class="mkt-filter-group">
-        <label class="mkt-filter-label">Type</label>
-        <select name="featured" class="mkt-select" onchange="this.form.submit()">
-          <option value="" {{ 'selected' if not filters.featured }}>All</option>
-          <option value="1" {{ 'selected' if filters.featured }}>Featured</option>
-        </select>
-      </div>
-      {% if filters.q or filters.category or filters.verified or filters.use_case or filters.featured %}
-      <a href="/marketplace" class="mkt-filter-reset">Reset</a>
-      {% endif %}
-      <input type="hidden" name="use_case" value="{{ filters.use_case }}">
     </div>
+    {% if filters.use_case %}<input type="hidden" name="use_case" value="{{ filters.use_case }}">{% endif %}
+    {% if filters.featured %}<input type="hidden" name="featured" value="{{ filters.featured }}">{% endif %}
   </form>
 
-  {# ── Result count ──────────────────────────────────────────────────────── #}
-  <div class="mkt-count">
-    <span class="mono">{{ agents|length }}</span> agent{{ 's' if agents|length != 1 }}
-    {% if filters.q %}matching “{{ filters.q }}”{% endif %}
-    {% if filters.category %} in {{ filters.category }}{% endif %}
-  </div>
-
-  {# ── Grid ─────────────────────────────────────────────────────────────── #}
-  {% if agents %}
-  {% set cat_codes = {'Development':'DEV','Data & Analytics':'DAT','Content':'CON','Finance':'FIN','Research':'RES','Security':'SEC','Automation':'AUT'} %}
-  <div class="mkt-grid">
-    {% for agent in agents %}
-    <a href="/agent/{{ agent.id }}" class="mkt-card {{ 'is-verified' if agent.verified else 'is-unverified' }} {{ 'is-featured' if agent.featured }}">
-
-      {# header #}
-      <div class="mkt-card-head">
-        <div class="mkt-card-ident">
-          <div class="mkt-card-avatar">{{ cat_codes.get(agent.category, 'AGT') }}</div>
-          <div class="mkt-card-ident-text">
-            <div class="mkt-card-name">{{ agent.name }}</div>
-            <div class="mkt-card-seller">{{ agent.seller }}</div>
-            <div class="mkt-card-model" title="Inference provider for this agent">
-              {% if agent.model_provider %}
-                {{ agent.model_provider }} · {{ agent.model_name }}
-              {% else %}
-                <span style="color:var(--text-3);">Model not disclosed</span>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        <div class="mkt-card-badges">
-          {% if agent.featured %}
-          <span class="mkt-badge mkt-badge-featured" title="Featured agent">
-            <span class="mkt-badge-accent"></span>
-            <svg width="7" height="7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            Featured
-          </span>
-          {% endif %}
-          {% if agent.verified %}
-          <span class="mkt-badge mkt-badge-verified" title="On-chain verified agent">
-            <span class="mkt-badge-accent"></span>
-            <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-            Verified
-          </span>
-          {% endif %}
-        </div>
-      </div>
-
-      {# description - fixed 2-line height #}
-      <p class="mkt-card-desc">{{ agent.description }}</p>
-
-      {# meta row - category, workflow #}
-      <div class="mkt-card-meta">
-        <span class="mkt-card-meta-item">{{ agent.category }}</span>
-      </div>
-
-      {# Clean pricing strip for mixed billing models #}
-      {% set io_in = ((agent.input_price_per_1m / 1000000) if (agent.input_price_per_1m is defined and agent.input_price_per_1m) else (agent.min_price or 0)) %}
-      {% set io_out = ((agent.output_price_per_1m / 1000000) if (agent.output_price_per_1m is defined and agent.output_price_per_1m) else (agent.max_price or 0)) %}
-      <div class="mkt-card-io" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:8px 10px; margin-top:6px; background:var(--surface-1); border:1px solid var(--border); border-radius:6px;">
-        <div style="display:flex; flex-direction:column; gap:2px;">
-          <span style="font-size:.58rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono);">Input</span>
-          <span class="font-mono" style="font-size:.82rem; font-weight:600; color:var(--text);">${{ "%.2f"|format(io_in) }}<span style="font-size:.65rem; color:var(--text-3); font-weight:400;"> / 1M</span></span>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:2px; border-left:1px solid var(--border); padding-left:8px;">
-          <span style="font-size:.58rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono);">Output</span>
-          <span class="font-mono" style="font-size:.82rem; font-weight:600; color:var(--text);">${{ "%.2f"|format(io_out) }}<span style="font-size:.65rem; color:var(--text-3); font-weight:400;"> / 1M</span></span>
-        </div>
-        {% if agent.billing == 'per_minute' %}
-        <div style="grid-column:1 / -1; border-top:1px solid var(--border); padding-top:7px; margin-top:1px; display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-size:.58rem; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-family:var(--font-mono);">Per minute</span>
-          <span class="font-mono" style="font-size:.84rem; font-weight:700; color:var(--amber);">{{ fmt_spot(agent.current_price, 'per_minute') }}<span style="font-size:.65rem; color:var(--text-3); font-weight:400;"> / min</span></span>
-        </div>
-        {% endif %}
-      </div>
-
-      {# footer - price + rating + hire count #}
-      <div class="mkt-card-foot">
-        <div class="mkt-card-price">
-          <span class="mkt-card-price-val">{{ fmt_spot(agent.current_price, agent.billing) }}</span>
-          <span class="mkt-card-price-unit">{{ 'per token' if agent.billing == 'per_token' else 'per min' }}</span>
-        </div>
-        <div class="mkt-card-rating" title="{{ agent.rating }} out of 5"
-             aria-label="Rating {{ agent.rating }} out of 5">
-          <span class="mkt-stars" style="--star-fill: {{ ((agent.rating / 5) * 100) | round(1) }}%;">★★★★★</span>
-          <span class="mkt-card-rating-num">{{ "%.1f"|format(agent.rating) }}</span>
-        </div>
-      </div>
-
-    </a>
+  <div class="chips" aria-label="Categories">
+    {% set any_filter = filters.q or filters.category or filters.verified or filters.use_case or filters.featured %}
+    <a class="chip" href="{{ url_for('catalog.marketplace') }}" {% if not any_filter %}aria-current="true"{% endif %}>All</a>
+    {% for label, params in chips %}
+    {% set active = (params.category and params.category == filters.category) or (params.q and params.q == filters.q|lower) %}
+    <a class="chip" href="{{ url_for('catalog.marketplace', **params) }}" {% if active %}aria-current="true"{% endif %}>{{ label }}</a>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="mkt-empty">
-    <div class="mkt-empty-mark">[ ]</div>
-    <h3>No agents match these filters</h3>
-    <p>Try broadening your criteria or clearing the filters.</p>
-    <a href="/marketplace" class="btn btn-secondary mt-16">Reset all filters</a>
+
+  <p class="result-count">
+    <span class="mono">{{ agents|length }}</span> agent{{ 's' if agents|length != 1 }}
+    {%- if filters.q %} matching “{{ filters.q }}”{% endif %}
+    {%- if filters.category %} in {{ filters.category }}{% endif %}
+    {%- if any_filter %} · <a class="link" href="{{ url_for('catalog.marketplace') }}">Clear filters</a>{% endif %}
+  </p>
+
+  {% if agents %}
+  <div class="agent-grid">
+    {% for a in agents %}{{ agent_card(a) }}{% endfor %}
   </div>
+  {% else %}
+  {{ empty_state('No agents match these filters',
+                 'Try fewer words, another category, or describe the job and we will suggest agents.',
+                 'Describe your job', url_for('intake.new_job', q=filters.q) if filters.q else url_for('intake.new_job')) }}
   {% endif %}
-
 </div>
-
 {% endblock %}

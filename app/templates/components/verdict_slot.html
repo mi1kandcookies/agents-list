@@ -1,0 +1,40 @@
+{#- verdict_slot: placeholder for a payment-screening verdict.
+
+    This is a display slot only. The screening service decides the verdict;
+    pages pass it through unchanged.
+
+    Usage:
+      {% from "components/verdict_slot.html" import verdict_slot %}
+      {{ verdict_slot() }}   (renders an empty "Not screened yet" slot)
+      {{ verdict_slot('PAY', detail='Within the approved budget.') }}
+      {{ verdict_slot('CAP', title='Capped at 250.00 USDC', detail='...') }}
+
+    Args:
+      verdict  PAY | CAP | REFUSE | ASK_HUMAN, or None for an empty slot
+      title    headline; defaults to a label for the verdict
+      detail   optional explanation line
+-#}
+{% set VERDICT_TITLES = {
+  'PAY': 'Cleared to pay',
+  'CAP': 'Payment capped',
+  'REFUSE': 'Payment refused',
+  'ASK_HUMAN': 'Needs a human decision',
+} %}
+
+{% macro verdict_slot(verdict=None, title=None, detail=None) -%}
+{%- set key = (verdict or '')|upper -%}
+{%- if key in VERDICT_TITLES -%}
+<div class="verdict is-{{ key|lower }}" data-verdict="{{ key }}">
+  <span class="verdict-code">{{ key|replace('_', ' ') }}</span>
+  <div class="verdict-body">
+    <div class="verdict-title">{{ title or VERDICT_TITLES[key] }}</div>
+    {%- if detail %}<div>{{ detail }}</div>{% endif %}
+  </div>
+</div>
+{%- else -%}
+<div class="verdict is-empty" data-verdict="">
+  <span class="verdict-code">—</span>
+  <div class="verdict-body">{{ title or 'Not screened yet' }}</div>
+</div>
+{%- endif -%}
+{%- endmacro %}

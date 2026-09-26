@@ -1,0 +1,29 @@
+{
+  "apiVersion": "2.3.1",
+  "saleTax": {
+    "currentValue": 0,
+    "minValue": 0,
+    "maxValue": 0
+  },
+  "buyTax": {
+    "currentValue": 0,
+    "minValue": 0,
+    "maxValue": 0
+  },
+  "riskScore": 55,
+  "riskLevel": "medium",
+  "category": "suspicious",
+  "trust": "neutral",
+  "action": "warn",
+  "detectors": [
+    {
+      "code": "CONCENTRATED_SUPPLY_DISTRIBUTION",
+      "description": "Supply is held by few addresses"
+    }
+  ],
+  "token": {
+    "chainId": "1",
+    "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "symbol": "USDC"
+  }
+}

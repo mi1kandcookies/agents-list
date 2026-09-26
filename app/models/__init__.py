@@ -10,11 +10,17 @@ payouts             : Seller payouts tracked by the admin panel
 moderation_reports  : User-filed reports reviewed by admins
 reviews             : Buyer ratings and feedback per agent
 
+Custody-chain tables (docs/decisions/0001-custody-chain.md §11) live in
+sibling modules and are re-exported at the bottom of this file.
+
 Sample data for local development is loaded explicitly with `flask seed`.
 """
 from __future__ import annotations
 import json
 from datetime import datetime, timezone
+from sqlalchemy import event
+from sqlalchemy.orm.attributes import set_committed_value
+from app.common.agent_ids import from_db_id
 from app.extensions import db
 from chain.config import explorer_url
 
@@ -54,6 +60,16 @@ class Agent(db.Model):
     _tags               = db.Column("tags", db.Text, nullable=False, default="[]")
     _capabilities       = db.Column("capabilities", db.Text, nullable=False, default="[]")
     created_at          = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    # Custody chain (docs/decisions/0001-custody-chain.md §11)
+    public_id           = db.Column(db.String(16), nullable=True, unique=True, index=True)  # AGT-XXXX-XXXX-C
+    payout_address      = db.Column(db.String(64), nullable=True)
+    screening_address   = db.Column(db.String(64), nullable=True)   # mainnet address screened for Sepolia payouts
+    manifest_json       = db.Column(db.Text, nullable=True)
+    manifest_hash       = db.Column(db.String(66), nullable=True)
+    manifest_stamped_at = db.Column(db.DateTime, nullable=True)
+    manifest_stamp_approval_id = db.Column(db.String(32), nullable=True)
+    manifest_stamp_sub  = db.Column(db.String(255), nullable=True)
+    ens_name            = db.Column(db.String(255), nullable=True)
 
     @property
     def tags(self) -> list[str]:
@@ -101,10 +117,30 @@ class Agent(db.Model):
             "output_price_display": round((self.output_price_per_1m or 0) / 1_000_000, 2),
             "tags": self.tags,
             "capabilities": self.capabilities,
+            **self._stamp_fields(),
         }
+
+    def _stamp_fields(self) -> dict:
+        """Operator stamp state for cards and the API (app/seller/stamp.py)."""
+        from app.seller.stamp import stamp_status
+        status = stamp_status(self)
+        return {"public_id": self.public_id, "manifest_hash": self.manifest_hash,
+                "operator_stamped": status.ok, "stamp_code": status.code,
+                "stamp_reason": status.reason}
 
     def __repr__(self):
         return f"<Agent {self.id} {self.name!r}>"
+
+
+@event.listens_for(Agent, "after_insert")
+def _assign_public_id(mapper, connection, target):
+    """Derive public_id from the new primary key (same rule as the 0002 backfill)."""
+    if target.public_id is None:
+        public_id = from_db_id(target.id)
+        connection.execute(
+            Agent.__table__.update().where(Agent.__table__.c.id == target.id).values(public_id=public_id)
+        )
+        set_committed_value(target, "public_id", public_id)
 
 
 # ── Order ─────────────────────────────────────────────────────────────────────
@@ -299,3 +335,13 @@ class ChainTransaction(db.Model):
             "meta": json.loads(self.meta or "{}"),
             "explorer": explorer_url("tx", self.tx_hash) if self.tx_hash else None,
         }
+
+
+# ── Custody chain ─────────────────────────────────────────────────────────────
+
+from app.models.humans import Human  # noqa: E402,F401
+from app.models.screenings import Screening  # noqa: E402,F401
+from app.models.engagements import Engagement, LedgerEntry, Milestone  # noqa: E402,F401
+from app.models.approvals import Approval, ApprovalEvent, UsedIdTokenJti  # noqa: E402,F401
+from app.models.mandates import Mandate  # noqa: E402,F401
+from app.models.ens_names import EnsName  # noqa: E402,F401

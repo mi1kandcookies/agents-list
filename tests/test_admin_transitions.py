@@ -22,13 +22,6 @@ def test_admin_requires_api_key(client):
     assert resp.status_code == 401
 
 
-def test_release_rejected_when_refunded(client, db):
-    _payout(db, "TST-PAY-001", "refunded")
-    resp = client.post("/admin/payouts/TST-PAY-001/release", headers=HEADERS)
-    assert resp.status_code == 400
-    assert resp.get_json()["code"] == "INVALID_STATE"
-
-
 def test_refund_rejected_when_released(client, db):
     _payout(db, "TST-PAY-002", "released")
     resp = client.post("/admin/payouts/TST-PAY-002/refund", headers=HEADERS)
@@ -36,11 +29,24 @@ def test_refund_rejected_when_released(client, db):
     assert resp.get_json()["code"] == "INVALID_STATE"
 
 
-def test_release_pending_payout(client, db):
-    _payout(db, "TST-PAY-003", "pending")
+# Releasing legacy order payouts from admin marked money released without any
+# verified human approval, bypassing the custody chain. Those routes are gone
+# (410); jobs pay out through milestone releases, each with its own approval.
+@pytest.mark.parametrize("status", ["pending", "held", "refunded"])
+def test_release_payout_is_disabled(client, db, status):
+    _payout(db, "TST-PAY-003", status)
     resp = client.post("/admin/payouts/TST-PAY-003/release", headers=HEADERS)
-    assert resp.status_code == 200
-    assert db.session.get(Payout, "TST-PAY-003").status == "released"
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_PAYOUT_DISABLED"
+    assert db.session.get(Payout, "TST-PAY-003").status == status
+
+
+def test_release_all_payouts_is_disabled(client, db):
+    _payout(db, "TST-PAY-004", "pending")
+    resp = client.post("/admin/payouts/release-all", headers=HEADERS)
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_PAYOUT_DISABLED"
+    assert db.session.get(Payout, "TST-PAY-004").status == "pending"
 
 
 def test_reject_verification_not_found_shape(client):
