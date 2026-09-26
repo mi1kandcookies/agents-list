@@ -1,0 +1,22 @@
+{
+  "name": "Codify a customer-side SaaS playbook from written guidelines",
+  "milestone": "m1-playbook",
+  "brief": {
+    "engagement_id": "eval-cr-m1",
+    "specialist": "contract-review",
+    "objective": "Codify Harborlight's vendor-contract guidelines into a reusable SaaS/MSA playbook for customer-side review.",
+    "intake": {
+      "contract_files": ["inputs/northwind_saas_msa.txt"],
+      "contract_type": "SaaS/MSA",
+      "side": "customer",
+      "reviewing_attorney": "Fictional reviewer, admitted in Ohio",
+      "playbook_materials": ["inputs/harborlight_guidelines.md"],
+      "escalation_contact": "Deputy General Counsel"
+    }
+  },
+  "fixtures": {
+    "inputs/harborlight_guidelines.md": "harborlight_guidelines.md",
+    "inputs/northwind_saas_msa.txt": "northwind_saas_msa.txt"
+  },
+  "notes": "Expect all 15 default families. Liability cap, carve-outs, IP/training and renewal positions must mirror the guidelines (12 months / 6 months + USD 250,000 floor / never below 3 months; no training on customer data; 30-day notice). Families the guidelines are silent on (insurance, warranties) must be labelled as baseline for attorney confirmation, not presented as the client's position."
+}

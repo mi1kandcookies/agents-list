@@ -1,0 +1,47 @@
+MASTER SUBSCRIPTION AGREEMENT
+
+This Master Subscription Agreement (the "Agreement") is entered into between Northwind Cloudworks, Inc., a Delaware corporation ("Provider"), and Harborlight Logistics LLC, an Ohio limited liability company ("Customer").
+
+1. Definitions
+"Services" means the hosted route-planning software and related support described in an Order Form.
+"Customer Data" means data submitted to the Services by or for Customer.
+"Order Form" means an ordering document signed by both parties that references this Agreement.
+
+2. Fees and Payment
+2.1 Customer shall pay all fees within fifteen (15) days of the invoice date. Late amounts accrue interest at two percent (2%) per month.
+2.2 Provider may increase the fees at any time on thirty (30) days' notice.
+
+3. Term and Renewal
+3.1 This Agreement begins on the Effective Date and continues for twelve (12) months.
+3.2 Each Order Form renews automatically for successive terms of the same length unless either party gives notice of non-renewal at least ninety (90) days before the end of the then-current term.
+
+4. Confidentiality
+4.1 Each party shall protect the other party's Confidential Information using at least reasonable care and shall use it only to perform under this Agreement. These obligations survive for three (3) years after termination.
+
+5. Intellectual Property and Feedback
+5.1 Provider owns the Services. Customer owns Customer Data.
+5.2 Customer grants Provider a perpetual, irrevocable, royalty-free license to use any feedback and any Customer Data for any purpose, including to train and improve Provider's products.
+
+6. Data Protection
+6.1 Provider shall maintain commercially reasonable safeguards for Customer Data.
+6.2 Provider shall notify Customer of a security incident affecting Customer Data within a commercially reasonable time.
+
+7. Warranties
+7.1 THE SERVICES ARE PROVIDED "AS IS" AND PROVIDER DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED.
+
+8. Indemnification
+8.1 Customer shall defend, indemnify and hold harmless Provider from any claim arising out of any breach of this Agreement by Customer.
+
+9. Limitation of Liability
+9.1 In no event shall either party be liable for any indirect, incidental, special or consequential damages, or for lost profits.
+9.2 Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid by Customer in the three (3) months preceding the claim.
+9.3 The limitations in Section 9.2 apply to all claims, including claims under Section 8 and breaches of Section 4.
+
+10. Assignment
+10.1 Provider may assign this Agreement without consent, including in connection with a change of control. Customer may not assign this Agreement without Provider's prior written consent.
+
+11. Governing Law
+11.1 This Agreement is governed by the laws of the State of Delaware, and the parties submit to the exclusive jurisdiction of the courts of Wilmington, Delaware.
+
+12. General
+12.1 Notices under this Agreement must be in writing and delivered to the addresses in the Order Form, as further described in Section 14.

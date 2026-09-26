@@ -1,0 +1,20 @@
+{
+  "name": "Surgical redline and memo for the vendor SaaS MSA",
+  "milestone": "m3-redline",
+  "brief": {
+    "engagement_id": "eval-cr-m3",
+    "specialist": "contract-review",
+    "objective": "Redline Northwind's MSA for the approved issues and write the negotiation memo for Harborlight's attorney.",
+    "intake": {
+      "contract_files": ["inputs/northwind_saas_msa.txt"],
+      "contract_type": "SaaS/MSA",
+      "side": "customer",
+      "reviewing_attorney": "Fictional reviewer, admitted in Ohio"
+    }
+  },
+  "fixture": "m3_msa_workspace",
+  "fixtures": {
+    "deliverables/m1-playbook/playbook.yaml": "harborlight_playbook.yaml"
+  },
+  "notes": "Starts from evals/fixtures/m3_msa_workspace: the MSA plus the approved m2 issue list (issues.json/md/csv and review notes, as record_issues wrote them). Expect minimal tracked changes (e.g. 'three (3) months' to 'twelve (12) months', 'paid' to 'paid or payable', 'ninety (90)' to 'thirty (30)'), carve-out language added to 9.3 rather than a rewritten clause, comment-only ops where facts are missing, and no edits outside approved issues; the approved issue list must stay unchanged. The memo must rank the escalated items first and must not claim market standards the playbook does not state."
+}
