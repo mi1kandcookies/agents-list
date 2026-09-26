@@ -33,6 +33,21 @@ def test_new_page_prefills_outcome_from_query(client):
     assert 'data-prefill="Map our top 20 competitors"' in html
 
 
+def test_new_page_preselects_agent_from_profile_link(client, agent):
+    html = client.get(f"/new?agent={agent}").get_data(as_text=True)
+    m = re.search(r'<script type="application/json" id="flow-agent">(.*?)</script>', html, re.S)
+    picked = json.loads(m.group(1))
+    assert picked["id"] == agent and picked["name"] == "Test Agent"
+    assert picked["category_key"] == "engineering"   # "Development" listing category
+    html = client.get("/new?agent=999999").get_data(as_text=True)
+    assert '<script type="application/json" id="flow-agent">null</script>' in html
+
+
+def test_new_is_served_by_the_guided_flow(app):
+    adapter = app.url_map.bind("localhost")
+    assert adapter.match("/new")[0] == "intake.new_job"
+
+
 def test_new_page_escapes_prefill(client):
     html = client.get("/new?q=%3Cscript%3Ealert(1)%3C/script%3E").get_data(as_text=True)
     assert "<script>alert(1)" not in html
@@ -42,7 +57,7 @@ def test_new_page_escapes_prefill(client):
 def test_estimate_unknown_engagement_is_404(client):
     res = client.get("/estimate/ENG-DOESNOTEXIST")
     assert res.status_code == 404
-    assert "Page Not Found" in res.get_data(as_text=True)
+    assert "No engagement ENG-DOESNOTEXIST exists" in res.get_data(as_text=True)
 
 
 def test_estimate_page_shows_contract_for_engagement(client, db, agent, human):
