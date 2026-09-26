@@ -640,3 +640,91 @@ def test_m3_after_m2_patches_only_its_own_tests(spec, tmp_path):
     assert patch_files(ws, f"{M3}/repo.patch") == ["tests/test_fares_unit.py"]
     matrix = json.loads((ws / M3 / "runs" / "matrix.json").read_text(encoding="utf-8"))
     assert (matrix["tests"], matrix["all_green"]) == (17, True)   # M2's tests still run in M3
+
+
+# --- the runs behind tests_stable are the harness's ---------------------------------------
+
+def forged_runs(runs_dir: str, junit_xml: str, n: int = 10) -> list:
+    return [("write_file", {"path": f"{runs_dir}/run-{i:02d}.xml", "content": junit_xml}) for i in range(1, n + 1)]
+
+
+FORGED_GREEN = ('<?xml version="1.0"?><testsuites><testsuite name="pytest">'
+                + "".join(f'<testcase classname="tests.test_fares" name="{n}"/>'
+                          for n in ("test_standard_fare_zone_a", "test_express_is_one_and_a_half_times_standard",
+                                    "test_heavy_surcharge_applies_above_30_kg",
+                                    "test_negative_weight_is_priced_below_base", "test_bulk_discount_tiers[9-100]"))
+                + '<testcase classname="tests.test_zones" name="test_zone_a"/>'
+                  '<testcase classname="tests.test_zones" name="test_zone_c"/></testsuite></testsuites>')
+
+
+def forged_m2_plan(matrix: dict | None) -> list:
+    record = [] if matrix is None else [("write_file", {"path": f"{M2}/runs/matrix.json",
+                                                        "content": json.dumps(matrix)})]
+    return [
+        ("write_file", {"path": "repo/tests/test_fares.py", "content": TEST_FARES}),
+        *forged_runs(f"{M2}/runs", FORGED_GREEN),
+        *record,
+        ("write_file", {"path": f"{M2}/mutation.json", "content": MUTATION_JSON}),
+        ("export_patch", {"out": f"{M2}/repo.patch"}),
+        M2_DOCS,
+        ("submit_milestone", {"summary": "fares.py pinned", "artifacts": [
+            a for a in M2_ARTIFACTS if matrix is not None or not a.endswith("matrix.json")]}),
+    ]
+
+
+@needs_git
+def test_m2_runs_that_skip_the_new_tests_fail(spec, tmp_path):
+    """Hand-written green run files and a recorded command that only runs
+    the old tests: the harness re-runs that command, and its runs show the
+    new tests never ran."""
+    ws = workspace(tmp_path)
+    matrix = {"command": {"argv": [*PYTEST, "tests/test_zones.py"], "cwd": "repo", "runs": 10}, "log": []}
+    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", forged_m2_plan(matrix),
+                      ReplayRunner())
+    assert not tool_errors(events)
+    replay = events.of_type("matrix_replayed")[0].data
+    assert (replay["ok"], replay["runs"], replay["tests"]) == (True, 10, 2)
+    record = json.loads((ws / M2 / "runs" / "matrix.json").read_text(encoding="utf-8"))
+    assert record["replayed_by"] == "harness" and len(record["log"]) == 10
+    assert "test_fares" not in (ws / M2 / "runs" / "run-01.xml").read_text(encoding="utf-8")
+    assert sub.status == "needs_revision"
+    problems = failed(sub)
+    assert list(problems) == ["tests_stable"]
+    assert "added test tests/test_fares.py::test_standard_fare_zone_a missing" in problems["tests_stable"]
+
+
+@needs_git
+@pytest.mark.parametrize("matrix,reason", [
+    (None, "matrix.json"),
+    ({"command": {"argv": [sys.executable, "-c", "open(r'{junit}', 'w').write('...')"], "cwd": "repo",
+                  "runs": 10}}, "inline code"),
+], ids=["no-record", "inline-code"])
+def test_m2_run_files_without_a_replayable_command_are_removed(spec, tmp_path, matrix, reason):
+    ws = workspace(tmp_path)
+    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", forged_m2_plan(matrix))
+    assert not tool_errors(events)
+    replay = events.of_type("matrix_replayed")[0].data
+    assert replay["ok"] is False and reason in replay["error"]
+    assert not list((ws / M2 / "runs").glob("run-*.xml"))
+    assert failed(sub)["tests_stable"] == "0 runs found, 10 required"
+
+
+@needs_git
+def test_m2_must_keep_running_the_suite_m1_measured(spec, tmp_path):
+    """The harness keeps the test ids M1's runs showed; an M2 command that
+    runs only the new file drops them, and tests_stable says so."""
+    ws = workspace(tmp_path)
+    runner = ReplayRunner()
+    m1 = m1_plan([("run_test_matrix", {"argv": PYTEST, "runs": 5, "runs_dir": f"{M1}/runs"})])
+    sub1, events1 = run(spec, ws, "baseline-brambleway", "m1-baseline", m1, runner)
+    assert_ready(spec, ws, "m1-baseline", sub1, events1)
+    assert events1.of_type("suite_recorded")[0].data == {"milestone": "m1-baseline", "runs": 5, "tests": 2}
+    plan = [step if not (isinstance(step, tuple) and step[0] == "run_test_matrix") else
+            ("run_test_matrix", {"argv": [*PYTEST, "tests/test_fares.py"], "runs": 10, "runs_dir": f"{M2}/runs"})
+            for step in m2_plan()]
+    sub2, _ = run(spec, ws, "characterization-fares", "m2-characterization", plan, runner)
+    assert sub2.status == "needs_revision"
+    problems = failed(sub2)
+    assert list(problems) == ["tests_stable"]
+    assert "earlier tests no longer in every run" in problems["tests_stable"]
+    assert "test_zones::test_zone_a" in problems["tests_stable"]

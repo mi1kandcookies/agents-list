@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from agentkit.errors import PolicyViolation, ToolError
 from specialists.test_coverage import tools as T
+from specialists.test_coverage.snapshot import RepoStore
 
 
 def _result(passed: bool | None, details: str, score: float | None = None) -> dict[str, Any]:
@@ -182,12 +183,57 @@ def patch_secret_free(workspace: Path, params: dict, *, run=None) -> dict:
 
 # --- runs and flakes ---------------------------------------------------------
 
+def _matrix_problems(workspace: Path, runs_glob: str, runs: list[dict[str, str]],
+                     names: list[str]) -> list[str]:
+    """What run_test_matrix's own record (runs_dir/matrix.json) says went
+    wrong: runs that timed out, wrote no JUnit file, or exited non-zero
+    without a failing test (a crash or a collection error)."""
+    runs_dir = T.matrix_dir(runs_glob)
+    if runs_dir is None:
+        return []
+    try:
+        data = json.loads(T._read_text(workspace, f"{runs_dir}/matrix.json"))
+    except ToolError:
+        return []   # not made by run_test_matrix; the JUnit files are judged alone
+    log = data.get("log") if isinstance(data, dict) else None
+    if not isinstance(log, list):
+        return ["matrix.json has no run log"]
+    by_name = dict(zip(names, runs))
+    problems = []
+    for entry in log:
+        n, junit, code = entry.get("run"), entry.get("junit"), entry.get("exit_code")
+        if entry.get("timed_out"):
+            problems.append(f"run {n} timed out")
+        elif junit not in by_name:
+            problems.append(f"run {n} wrote no JUnit file")
+        elif code not in (0, None) and not any(o in ("failed", "error") for o in by_name[junit].values()):
+            problems.append(f"run {n} exited {code} without a failing test")
+    extra = sorted(set(names) - {e.get("junit") for e in log})
+    if extra:
+        problems.append(f"run files not in matrix.json: {extra[:5]}")
+    return problems
+
+
+def _test_key(test_id: str) -> tuple[str, str]:
+    """A test id that survives a different rootdir: last class-path part + name."""
+    cls, _, name = test_id.rpartition("::")
+    return cls.rsplit(".", 1)[-1], name
+
+
 @_guard
 def tests_stable(workspace: Path, params: dict, *, run=None) -> dict:
-    """Every run in the JUnit set passed: no failures, no flakes, enough runs.
+    """Every run in the JUnit set passed: no failures, no flakes, enough runs,
+    and the tests that matter were really among them.
 
     params: runs (glob of JUnit files, one per run), min_runs (default 10),
-            require_tests (opt list of test-id substrings that must appear in every run)
+            require_tests (opt list of test-id substrings that must appear in every run),
+            patch (opt: every test this patch adds must pass - not skip - in every run),
+            baseline (opt list of earlier milestone ids: every test their runs showed,
+            as the harness recorded them, must still run; their known flaky or
+            broken tests are reported instead of failing the check),
+            repo_dir (default repo), test_globs (opt)
+    run_test_matrix's matrix.json beside the runs, when present, must show
+    every run finishing and writing its JUnit file.
     """
     _need(params, "runs")
     runs, names = _junit_runs(workspace, params["runs"])
@@ -195,20 +241,56 @@ def tests_stable(workspace: Path, params: dict, *, run=None) -> dict:
     if len(runs) < min_runs:
         return _result(False, f"{len(runs)} runs found, {min_runs} required")
     census = T.census_from_runs(runs)
-    problems = []
+    problems, notes = [], []
     if not census["tests"]:
         problems.append("no tests in the run files")
-    if census["flaky"]:
-        problems.append(f"flaky: {census['flaky'][:5]}")
-    if census["broken"]:
-        problems.append(f"failing: {census['broken'][:5]}")
+    problems += _matrix_problems(workspace, params["runs"], runs, names)
+
+    suites = (RepoStore(workspace).state().get("suites") or {})
+    earlier_ids, known_bad = set(), set()
+    for mid in params.get("baseline") or []:
+        rec = suites.get(mid)
+        if not isinstance(rec, dict):
+            notes.append(f"no recorded runs from {mid} to compare")
+            continue
+        earlier_ids |= {_test_key(t) for t in rec.get("ids") or []}
+        known_bad |= {_test_key(t) for t in (rec.get("flaky") or []) + (rec.get("broken") or [])}
+    dropped = sorted({k for k in earlier_ids if not all(k in {_test_key(t) for t in r} for r in runs)})
+    if dropped:
+        problems.append(f"earlier tests no longer in every run: {['::'.join(k) for k in dropped[:5]]}")
+
+    bad = [t for t in census["flaky"] + census["broken"] if _test_key(t) in known_bad]
+    if bad:
+        notes.append(f"known flaky/broken from earlier runs, not counted: {bad[:5]}")
+    for label, ids in (("flaky", census["flaky"]), ("failing", census["broken"])):
+        new_bad = [t for t in ids if t not in bad]
+        if new_bad:
+            problems.append(f"{label}: {new_bad[:5]}")
     if census["missing_in_some_runs"]:
         problems.append(f"tests missing from some runs: {census['missing_in_some_runs'][:5]}")
     for needle in params.get("require_tests") or []:
         if not all(any(needle in t for t in r) for r in runs):
             problems.append(f"required test '{needle}' not in every run")
-    detail = f"{census['tests']} tests x {len(runs)} runs all passed"
-    return _result(not problems, "; ".join(problems) or detail)
+
+    added = []
+    if params.get("patch"):
+        added = T.added_tests(workspace, patch=params["patch"], repo_dir=params.get("repo_dir", "repo"),
+                              test_globs=params.get("test_globs"))
+        for test in added:
+            label = f"{test['file']}::{test['name']}"
+            outcomes = [[o for t, o in r.items() if T.junit_id_matches(t, test)] for r in runs]
+            absent = [i + 1 for i, found in enumerate(outcomes) if not found]
+            not_passed = sorted({o for found in outcomes for o in found if o != "passed"})
+            if absent:
+                problems.append(f"added test {label} missing from runs {absent[:5]}")
+            elif not_passed:
+                problems.append(f"added test {label} was {'/'.join(not_passed)} in some runs")
+        if not added:
+            notes.append("no added test recognized in the patch")
+    detail = (f"{census['tests']} tests x {len(runs)} runs all passed"
+              + (f", including {len(added)} the patch adds" if added else "")
+              + f"; {census['distinct_orders']} distinct test order(s)")
+    return _result(not problems, "; ".join(problems + notes) if problems else "; ".join([detail] + notes))
 
 
 @_guard

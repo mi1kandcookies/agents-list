@@ -3,15 +3,17 @@
 A first-party specialist that makes one customer repository safer to change.
 It measures coverage and flakiness, pins current behavior before a refactor,
 and raises coverage with tests that must kill mutants. It changes **test
-code only**, and every number it reports is recomputed by the acceptance
-checks from raw coverage, JUnit and mutation reports.
+code only**. The harness builds the patch and, for M2 and M3, re-runs the
+test suite itself; the acceptance checks recount every coverage and
+mutation figure from the raw reports (which the agent's own tool runs
+produce, see Known limits).
 
 ## Milestones
 
 | id | What the customer gets | Automated acceptance (recomputed) |
 |---|---|---|
 | `m1-baseline` | `baseline.md`, raw coverage report, per-file summary, five-run flake census, churn, risk-ranked `targets.csv` with proposed floors | `coverage_summary_matches`, `flake_census_matches`, `targets_ranking_matches`, plus kit `files_exist`, `markdown_sections`, `no_placeholders`, `csv_columns` |
-| `m2-characterization` | Characterization tests for the approved targets as `repo.patch`, `suspicious-behaviors.md`, ten-run evidence, mutation report | `diff_test_paths_only`, `patch_size_max` (800), `no_assertion_free_tests`, `patch_secret_free`, `tests_stable` (10 runs), `mutation_score_min` (60%) |
+| `m2-characterization` | Characterization tests for the approved targets as `repo.patch`, `suspicious-behaviors.md`, ten-run evidence, mutation report | `diff_test_paths_only`, `patch_size_max` (800), `no_assertion_free_tests`, `patch_secret_free`, `tests_stable` (10 harness runs; every added test passes in each, M1's tests still run), `mutation_score_min` (60%) |
 | `m3-coverage-uplift` | Unit tests as `repo.patch`, before/after coverage, ten-run evidence, mutation report, `uplift-report.md` | `coverage_delta_min` (+20pp line, measured code must not shrink), `diff_test_paths_only`, `patch_size_max` (400), `no_assertion_free_tests`, `patch_secret_free`, `tests_stable`, `mutation_score_min` |
 
 Each milestone also has a `rubric_grader` check (rubrics in `rubrics/`) and a
@@ -84,6 +86,19 @@ data, caches, virtualenvs, `*.egg-info/`), are left out of the patch; files
 the base tracks are always compared. The `export_patch` tool previews the
 same patch from the same store.
 
+After the patch, `finalize` re-runs the suite for each `tests_stable`
+criterion: the command the model last gave `run_test_matrix` (recorded in
+`runs/matrix.json`), at least `min_runs` times, against `repo/` as
+delivered. Its run files replace the model's; if there is no usable command
+(none recorded, inline code, outside `repo/`, milestone not submitted) the
+run files are removed and `tests_stable` fails closed. `tests_stable` then
+requires every test the rebuilt patch adds to pass in every run, every run
+to finish (`matrix.json` log), and, through `baseline`, every test an
+earlier milestone's runs showed to still run; tests those runs showed as
+flaky or broken are reported, not counted, since the customer's existing
+flakes are out of scope. The test ids each submitted milestone's runs
+showed are kept in `.agentkit/test-coverage/state.json`.
+
 ## Human gate
 
 No licensed reviewer is needed (`human_gate.required: false`), but the
@@ -114,10 +129,19 @@ writing. A pinned behavior is not a claim that the behavior is correct.
   and there is no branch metric.
 - Integration tests (containers, recorded traffic) and a CI coverage ratchet
   are not milestones yet.
-- The checks recompute every number from the JUnit, coverage and mutation
-  files in the workspace, but they cannot tell a file a tool produced from
-  one the model edited by hand; only the patch is rebuilt by the harness.
-  Re-running the suite and coverage on the platform's side would close
-  that gap. An allowlisted interpreter or git can also touch files outside
-  the tools' rules, so this specialist must run in an OS sandbox (see
-  "Containment" in docs/decisions/0002-specialist-kit.md).
+- The patch and the M2/M3 test runs are the harness's, but the command it
+  re-runs is the one the model recorded (inline `python -c` / `node -e` is
+  refused; a runner script the patch adds is visible in the patch). M1's
+  runs, every coverage report and the mutation report come from the
+  agent's own tool runs: the checks recount them from the raw files but
+  cannot tell a tool's output from a hand-edited file, and M3's
+  `coverage-before.xml` is not tied to the milestone's base. Re-measuring
+  coverage and mutants on the platform's side would close that gap.
+- New files that a `.gitignore` added during the engagement covers are left
+  out of the patch like any ignored file, so the customer would not receive
+  them (production files the base tracks are always compared).
+- An allowlisted interpreter or git can also touch files outside the tools'
+  rules, so this specialist must run in an OS sandbox (see "Containment" in
+  docs/decisions/0002-specialist-kit.md). The harness's own git commands
+  run with the kit's privileges on the private store and read `repo/` as a
+  plain work tree with no model-controlled configuration.

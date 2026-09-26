@@ -48,7 +48,9 @@ Mark the pinning test with the framework's usual marker or a name suffix
 
 ## Evidence for the report
 
-- `run_test_matrix` with `runs: 10` into `deliverables/m2-characterization/runs`.
+- `run_test_matrix` with `runs: 10` into `deliverables/m2-characterization/runs`,
+  running the whole suite with the same command as M1 (the platform re-runs
+  that command after you submit and graders its own runs).
 - A mutation report (mutation-testing-elements JSON) scoped to the targets,
   saved as `deliverables/m2-characterization/mutation.json`.
 - `export_patch` to `deliverables/m2-characterization/repo.patch`, then

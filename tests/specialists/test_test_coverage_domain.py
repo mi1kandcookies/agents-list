@@ -424,6 +424,99 @@ def test_tests_stable(tmp_path):
     assert res["passed"] is False and "flaky" in res["details"]
 
 
+def _suite_runs(ws: Path, cases_for_run, n: int = 10, prefix: str = "runs") -> None:
+    for i in range(1, n + 1):
+        write(ws, f"{prefix}/run-{i:02d}.xml", junit(cases_for_run(i)))
+
+
+def test_tests_stable_requires_every_added_test_to_pass_in_every_run(tmp_path):
+    write(tmp_path, "p.patch", PATCH_TESTS_ONLY)   # adds test_convert_rounds_half_even, test_convert_zero
+    added = ("test_convert_rounds_half_even", "test_convert_zero")
+    params = {"runs": "runs/run-*.xml", "patch": "p.patch"}
+    _suite_runs(tmp_path, lambda i: [("a", "passed")] + [(n, "passed") for n in added])
+    res = C.tests_stable(tmp_path, params)
+    assert res["passed"] is True and "including 2 the patch adds" in res["details"]
+    # the runs never ran the new tests (a command that selects the old ones only)
+    _suite_runs(tmp_path, lambda i: [("a", "passed")], prefix="old")
+    res = C.tests_stable(tmp_path, dict(params, runs="old/run-*.xml"))
+    assert res["passed"] is False and "added test tests/test_rates.py::test_convert_zero missing" in res["details"]
+    # a new test that is skipped is not a stable test
+    _suite_runs(tmp_path, lambda i: [("a", "passed"), (added[0], "passed"), (added[1], "skipped")],
+                prefix="skip")
+    res = C.tests_stable(tmp_path, dict(params, runs="skip/run-*.xml"))
+    assert res["passed"] is False and "test_convert_zero was skipped" in res["details"]
+
+
+def test_tests_stable_reads_the_matrix_log(tmp_path):
+    _runs(tmp_path, 10)
+    log = [{"run": i, "exit_code": 0, "timed_out": False, "junit": f"run-{i:02d}.xml"} for i in range(1, 11)]
+    write(tmp_path, "runs/matrix.json", json.dumps({"log": log}))
+    assert C.tests_stable(tmp_path, {"runs": "runs/run-*.xml"})["passed"] is True
+    log[3]["exit_code"] = 3          # crashed after the tests passed
+    log[5]["timed_out"] = True
+    log.append({"run": 11, "exit_code": -1, "timed_out": False, "junit": "run-11.xml", "error": "none"})
+    write(tmp_path, "runs/matrix.json", json.dumps({"log": log}))
+    res = C.tests_stable(tmp_path, {"runs": "runs/run-*.xml"})
+    assert res["passed"] is False
+    for part in ("run 4 exited 3 without a failing test", "run 6 timed out", "run 11 wrote no JUnit file"):
+        assert part in res["details"]
+
+
+def test_tests_stable_compares_with_earlier_milestones(tmp_path):
+    from specialists.test_coverage.snapshot import RepoStore
+
+    store = RepoStore(tmp_path)
+    store.save({"suites": {"m1": {"runs": 5, "ids": ["tests.test_rates::a", "tests.test_rates::b"],
+                                  "flaky": ["tests.test_rates::b"], "broken": [], "skipped": []}}})
+    params = {"runs": "runs/run-*.xml", "baseline": ["m1"]}
+    _runs(tmp_path, 10, flaky_on=4)                     # b is still flaky: known, not counted
+    res = C.tests_stable(tmp_path, params)
+    assert res["passed"] is True and "known flaky/broken from earlier runs" in res["details"]
+    _suite_runs(tmp_path, lambda i: [("b", "passed")], prefix="narrow")   # a no longer runs
+    res = C.tests_stable(tmp_path, dict(params, runs="narrow/run-*.xml"))
+    assert res["passed"] is False and "earlier tests no longer in every run" in res["details"]
+    _suite_runs(tmp_path, lambda i: [("a", "failed" if i == 2 else "passed"), ("b", "passed")], prefix="new")
+    res = C.tests_stable(tmp_path, dict(params, runs="new/run-*.xml"))
+    assert res["passed"] is False and "flaky: ['tests.test_rates::a']" in res["details"]
+    res = C.tests_stable(tmp_path, dict(params, baseline=["m9"]))
+    assert "no recorded runs from m9" in res["details"]
+
+
+def test_added_tests_follow_pytest_collection(tmp_path):
+    source = ("import unittest\n\ndef helper():\n    def test_inner():\n        pass\n\n"
+              "def test_top():\n    assert 1\n\nclass TestGroup:\n    def test_method(self):\n        assert 1\n\n"
+              "class Plain:\n    def test_not_collected(self):\n        pass\n\n"
+              "class Case(unittest.TestCase):\n    def test_case(self):\n        self.assertTrue(1)\n")
+    write(tmp_path, "repo/tests/test_new.py", source)
+    write(tmp_path, "repo/tests/helpers.py", "def test_helper_not_a_test():\n    pass\n")
+    write(tmp_path, "repo/tests/test_old.py", "def test_legacy():\n    assert 1\n\ndef test_extra():\n    assert 2\n")
+    patch = ("diff --git a/tests/test_new.py b/tests/test_new.py\nnew file mode 100644\n--- /dev/null\n"
+             "+++ b/tests/test_new.py\n@@ -0,0 +1 @@\n+x\n"
+             "diff --git a/tests/helpers.py b/tests/helpers.py\nnew file mode 100644\n--- /dev/null\n"
+             "+++ b/tests/helpers.py\n@@ -0,0 +1 @@\n+x\n"
+             "diff --git a/tests/test_old.py b/tests/test_old.py\n--- a/tests/test_old.py\n+++ b/tests/test_old.py\n"
+             "@@ -1,2 +1,5 @@\n def test_legacy():\n     assert 1\n+\n+def test_extra():\n+    assert 2\n")
+    write(tmp_path, "p.patch", patch)
+    got = {(t["file"], t["name"]) for t in T.added_tests(tmp_path, patch="p.patch")}
+    assert got == {("tests/test_new.py", "test_top"), ("tests/test_new.py", "test_method"),
+                   ("tests/test_new.py", "test_case"), ("tests/test_old.py", "test_extra")}
+    py = {"file": "tests/test_new.py", "name": "test_top", "lang": "py"}
+    assert T.junit_id_matches("tests.test_new::test_top", py)
+    assert T.junit_id_matches("tests.test_new::test_top[1-2]", py)
+    assert not T.junit_id_matches("tests.test_other::test_top", py)
+    assert not T.junit_id_matches("tests.test_new::test_topper", py)
+    assert T.junit_id_matches("Invoice::Invoice adds tax", {"file": "a.test.ts", "name": "adds tax", "lang": "js"})
+
+
+def test_matrix_helpers():
+    assert T.matrix_dir("deliverables/m2/runs/run-*.xml") == "deliverables/m2/runs"
+    assert T.matrix_dir("runs/*.xml") is None and T.matrix_dir("*/run-*.xml") is None
+    assert T.runs_inline_code(["python", "-c", "print(1)"])
+    assert T.runs_inline_code(["python3.12", "-Bc", "x"]) and T.runs_inline_code(["node", "-e", "x"])
+    assert not T.runs_inline_code(["python", "-m", "pytest", "-c", "pytest.ini", "--junitxml={junit}"])
+    assert not T.runs_inline_code(["npx", "jest", "-c", "jest.config.js"])
+
+
 def test_flake_census_matches(tmp_path):
     _runs(tmp_path, 5, flaky_on=3)
     census = T.parse_test_results(tmp_path, paths="runs/run-*.xml", out="deliverables/census.json")

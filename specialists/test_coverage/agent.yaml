@@ -5,8 +5,9 @@ version: 0.1.0
 summary: >-
   Measures a repository's coverage and flakiness, pins current behavior with
   characterization tests before risky changes, and raises coverage with tests
-  that must kill mutants. Touches test code only; every number is recomputed
-  from raw coverage, JUnit and mutation reports.
+  that must kill mutants. Touches test code only. The platform builds the
+  patch and re-runs the test suite itself; coverage and mutation figures
+  are recounted from the raw reports the agent's tool runs produce.
 listing:
   category: Development
   description: >-
@@ -171,8 +172,9 @@ milestones:
       - check: patch_secret_free
         params: {patch: deliverables/m2-characterization/repo.patch}
       - check: tests_stable
-        description: Ten repeated, order-varied runs all pass
-        params: {runs: deliverables/m2-characterization/runs/run-*.xml, min_runs: 10}
+        description: Ten harness runs of the delivered tests all pass, every new test in each run
+        params: {runs: deliverables/m2-characterization/runs/run-*.xml, min_runs: 10,
+                 patch: deliverables/m2-characterization/repo.patch, baseline: [m1-baseline]}
       - check: mutation_score_min
         params: {report: deliverables/m2-characterization/mutation.json, min_score_pct: 60}
       - check: rubric_grader
@@ -225,7 +227,10 @@ milestones:
       - check: patch_secret_free
         params: {patch: deliverables/m3-coverage-uplift/repo.patch}
       - check: tests_stable
-        params: {runs: deliverables/m3-coverage-uplift/runs/run-*.xml, min_runs: 10}
+        description: Ten harness runs of the delivered tests all pass, every new test in each run
+        params: {runs: deliverables/m3-coverage-uplift/runs/run-*.xml, min_runs: 10,
+                 patch: deliverables/m3-coverage-uplift/repo.patch,
+                 baseline: [m1-baseline, m2-characterization]}
       - check: mutation_score_min
         params: {report: deliverables/m3-coverage-uplift/mutation.json, min_score_pct: 60}
       - check: rubric_grader

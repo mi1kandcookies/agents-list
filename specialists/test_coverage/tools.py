@@ -414,7 +414,9 @@ def parse_junit_text(text: str, label: str = "junit") -> dict[str, str]:
 
 
 def census_from_runs(runs: list[dict[str, str]]) -> dict[str, Any]:
-    """Classify tests over repeated runs: stable pass, flaky, broken, skipped."""
+    """Classify tests over repeated runs: stable pass, flaky, broken, skipped.
+    distinct_orders counts the execution orders seen (JUnit keeps the order
+    tests ran in), which shows whether the order really varied."""
     ids = sorted({t for run in runs for t in run})
     flaky, broken, skipped, missing = [], [], [], []
     for t in ids:
@@ -432,6 +434,7 @@ def census_from_runs(runs: list[dict[str, str]]) -> dict[str, Any]:
     runs_failed = sum(1 for run in runs if any(o in ("failed", "error") for o in run.values()))
     return {"runs": len(runs), "tests": len(ids), "flaky": flaky, "broken": broken,
             "skipped": skipped, "missing_in_some_runs": missing, "runs_with_failures": runs_failed,
+            "distinct_orders": len({tuple(run) for run in runs}),
             "all_green": bool(runs) and bool(ids) and runs_failed == 0}
 
 
@@ -504,8 +507,39 @@ def run_test_matrix(workspace: Path, *, fetch=None, run: Callable | None = None,
         log.append(entry)
     census = census_from_runs(results)
     census["log"] = log
+    # The harness re-runs this command after submission (agent.py).
+    census["command"] = {"argv": [str(a) for a in argv], "cwd": cwd, "runs": int(runs),
+                         "base_seed": int(base_seed), "timeout": timeout}
     _write_json(workspace, f"{runs_dir}/matrix.json", census, resolve_path)
     return census
+
+
+def matrix_dir(runs_glob: Any) -> str | None:
+    """runs_dir when a JUnit glob is run_test_matrix's layout (`<dir>/run-*.xml`)."""
+    glob = str(runs_glob or "").replace("\\", "/")
+    head = glob[:-len("/run-*.xml")] if glob.endswith("/run-*.xml") else ""
+    return head if head and not any(ch in head for ch in "*?[") else None
+
+
+# Interpreter flags that run code given on the command line instead of a
+# test runner (python -c, node -e / -p).
+_PY_EXE = re.compile(r"^(?:python|pypy)[0-9.]*$")
+_NODE_EXE = re.compile(r"^(?:node|nodejs)$")
+
+
+def runs_inline_code(argv: list[str]) -> bool:
+    exe = Path(str(argv[0]).replace("\\", "/")).name.lower().removesuffix(".exe")
+    if _PY_EXE.match(exe):
+        for arg in argv[1:]:
+            if arg == "-m":
+                return False
+            if arg == "-" or re.fullmatch(r"-[A-Za-z]*c", arg):
+                return True
+        return False
+    if _NODE_EXE.match(exe):
+        return any(a in ("-e", "--eval", "-p", "--print") or a.startswith(("--eval=", "--print="))
+                   for a in argv[1:])
+    return False
 
 
 def _sub_all(arg: str, subs: dict[str, str]) -> str:
@@ -770,6 +804,72 @@ def find_assertion_free_tests(workspace: Path, *, fetch=None, run=None, resolve_
         checked += 1
         found += assertion_free_in_source(rel, _read_text(workspace, rel, resolve_path), None, helpers)
     return {"files_checked": checked, "assertion_free": found, "clean": not found}
+
+
+# --- tests a patch adds --------------------------------------------------------
+
+_PY_TEST_FILE = re.compile(r"(?:^|/)(?:test_[^/]*|[^/]*_test)\.py$")   # pytest's default python_files
+
+
+def _py_collected(source: str) -> set[str]:
+    """Test names pytest collects by default: module-level test* functions and
+    test* methods of Test* classes or TestCase subclasses."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
+            names.add(node.name)
+        elif isinstance(node, ast.ClassDef) and (node.name.startswith("Test") or any(
+                (b.attr if isinstance(b, ast.Attribute) else getattr(b, "id", "")).endswith("TestCase")
+                for b in node.bases)):
+            names |= {item.name for item in node.body
+                      if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                      and item.name.startswith("test")}
+    return names
+
+
+def added_tests(workspace: Path, *, patch: str, repo_dir: str = "repo",
+                test_globs: list[str] | None = None, resolve_path: Resolver | None = None) -> list[dict]:
+    """The tests a patch adds, as [{"file", "name", "lang"}]: every test in an
+    added test file, and the tests whose definition the patch adds to an
+    existing one. Python follows pytest's default collection rules; JS/TS,
+    Java/Kotlin and Go use the block patterns of the assertion check."""
+    globs = list(test_globs or DEFAULT_TEST_GLOBS)
+    out: list[dict] = []
+    for f in parse_patch(_read_text(workspace, patch, resolve_path)):
+        ext = Path(f["path"]).suffix.lower()
+        lang = "py" if ext == ".py" else _EXT.get(ext)
+        if f["status"] == "deleted" or lang is None or not path_matches(f["path"], globs):
+            continue
+        if lang == "py" and not _PY_TEST_FILE.search(f["path"]):
+            continue
+        new = None if f["status"] == "added" else _added_test_names(f["added_lines"])
+        if new is not None and not new:
+            continue
+        on_disk = _ws_path(workspace, f"{repo_dir}/{f['path']}", resolve_path=resolve_path)
+        source = (on_disk.read_text(encoding="utf-8", errors="replace") if on_disk.is_file()
+                  else "\n".join(f["added_lines"]) + "\n")
+        names = (_py_collected(source) if lang == "py"
+                 else {m.group(1) for m in _BLOCKS[lang][0].finditer(source)})
+        if new is not None:
+            names &= new
+        out += [{"file": f["path"], "name": n, "lang": lang} for n in sorted(names)]
+    return out
+
+
+def junit_id_matches(test_id: str, test: dict) -> bool:
+    """Whether a JUnit id ("classname::name") is a run of `test`. Python: the
+    same function (parametrized cases included) in a class path naming the
+    file's module; other languages: the test's name appears in the id."""
+    cls, _, name = test_id.rpartition("::")
+    if test.get("lang") != "py":
+        return test["name"] in test_id
+    if name != test["name"] and not name.startswith(test["name"] + "["):
+        return False
+    return not cls or Path(test["file"]).stem in cls.split(".")
 
 
 # --- mutation reports --------------------------------------------------------
