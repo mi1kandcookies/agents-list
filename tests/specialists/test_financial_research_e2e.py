@@ -843,6 +843,17 @@ def test_m4_forged_pitch_needs_revision(spec, tmp_path, variant, check):
     assert sub.status == "needs_revision" and sub.evidence_hash.startswith("0x")
 
 
+def test_example_stock_pitch_brief_is_ready_to_run(spec, tmp_path):
+    example = json.loads((PKG / "examples" / "stock-pitch-brief.json").read_text(encoding="utf-8"))
+    brief = Brief.from_dict(example)
+    assert brief.specialist == "financial-research" and brief.milestones == []
+    assert {"companies", "research_question", "pitch_focus", "sec_user_agent"} <= set(brief.intake)
+    intake = tmp_path / "intake.json"
+    intake.write_text(json.dumps(brief.intake), encoding="utf-8")
+    assert _cli("validate-intake", "financial-research", "--intake", str(intake))[0] == 0
+    assert spec.milestone_index(brief, M4) == 3         # the manifest's order binds the evidence
+
+
 # --- CLI and evals -------------------------------------------------------------------
 
 def _cli(*args):

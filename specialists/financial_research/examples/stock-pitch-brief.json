@@ -1,0 +1,12 @@
+{
+  "engagement_id": "pitch-semis-001",
+  "specialist": "financial-research",
+  "objective": "A stock pitch with a variant view on one of three listed semiconductor companies, built from SEC filings and an indicative market price.",
+  "intake": {
+    "companies": ["NVDA", "AMD", "AVGO"],
+    "research_question": "What revenue growth is the market pricing into the pitch company, what do its filings support instead, and is the gap large enough to take a view?",
+    "pitch_focus": "NVDA, with AMD and AVGO as context. No view to test: the direction should follow from the analysis.",
+    "sec_user_agent": "Your Org you@yourdomain.com",
+    "audience": "internal investment team"
+  }
+}

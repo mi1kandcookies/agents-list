@@ -7,6 +7,8 @@ synthetic and describe fictional companies.
 | source | license | idea used |
 |---|---|---|
 | SEC EDGAR APIs (`data.sec.gov` submissions and XBRL companyfacts) and SEC fair-access guidance | US government public data | Data shapes for filings and facts; declared User-Agent with contact email; caching to keep request volume low |
+| Yahoo Finance chart endpoint and Nasdaq quote-info endpoint | each site's terms of use; unofficial public endpoints | Data only, fetched at run time: an indicative, delayed last price for the M4 pitch when the client supplies none; the client's licensed price file always takes precedence |
+| Rappaport and Mauboussin, *Expectations Investing* (book) | not applicable (ideas) | Read the price as a forecast: solve for the growth it implies (a reverse DCF) and argue with that number, not with a target |
 | [dgunning/edgartools](https://github.com/dgunning/edgartools) | MIT | Treat filings and XBRL facts as typed records and map tags to statement lines; we built a thin client for the two JSON endpoints instead of taking a dependency |
 | [AI4Finance-Foundation/FinRobot](https://github.com/AI4Finance-Foundation/FinRobot) | Apache-2.0 | Numbers are computed by code and narrated by the model; provenance for every figure; bull and bear cases argued separately |
 | [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher) | Apache-2.0 | Break the research question into sub-questions with per-question source tracking; local documents and public sources side by side |
