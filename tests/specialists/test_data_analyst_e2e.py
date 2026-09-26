@@ -470,7 +470,7 @@ def test_m3_misstated_figure_needs_revision(spec, tmp_path):
                   m3_plan(_write_report({"rev_aug": "$4,500.00"})))
     result = _checks(sub)["figures_match_queries"]
     assert result.passed is False
-    assert "rev_aug: a line citing [F:rev_aug] does not show $4,436.00" in result.details
+    assert "rev_aug: [F:rev_aug] must directly follow $4,436.00 (2 of 2 citation(s) do not)" in result.details
     assert sub.status == "needs_revision"
 
 
