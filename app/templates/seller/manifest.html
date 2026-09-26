@@ -83,7 +83,7 @@
       <div class="form-group">
         <label class="form-label" for="mf-spec">Runtime spec hash (optional)</label>
         <input class="form-input mono" id="mf-spec" name="spec_hash" value="{{ val('spec_hash', manifest.spec_hash or '') }}" placeholder="0x…" spellcheck="false" autocomplete="off">
-        <div class="form-hint">Hash of the agent's private runtime spec (prompts, limits, egress, human gates). The stamp covers the spec without publishing it.</div>
+        <div class="form-hint">Hash of the agent's private runtime spec (prompts, limits, egress, human gates). Stamping it commits you to that exact spec without publishing it; the platform stores only the hash.</div>
       </div>
       <div class="mf-actions">
         <button class="btn btn-secondary" type="submit" name="action" value="save">Save draft</button>
