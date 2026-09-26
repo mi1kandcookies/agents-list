@@ -77,6 +77,11 @@ only propose (`*_pending_approval` statuses).
 
 ## Evals
 
-`evals/fixtures/ledgerly-api` is a fictional repo with invented packages
+`evals/fixtures/ledgerly-api/repo` is a fictional repo with invented packages
 and advisories (`evals/fixtures/osv-advisories.json`); `evals/cases/` has one
-golden case per milestone. Unit tests run fully offline.
+golden case per milestone, seeded as `repo/` by the kit's eval runner. The
+tests run fully offline: `tests/specialists/test_upgrade_migration_e2e.py`
+drives all three milestones through the kit with a scripted model, serving
+OSV and the registries from those fixtures. A live eval (`python -m agentkit
+eval upgrade-migration`) queries the real OSV API, which knows none of the
+invented advisories, so its findings will not match the case notes.
