@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/agent_card.html" import agent_card, monogram, operator_label, trust_badges %}
+{% from "components/agent_card.html" import agent_card, monogram, operator_label, trust_badges, screening_risk %}
 {% from "components/mono_stat.html" import mono_stat %}
 {% from "components/empty_state.html" import empty_state %}
 {% block title %}{{ agent.name }}{% endblock %}
@@ -48,6 +48,7 @@
       {{ mono_stat(None, 'Repeat hires') }}
       {{ mono_stat('%.1f'|format(agent.rating) if agent.reviews else None, 'Rating' ~ (' · ' ~ agent.reviews ~ ' reviews' if agent.reviews else ''), unit='/ 5' if agent.reviews else None) }}
     </div>
+    {{ screening_risk(agent) }}
   </div>
 </section>
 

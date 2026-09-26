@@ -70,6 +70,38 @@ def test_header_round_trip(req, payer):
     assert x402_v2.decode_header(urlsafe) == payload
 
 
+def test_before_sign_hook_runs_before_the_signer(req, payer, monkeypatch):
+    order = []
+    original = x402_v2.GuardedSigner.sign_typed_data
+
+    def hook(typed):
+        order.append(("screen", typed["message"]["to"], typed["message"]["value"]))
+
+    def signer(self, typed, *, now=None):
+        order.append(("sign", typed["message"]["to"], typed["message"]["value"]))
+        return original(self, typed, now=now)
+
+    monkeypatch.setattr(x402_v2.GuardedSigner, "sign_typed_data", signer)
+    x402_v2.sign_payment(payer, req, expected=_expect(), domain=DOMAIN,
+                         before_sign=hook)
+    assert order == [("screen", PAYEE, AMOUNT), ("sign", PAYEE, AMOUNT)]
+
+
+def test_before_sign_hook_can_block_without_calling_signer(req, payer, monkeypatch):
+    def signer(*args, **kwargs):
+        raise AssertionError("signer must not run after a blocked pre-sign gate")
+
+    monkeypatch.setattr(x402_v2.GuardedSigner, "sign_typed_data", signer)
+
+    def block(_typed):
+        raise X402Error("SCREENING_REFUSED", "Intercepta refused the payee")
+
+    with pytest.raises(X402Error) as exc:
+        x402_v2.sign_payment(payer, req, expected=_expect(), domain=DOMAIN,
+                             before_sign=block)
+    assert exc.value.code == "SCREENING_REFUSED"
+
+
 @pytest.mark.parametrize("value", ["", "not base64!", base64.b64encode(b"[1]").decode(),
                                    base64.b64encode(b"{nope").decode(), "A" * 9000])
 def test_decode_rejects_garbage(value):

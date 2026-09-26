@@ -129,6 +129,7 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     # Screened as a sub-hire hop, charged to the mandate, ledgered under its engagement.
     assert [c["hop"] for c in screener.calls] == ["subhire.hop"]
     assert screener.calls[0]["chain_address"] == PAYEE
+    assert screener.calls[0]["typed_data"]["primaryType"] == "TransferWithAuthorization"
     assert _spent(db, mandate) == PRICE
     (entry,) = _ledger(mandate.engagement_id)
     assert entry.id == body["receipt_id"] and entry.kind == "subhire_alloc"

@@ -88,10 +88,14 @@ unmapped address, a timeout or any provider error means `REFUSE`
 (fail-closed). Traits drive the decision; the vendor publishes no toxic-score
 threshold, so the score thresholds are ours (see `.env.example`).
 
-Files that call the API: `app/screening/intercepta.py` (the only HTTP client),
-used by `app/screening/service.py`, and `scripts/screening_smoke.py` (manual,
-live only when `INTERCEPTA_API_KEY` is set). Tests use fixtures shaped per the
-provider's OpenAPI reference and never reach the network.
+Files that call the API: `app/screening/intercepta.py` (the only REST client),
+`app/screening/service.py` (persisted resource-side verdicts), and
+`app/screening/presign.py` (payer-side pre-sign gate). The exact x402 signer
+hook is in `chain/x402_v2.py`; `scripts/intercepta_x402_smoke.py` demonstrates
+the 402 → three live scans → sign → retry path. `scripts/screening_smoke.py`
+is the provider-only smoke test. Tests use fixtures shaped per the provider's
+documented response shapes and never reach the network; live feedback is
+recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
 
 ## Project structure
 

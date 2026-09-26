@@ -153,7 +153,8 @@ def _as_dict(verdict) -> dict:
     return dict(vars(verdict))
 
 
-def screen(hop: str, *, chain_address: str, amount_micro: int, engagement, agent) -> dict:
+def screen(hop: str, *, chain_address: str, amount_micro: int, engagement, agent,
+           typed_data=None) -> dict:
     """Server-side screening. The verdict always comes from the screener,
     never from the request; any failure is a fail-closed REFUSE."""
     try:
@@ -163,7 +164,8 @@ def screen(hop: str, *, chain_address: str, amount_micro: int, engagement, agent
     else:
         try:
             v = _as_dict(_screen(hop, chain_address=chain_address, amount_micro=amount_micro,
-                                 engagement_id=engagement.id, agent_id=agent.public_id))
+                                 engagement_id=engagement.id, agent_id=agent.public_id,
+                                 typed_data=typed_data))
         except Exception as exc:
             log.warning("screening failed (%s): %s", hop, str(exc)[:200])
             v = _fail_closed(hop, "SCREENING_ERROR", "screening failed")

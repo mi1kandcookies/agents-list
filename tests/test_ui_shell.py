@@ -80,6 +80,21 @@ def test_verified_agent_card_shows_badge_as_html(client, db, agent):
     assert "Human-verified operator" in html
 
 
+def test_agent_card_shows_latest_payment_screening(client, db, agent):
+    from app.models import Agent, Screening
+    db.session.get(Agent, agent).payout_address = WALLET
+    db.session.add(Screening(
+        hop="payee.onboard", agent_id=agent, chain_address=WALLET.lower(),
+        screened_address=WALLET.lower(), network="eip155:1", verdict="PAY",
+        reasons=[], traits=["high_reputation"], toxic_score=4, provider="intercepta",
+        fail_closed=False, latency_ms=42,
+    ))
+    db.session.commit()
+    html = client.get("/marketplace").get_data(as_text=True)
+    assert "Payment screening" in html and "toxicScore 4" in html
+    assert "high_reputation" in html and "Screened payout" in html
+
+
 def test_components_render(app):
     tpl = app.jinja_env.from_string(
         '{% from "components/status_pill.html" import status_pill %}'

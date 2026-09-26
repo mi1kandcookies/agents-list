@@ -62,11 +62,13 @@ def named(monkeypatch):
 
 def _new_agent(db, name, addr, category="Development"):
     from app.models import Agent
+    from app.seller.stamp import dev_stamp
     row = Agent(name=name, description="sub agent", category=category, billing="per_minute",
                 min_price=0.05, max_price=0.2, current_price=0.1, seller=addr,
                 deployer_wallet=addr, payout_address=addr)
     row.tags = []
     row.capabilities = []
+    dev_stamp(row)
     db.session.add(row)
     db.session.commit()
     return row.public_id
@@ -75,7 +77,11 @@ def _new_agent(db, name, addr, category="Development"):
 @pytest.fixture()
 def agents(db, agent):
     from app.models import Agent
-    return {"A": db.session.get(Agent, agent).public_id,
+    from app.seller.stamp import dev_stamp
+    root = db.session.get(Agent, agent)
+    dev_stamp(root)
+    db.session.commit()
+    return {"A": root.public_id,
             "B": _new_agent(db, "Agent B", B_ADDR),
             "C": _new_agent(db, "Agent C", C_ADDR),
             "D": _new_agent(db, "Agent D", D_ADDR)}
