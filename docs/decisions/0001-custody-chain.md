@@ -222,7 +222,7 @@ The operator manifest (`build_manifest` in `app/seller/stamp.py`, whose hash a `
  "spec_hash": "0x…"}
 ```
 
-- `spec_hash` is `0x` + 64 lowercase hex characters. Input is trimmed and lowercased; anything else raises `ManifestError` on field `spec_hash`. The platform treats it as opaque. A runtime that computes it should hash the spec's canonical JSON (§1), so the same spec always gives the same hash.
+- `spec_hash` is `0x` + 64 lowercase hex characters. Input is trimmed and lowercased before the check; a blank value counts as absent, and any other value that does not match raises `ManifestError` on field `spec_hash`. The platform treats it as opaque. A runtime that computes it should hash the spec's canonical JSON (§1), so the same spec always gives the same hash.
 - When absent, the key is omitted, not null. Every manifest and hash from before this amendment stays the same, and `v` stays 1.
 - It is hashed like every other field. Adding, changing or removing it after a stamp means `RESTAMP_REQUIRED`. The manifest editor has an optional field for it, and the stamp diff lists it.
 - The platform stores and stamps only the hash, never the spec. Checking that a running agent matches `spec_hash` is the runtime's job.
