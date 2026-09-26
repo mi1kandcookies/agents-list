@@ -473,10 +473,10 @@ def reconcile(statement: dict[str, Any], gl: list[GLLine], cash_account: str, *,
     same amount (closest date within the window; a prior item may clear any
     time after its date), then a batch of book items that sum to it (one
     deposit of several receipts), and a book item may be cleared by a batch
-    of bank lines from one payer (one entry for several payouts). Unmatched book items are
-    outstanding (deposits in transit / outstanding payments); unmatched bank
-    lines are unrecorded in the books (fees, interest) and need an entry.
-    Bank lines outside the period belong to another close.
+    of bank lines from one payer (one entry for several payouts). Unmatched
+    book items are outstanding (deposits in transit / outstanding payments);
+    unmatched bank lines are unrecorded in the books (fees, interest) and
+    need an entry. Bank lines outside the period belong to another close.
     """
     cash = [ln for ln in gl if ln.account == cash_account]
     if not cash:
@@ -565,9 +565,9 @@ def reconcile(statement: dict[str, Any], gl: list[GLLine], cash_account: str, *,
              "amount": fmt(sum((bank[i].amount for i in b_idx), ZERO))}
             for b_idx, k_idx in groups if len(b_idx) > 1 or len(k_idx) > 1],
         "prior_items_cleared": [
-            {"entry_id": book[k_idx[0]].entry_id, "date": book[k_idx[0]].date.isoformat(),
-             "amount": fmt(book[k_idx[0]].amount), "cleared_by_rows": [bank[i].index for i in b_idx]}
-            for b_idx, k_idx in groups if len(k_idx) == 1 and book[k_idx[0]].prior],
+            {"entry_id": book[ki].entry_id, "date": book[ki].date.isoformat(), "amount": fmt(book[ki].amount),
+             "cleared_by_rows": [bank[i].index for i in b_idx]}
+            for b_idx, k_idx in groups for ki in k_idx if book[ki].prior],
         "outstanding_items": [
             {"entry_id": k.entry_id, "date": k.date.isoformat(), "description": k.description,
              "amount": fmt(k.amount), "type": "deposit_in_transit" if k.amount > 0 else "outstanding_payment",
