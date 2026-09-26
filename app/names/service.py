@@ -9,15 +9,19 @@ the names sidecar. Sidecar problems never propagate: the row is left
     on_settled(engagement)             revoke the job / sub-job name
 
 Hooks commit the session so the name state survives the caller's request.
+
+``resolve_payee(agent)`` answers where an agent is paid, and whether ENS
+vouched for it (see its docstring).
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from flask import current_app
+from flask import current_app, has_app_context
 
 from app.extensions import db
 from app.models import Agent, Engagement, EnsName
@@ -168,6 +172,74 @@ def retry(name: str) -> EnsName | None:
     finally:
         _commit()
     return row
+
+
+# ── Payee resolution ──────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Payee:
+    address: str | None          # lowercase 0x address; None when the agent has none
+    source: str                  # "ens" | "profile"
+    ens_name: str | None = None
+
+
+class PayeeError(Exception):
+    """Payee refused. ``PAYEE_MISMATCH`` (403): the ENS record names another
+    address than the profile. ``PAYEE_UNRESOLVED`` (503): the lookup failed."""
+
+    def __init__(self, message: str, code: str = "PAYEE_MISMATCH", status: int = 403):
+        super().__init__(message)
+        self.message, self.code, self.status = message, code, status
+
+
+def get_resolver():
+    """ENS reader with ``payout_address(name)``: ``app.extensions["ens_resolver"]``
+    (tests), else the Universal Resolver when ``ENS_RESOLVE_PAYEES`` is on,
+    else None."""
+    if not has_app_context():
+        return None
+    override = current_app.extensions.get("ens_resolver")
+    if override is not None:
+        return override
+    if not current_app.config.get("ENS_RESOLVE_PAYEES"):
+        return None
+    from chain.ens_v2 import UniversalResolver
+    return UniversalResolver.from_env(current_app.config.get("ENS_UNIVERSAL_RESOLVER") or None)
+
+
+def resolve_payee(agent: Agent) -> Payee:
+    """Where ``agent`` is paid.
+
+    With a resolver configured and an active agent name, the name's x402
+    payout record (``chain.ens_v2.PAYOUT_RECORD_KEY``) is read. When set, it
+    must equal the profile's payout address: then the payee is that address
+    with source ``"ens"``; otherwise PayeeError PAYEE_MISMATCH (fail closed,
+    nothing is paid to either). A failed lookup is PAYEE_UNRESOLVED. With no
+    resolver, no active name, or no record, the profile address is used
+    (source ``"profile"``)."""
+    from app.engagements.service import payee_address
+    profile = payee_address(agent)
+    resolver = get_resolver()
+    row = None
+    if resolver is not None:
+        row = (EnsName.query.filter_by(agent_id=agent.id, kind="agent", status="active")
+               .order_by(EnsName.updated_at.desc()).first())
+    if row is None:
+        return Payee(profile, "profile")
+    from chain.ens_v2 import ENSResolutionError
+    try:
+        record = resolver.payout_address(row.name)
+    except ENSResolutionError as exc:
+        log.warning("names: payee lookup for %s failed: %s", row.name, exc)
+        raise PayeeError(f"could not resolve the payout address of {row.name}",
+                         "PAYEE_UNRESOLVED", 503) from None
+    if record is None:
+        return Payee(profile, "profile", row.name)
+    if profile is None or record.lower() != profile:
+        log.warning("names: %s payout record differs from the agent profile", row.name)
+        raise PayeeError(f"the payout address in {row.name} does not match the agent's "
+                         "profile; payment refused", "PAYEE_MISMATCH", 403)
+    return Payee(profile, "ens", row.name)
 
 
 # ── Internals ─────────────────────────────────────────────────────────────────

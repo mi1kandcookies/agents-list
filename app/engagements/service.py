@@ -81,6 +81,16 @@ def payee_address(agent) -> str | None:
     return None
 
 
+def resolve_payee(agent):
+    """app.names.service.resolve_payee with PayeeError as EngagementError
+    (PAYEE_MISMATCH fails closed)."""
+    from app.names.service import PayeeError, resolve_payee as _resolve
+    try:
+        return _resolve(agent)
+    except PayeeError as exc:
+        raise EngagementError(exc.message, exc.code, exc.status) from None
+
+
 def resolve_agent(ref):
     """``AGT-…`` id, or a numeric database id (JSON number or short digit
     string, as /api/agents lists it) → Agent row; else EngagementError
@@ -300,7 +310,8 @@ def hire(eng, *, flow: str, confirm_micro: int):
     agent = eng.agent
     from app.seller.stamp import assert_hireable
     assert_hireable(agent)  # operator stamp valid, operator not banned, payee not refused
-    payee = payee_address(agent)
+    resolved = resolve_payee(agent)
+    payee = resolved.address
     if payee is None:
         raise EngagementError("agent has no payout address", "PAYEE_ADDRESS_MISSING", 409)
     verdict = screen("engagement.fund", chain_address=payee, amount_micro=eng.total_micro,
@@ -316,6 +327,7 @@ def hire(eng, *, flow: str, confirm_micro: int):
     approval = _create_approval("engagement.fund", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": eng.total_micro,
         "payee_agent_id": agent.public_id, "payee_address": payee,
+        "payee_source": resolved.source,
         "milestones": [{"idx": m.idx, "amount_micro": m.amount_micro, "title_hash": title_hash(m.title)}
                        for m in eng.milestones],
         "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
@@ -354,7 +366,8 @@ def request_release(eng, idx, *, flow: str):
     if remaining <= 0:
         raise EngagementError("milestone is fully released", "MILESTONE_NOT_RELEASABLE", 409)
     agent = eng.agent
-    payee = payee_address(agent)
+    resolved = resolve_payee(agent)
+    payee = resolved.address
     if payee is None:
         raise EngagementError("agent has no payout address", "PAYEE_ADDRESS_MISSING", 409)
     verdict = screen("milestone.release", chain_address=payee, amount_micro=remaining,
@@ -364,7 +377,8 @@ def request_release(eng, idx, *, flow: str):
     amount = min(remaining, _cap_of(verdict)) if verdict["verdict"] == "CAP" else remaining
     approval = _create_approval("milestone.release", {
         "engagement_id": eng.id, "sow_hash": eng.sow_hash, "amount_micro": amount,
-        "payee_agent_id": agent.public_id, "payee_address": payee, "milestone_idx": m.idx,
+        "payee_agent_id": agent.public_id, "payee_address": payee,
+        "payee_source": resolved.source, "milestone_idx": m.idx,
         "screening_id": verdict["id"], "screening_ack": verdict["verdict"] == "ASK_HUMAN",
     }, flow=flow, engagement=eng, milestone=m, screening_id=verdict["id"])
     db.session.commit()

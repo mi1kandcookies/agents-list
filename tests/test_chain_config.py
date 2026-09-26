@@ -121,7 +121,9 @@ def test_static_js_has_no_legacy_chain_strings(app):
 def test_legacy_contract_routes_degrade_to_503(client):
     assert client.get("/api/session/1").status_code == 503
     assert client.get("/api/session/1").get_json()["code"] == "NOT_DEPLOYED"
-    assert client.post("/api/session/1/cancel").status_code == 503
+    # Cancelling moved funds with no approval; it is closed, not just undeployed.
+    assert client.post("/api/session/1/cancel").status_code == 410
+    assert client.post("/api/session/1/cancel").get_json()["code"] == "LEGACY_ESCROW_DISABLED"
     resp = client.post("/api/agents/register",
                        json={"wallet": ADDR, "name": "Agent X", "endpointURL": "https://x"})
     assert resp.status_code == 503

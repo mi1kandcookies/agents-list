@@ -33,7 +33,7 @@ KINDS = {
 # Optional fields in display order. Fields that are None are omitted.
 FIELDS = (
     "engagement_id", "sow_hash", "amount_micro", "payee_agent_id", "payee_address",
-    "milestones", "milestone_idx", "parent_mandate_id", "manifest_hash",
+    "payee_source", "milestones", "milestone_idx", "parent_mandate_id", "manifest_hash",
     "screening_id", "screening_ack",
 )
 _INT_FIELDS = {"amount_micro", "milestone_idx"}
@@ -41,6 +41,7 @@ _HASH_FIELDS = {"sow_hash", "manifest_hash"}
 _ID_PREFIXES = {"engagement_id": "ENG-", "parent_mandate_id": "MND-", "screening_id": "SCR-"}
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _HASH_RE = re.compile(r"^0x[0-9a-f]{64}$")
+PAYEE_SOURCES = {"ens": "ENS record", "profile": "Agent profile"}
 
 
 def _check_json(obj, path="$"):
@@ -128,6 +129,9 @@ def build_action(kind: str, **fields) -> dict:
             value = _address(name, value)
         elif name == "payee_agent_id":
             value = agent_ids.normalize(value)
+        elif name == "payee_source":
+            if value not in PAYEE_SOURCES:
+                raise ValueError(f"payee_source must be one of {sorted(PAYEE_SOURCES)}")
         elif name == "screening_ack":
             if not isinstance(value, bool):
                 raise TypeError("screening_ack must be a bool")
@@ -159,6 +163,7 @@ def describe(action: dict) -> list[tuple[str, str]]:
         ("amount_micro", "Amount", format_usdc),
         ("payee_agent_id", "Payee agent", str),
         ("payee_address", "Payee address", str),
+        ("payee_source", "Payee address from", lambda s: PAYEE_SOURCES.get(s, s)),
         ("engagement_id", "Engagement", str),
         ("milestone_idx", "Milestone", lambda i: f"#{i + 1}"),
         ("milestones", "Milestones", lambda ms: ", ".join(
