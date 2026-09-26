@@ -1,0 +1,6 @@
+criteria:
+  - id: grounded
+    description: Every figure in the brief carries a [C#] citation.
+    weight: 2
+  - id: concise
+    description: The brief fits on one page and leads with the answer.
