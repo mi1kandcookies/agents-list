@@ -14,7 +14,7 @@ produce, see Known limits).
 |---|---|---|
 | `m1-baseline` | `baseline.md`, raw coverage report, per-file summary, five-run flake census, churn, risk-ranked `targets.csv` with proposed floors | `coverage_summary_matches`, `flake_census_matches`, `targets_ranking_matches`, plus kit `files_exist`, `markdown_sections`, `no_placeholders`, `csv_columns` |
 | `m2-characterization` | Characterization tests for the approved targets as `repo.patch`, `suspicious-behaviors.md`, ten-run evidence, mutation report | `diff_test_paths_only`, `patch_size_max` (800), `no_assertion_free_tests`, `no_weakened_tests`, `patch_secret_free`, `tests_stable` (10 harness runs; every added test passes in each, M1's tests still run), `mutation_score_min` (60%) |
-| `m3-coverage-uplift` | Unit tests as `repo.patch`, before/after coverage, ten-run evidence, mutation report, `uplift-report.md` | `coverage_delta_min` (+20pp line, measured code must not shrink), `diff_test_paths_only`, `patch_size_max` (400), `no_assertion_free_tests`, `no_weakened_tests`, `patch_secret_free`, `tests_stable`, `mutation_score_min` |
+| `m3-coverage-uplift` | Unit tests as `repo.patch`, before/after coverage, ten-run evidence, mutation report, `uplift-report.md` | `coverage_delta_min` (+20pp line on production code: test modules excluded, same files measured before and after, measured code must not shrink), `diff_test_paths_only`, `patch_size_max` (400), `no_assertion_free_tests`, `no_weakened_tests`, `patch_secret_free`, `tests_stable`, `mutation_score_min` |
 
 Each milestone also has a `rubric_grader` check (rubrics in `rubrics/`) and a
 `human_signoff` for the customer's decision: approve targets (M1), triage

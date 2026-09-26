@@ -364,6 +364,34 @@ def test_coverage_summary_matches_and_forgery_fails(tmp_path):
     assert C.coverage_summary_matches(tmp_path, {"report": "nope.xml", "summary": "x"})["passed"] is False
 
 
+def _with_class(xml: str, filename: str, hits: list[int]) -> str:
+    lines = "".join(f'<line number="{i}" hits="{h}"/>' for i, h in enumerate(hits, 1))
+    cls = f'<class name="x" filename="{filename}"><lines>{lines}</lines></class>'
+    return xml.replace("</classes>", cls + "</classes>")
+
+
+def test_coverage_delta_min_counts_production_code_only(tmp_path):
+    """A report that also measures the test modules (coverage run without
+    --source) would count a new, fully executed test file as covered code."""
+    before = _with_class(COBERTURA_BEFORE, "tests/test_rates.py", [1] * 6)
+    after = _with_class(before, "tests/test_rates_unit.py", [1] * 60)
+    write(tmp_path, "b.xml", before)
+    write(tmp_path, "a.xml", after)
+    res = C.coverage_delta_min(tmp_path, {"before": "b.xml", "after": "a.xml", "min_delta_pp": 20})
+    assert res["passed"] is False and "line delta 0.0pp < required 20pp" in res["details"]
+    raw = T.compare_coverage(T.summarize_coverage(before), T.summarize_coverage(after))
+    assert raw["line_delta_pp"] > 10              # what counting the test modules would claim
+    d = T.coverage_delta(tmp_path, before="b.xml", after="a.xml")
+    assert d["line_delta_pp"] == 0.0 and d["only_after"] == []
+    # a production file measured on one side only is a changed measurement
+    write(tmp_path, "a2.xml", _with_class(COBERTURA_AFTER, "ledgerly/extra.py", [0, 0]))
+    res = C.coverage_delta_min(tmp_path, {"before": "b.xml", "after": "a2.xml", "min_delta_pp": 1})
+    assert res["passed"] is False and "files measured only after: ['ledgerly/extra.py']" in res["details"]
+    write(tmp_path, "b2.xml", _with_class(COBERTURA_BEFORE, "ledgerly/gone.py", [1, 0]))
+    res = C.coverage_delta_min(tmp_path, {"before": "b2.xml", "after": "a.xml", "min_delta_pp": 1})
+    assert res["passed"] is False and "files measured only before: ['ledgerly/gone.py']" in res["details"]
+
+
 def test_coverage_delta_min_pass_fail_and_shrinking_denominator(tmp_path):
     write(tmp_path, "b.xml", COBERTURA_BEFORE)
     write(tmp_path, "a.xml", COBERTURA_AFTER)

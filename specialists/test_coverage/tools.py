@@ -342,12 +342,21 @@ def parse_coverage(workspace: Path, *, fetch=None, run=None, resolve_path=None, 
     return summary
 
 
-def compare_coverage(before: dict, after: dict, scope: Iterable[str] | None = None) -> dict[str, Any]:
-    """Per-file and scoped deltas (percentage points) between two summaries."""
+def compare_coverage(before: dict, after: dict, scope: Iterable[str] | None = None,
+                     exclude: Iterable[str] | None = None) -> dict[str, Any]:
+    """Per-file and scoped deltas (percentage points) between two summaries.
+
+    `exclude` drops paths from both sides (test code: a report that measures
+    the new test modules themselves would count them as covered code).
+    only_before / only_after list measured files present on one side only.
+    """
     scope = [s for s in (scope or []) if s]
+    exclude = [s for s in (exclude or []) if s]
     names = sorted(set(before["files"]) | set(after["files"]))
     if scope:
         names = [n for n in names if path_matches(n, scope)]
+    if exclude:
+        names = [n for n in names if not path_matches(n, exclude)]
     agg = {"before": _blank(), "after": _blank()}
     per_file = []
     for name in names:
@@ -367,6 +376,8 @@ def compare_coverage(before: dict, after: dict, scope: Iterable[str] | None = No
         return _pct(agg[side][f"{kind}_covered"], agg[side][f"{kind}_total"])
 
     out: dict[str, Any] = {"scope": scope, "files": per_file}
+    out["only_before"] = [n for n in names if n not in after["files"] and before["files"][n]["lines_total"]]
+    out["only_after"] = [n for n in names if n not in before["files"] and after["files"][n]["lines_total"]]
     for kind in ("lines", "branches"):
         label = "line" if kind == "lines" else "branch"
         b, a = pct("before", kind), pct("after", kind)
@@ -379,10 +390,13 @@ def compare_coverage(before: dict, after: dict, scope: Iterable[str] | None = No
 
 
 def coverage_delta(workspace: Path, *, fetch=None, run=None, resolve_path=None, before: str,
-                   after: str, scope: list[str] | None = None, out: str | None = None) -> dict:
-    """Compare two coverage reports (any supported format) over a scope."""
+                   after: str, scope: list[str] | None = None, test_globs: list[str] | None = None,
+                   out: str | None = None) -> dict:
+    """Compare two coverage reports (any supported format) over a scope,
+    leaving test code (test_globs, default DEFAULT_TEST_GLOBS) out."""
     result = compare_coverage(summarize_coverage(_read_text(workspace, before, resolve_path)),
-                              summarize_coverage(_read_text(workspace, after, resolve_path)), scope)
+                              summarize_coverage(_read_text(workspace, after, resolve_path)), scope,
+                              list(test_globs or DEFAULT_TEST_GLOBS))
     result.update(before=before, after=after)
     if out:
         _write_json(workspace, out, result, resolve_path)
@@ -1126,11 +1140,12 @@ TOOL_DEFS: list[dict[str, Any]] = [
          "path": _PATH, "format": {"type": "string", "enum": ["auto", "cobertura", "jacoco", "lcov", "go"]},
          "include": _GLOBS, "out": _PATH}}},
     {"name": "coverage_delta", "risk": "write", "function": coverage_delta,
-     "description": "Compare a before and an after coverage report over a scope of paths; returns "
-                    "line and branch percentage-point deltas, per-file numbers and the measured "
-                    "line totals (a shrinking total means code or report scope changed).",
+     "description": "Compare a before and an after coverage report over a scope of paths, test "
+                    "code left out; returns line and branch percentage-point deltas, per-file "
+                    "numbers, the measured line totals (a shrinking total means code or report "
+                    "scope changed) and files measured on one side only.",
      "input_schema": {"type": "object", "required": ["before", "after"], "properties": {
-         "before": _PATH, "after": _PATH, "scope": _GLOBS, "out": _PATH}}},
+         "before": _PATH, "after": _PATH, "scope": _GLOBS, "test_globs": _GLOBS, "out": _PATH}}},
     {"name": "run_test_matrix", "risk": "exec", "function": run_test_matrix,
      "description": "Run the test command N times (1-30) in repo/, each run writing JUnit XML to "
                     "runs_dir/run-NN.xml, then classify every test as stable, flaky or broken. "

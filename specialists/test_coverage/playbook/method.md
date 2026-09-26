@@ -4,8 +4,11 @@
 
 1. Record the revision (`git rev-parse HEAD`), language/tool versions and
    the exact install and test commands under **Reproduce**.
-2. Produce a coverage report with branch data where the tool supports it:
-   - Python: `coverage run --branch -m pytest` then `coverage xml`
+2. Produce a coverage report with branch data where the tool supports it,
+   measuring production code only (test modules never count toward
+   acceptance) and writing data and report outside `repo/`:
+   - Python: `coverage run --branch --source=<package> --data-file=<path under
+     deliverables/> -m pytest`, then `coverage xml --data-file=<same> -o <report>`
    - JS/TS: a Cobertura or LCOV reporter from the existing runner
    - JVM: JaCoCo XML from the build plugin
    - Go: `go test -coverprofile=...` (statement-level; no branch data)
@@ -55,8 +58,10 @@ For each target, in ranked order, until the scope reaches the target:
 5. Every few tests, re-run the mutation tool scoped to the target files and
    turn survivors into the next tests.
 
-Copy the M1 report to `coverage-before.xml` (or re-measure at the start of
-M3 if the repo moved), measure `coverage-after.xml` with the same tool and
-options, and check the delta with `coverage_delta` before writing the report.
-The measured line total must not fall: excluding files or deleting code to
-lift a percentage fails acceptance.
+Measure `coverage-before.xml` at the start of M3, before adding a test (the
+M1 report predates M2's tests, whose coverage M3 does not get to claim),
+measure `coverage-after.xml` at the end with the same command and options,
+and check the delta with `coverage_delta` before writing the report. Both
+reports must measure the same production files: test modules are left out,
+a file measured on one side only fails acceptance, and so does a falling
+line total (excluding files or deleting code to lift a percentage).

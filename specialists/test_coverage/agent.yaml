@@ -217,7 +217,7 @@ milestones:
           sections: [Summary, Coverage delta, Mutation score, Stability evidence, Runtime impact,
                      Tests added, Findings, Remaining gaps]
       - check: coverage_delta_min
-        description: Coverage on the scope rose by the agreed amount without shrinking the measured code
+        description: Production-code coverage on the scope rose by the agreed amount over the same files
         params: {before: deliverables/m3-coverage-uplift/coverage-before.xml,
                  after: deliverables/m3-coverage-uplift/coverage-after.xml,
                  metric: line, min_delta_pp: 20}

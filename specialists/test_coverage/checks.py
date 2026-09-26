@@ -92,12 +92,17 @@ def coverage_summary_matches(workspace: Path, params: dict, *, run=None) -> dict
 
 @_guard
 def coverage_delta_min(workspace: Path, params: dict, *, run=None) -> dict:
-    """Scoped coverage rose by at least min_delta_pp (and/or reached min_after_pct).
+    """Scoped coverage of production code rose by at least min_delta_pp
+    (and/or reached min_after_pct).
 
     params: before, after (raw reports), scope (globs/prefixes), metric (line|branch),
-            min_delta_pp, min_after_pct (opt), max_denominator_drop_pct (default 2)
-    The measured code base must not shrink: excluding files or deleting code
-    to lift a percentage fails the check.
+            min_delta_pp, min_after_pct (opt), max_denominator_drop_pct (default 2),
+            test_globs (opt; test code, left out of both reports)
+    The measured code base must stay the same: test modules never count
+    (a report that measures the new tests would count them as covered code),
+    a file measured on one side only fails the check, and excluding files or
+    deleting code to lift a percentage fails it too. Both reports are
+    agent-supplied; the check recounts them, it does not re-measure.
     """
     _need(params, "before", "after")
     metric = params.get("metric", "line")
@@ -105,7 +110,7 @@ def coverage_delta_min(workspace: Path, params: dict, *, run=None) -> dict:
         raise ToolError("metric must be line or branch")
     delta = T.compare_coverage(T.summarize_coverage(T._read_text(workspace, params["before"])),
                                T.summarize_coverage(T._read_text(workspace, params["after"])),
-                               params.get("scope"))
+                               params.get("scope"), list(params.get("test_globs") or T.DEFAULT_TEST_GLOBS))
     if not delta["files"]:
         return _result(False, "no files in scope")
     b, a = delta[f"{metric}_pct_before"], delta[f"{metric}_pct_after"]
@@ -117,6 +122,9 @@ def coverage_delta_min(workspace: Path, params: dict, *, run=None) -> dict:
         problems.append(f"{metric} delta {d}pp < required {params['min_delta_pp']}pp")
     if params.get("min_after_pct") is not None and a < float(params["min_after_pct"]):
         problems.append(f"{metric} coverage {a}% < required {params['min_after_pct']}%")
+    for side in ("before", "after"):
+        if delta[f"only_{side}"]:
+            problems.append(f"files measured only {side}: {delta[f'only_{side}'][:5]}")
     tb, ta = delta["lines_total_before"], delta["lines_total_after"]
     drop_pct = 100.0 * (tb - ta) / tb if tb else 0.0
     if drop_pct > float(params.get("max_denominator_drop_pct", 2)):
