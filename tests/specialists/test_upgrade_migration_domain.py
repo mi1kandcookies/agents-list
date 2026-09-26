@@ -89,10 +89,15 @@ def make_repo(ws: Path, *, fastjsonx="2.2.0", trim="1.1.0") -> Path:
 
 
 def fake_run(stdout="", exit_code=0, stderr=""):
+    """A stand-in for ToolContext.run; like git, writes stdout to --output=FILE."""
     calls = []
 
     def run(argv, *, cwd=None, timeout=None):
         calls.append((list(argv), cwd))
+        target = next((a.split("=", 1)[1] for a in argv if a.startswith("--output=")), None)
+        if target:
+            Path(target).write_text(stdout, encoding="utf-8", newline="")
+            return SimpleNamespace(argv=argv, exit_code=exit_code, stdout="", stderr=stderr, timed_out=False)
         return SimpleNamespace(argv=argv, exit_code=exit_code, stdout=stdout, stderr=stderr, timed_out=False)
     run.calls = calls
     return run
@@ -407,9 +412,11 @@ def test_export_patch_writes_deliverable(tmp_path):
     assert run.calls == []
     (tmp_path / "repo" / ".git").mkdir()
     out = T.export_patch(tmp_path, run=run, output="deliverables/m2-upgrade/repo.patch")
-    assert out["files"] == 2 and (tmp_path / "deliverables/m2-upgrade/repo.patch").read_text() == CLEAN_PATCH
+    target = tmp_path / "deliverables/m2-upgrade/repo.patch"
+    assert out["files"] == 2 and target.read_text(encoding="utf-8") == CLEAN_PATCH
     argv, cwd = run.calls[-1]
     assert argv[:2] == ["git", "diff"] and "--no-textconv" in argv and cwd == "repo"
+    assert f"--output={target.resolve()}" in argv                     # git writes the file, never cut
     assert any("__pycache__" in a for a in argv)                    # generated trees excluded
     assert "error" in T.export_patch(tmp_path, run=run, output="repo/x.patch")
     assert "error" in T.export_patch(tmp_path, run=run, output="deliverables/x.patch", base_ref="HEAD; rm -rf /")

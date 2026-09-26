@@ -932,14 +932,19 @@ def is_git_repo(repo: Path) -> bool:
     return (Path(repo) / ".git").exists()
 
 
-def git_diff(run: Callable, cwd: str, base_ref: str = "HEAD") -> Any:
-    """`git diff <base_ref>` of the working tree at `cwd` (workspace-relative),
-    new files included (marked intent-to-add first), generated trees left
-    out, no external diff drivers or textconv filters. Returns the result
-    of `run`."""
+def git_diff(run: Callable, cwd: str, output: Path, base_ref: str = "HEAD") -> Any:
+    """Write `git diff <base_ref>` of the working tree at `cwd` (workspace-
+    relative) to the file `output`: new files included (marked
+    intent-to-add first), generated trees left out, no external diff
+    drivers or textconv filters. git writes the file itself, so a large
+    patch is never cut like captured command output. Returns the result
+    of the diff `run`."""
     spec = ["--", ".", *PATCH_EXCLUDES]
     run(["git", "add", "--intent-to-add", "--all", *spec], cwd=cwd)
-    return run(["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", base_ref, *spec], cwd=cwd)
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    return run(["git", "diff", "--no-color", "--no-ext-diff", "--no-textconv", f"--output={output}",
+                base_ref, *spec], cwd=cwd)
 
 
 def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
@@ -954,16 +959,15 @@ def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, re
     resolve = _resolver(workspace, resolve_path)
     if not is_git_repo(resolve(path)):
         return {"error": f"{path}/ is not a git repository"}
-    res = git_diff(run, path, base_ref)
-    if res.exit_code != 0:
-        return {"error": f"git diff failed: {(res.stderr or '').strip()[:400]}"}
     target = resolve(output, write=True)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(res.stdout or "", encoding="utf-8")
-    audit = audit_patch_text(res.stdout or "")
+    res = git_diff(run, path, target, base_ref)
+    if res.exit_code != 0 or not target.is_file():
+        return {"error": f"git diff failed: {(res.stderr or '').strip()[:400]}"}
+    text = target.read_text(encoding="utf-8", errors="replace")
+    audit = audit_patch_text(text)
     return {"written": output, "files": len(audit["files"]), "changed_lines": audit["changed_lines"],
             "lockfile_lines": audit["lockfile_lines"],
-            "sha256": hashlib.sha256((res.stdout or "").encode("utf-8")).hexdigest()}
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
 
 
 # --- tool table -----------------------------------------------------------------------
