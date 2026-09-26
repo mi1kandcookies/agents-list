@@ -1,0 +1,26 @@
+name: threat-model
+description: >-
+  Grader rubric for the M1 threat model and attack-surface map. Scored by a grader
+  model; a weighted score at or above the threshold is a pass.
+threshold: 0.8
+criteria:
+  - id: scope_fidelity
+    description: >-
+      The threat model restates the signed scope accurately and lists nothing
+      outside the allow-list; production is excluded unless explicitly authorized.
+    weight: 0.25
+  - id: surface_completeness
+    description: >-
+      Every endpoint from the spec and source is enumerated, with authenticated
+      vs. unauthenticated routes distinguished and parameters noted.
+    weight: 0.25
+  - id: trust_boundaries
+    description: >-
+      Assets, trust boundaries and data flows are identified and the entry points
+      that cross them are called out.
+    weight: 0.25
+  - id: test_plan_quality
+    description: >-
+      The test plan covers the in-scope OWASP categories and ties planned checks
+      back to specific endpoints or source locations.
+    weight: 0.25

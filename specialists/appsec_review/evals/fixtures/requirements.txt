@@ -1,0 +1,8 @@
+# Synthetic dependency manifest for the Northwind Ledger fixture. Real package
+# names with pinned older versions so an OSV lookup has something to report;
+# no secrets, no private indexes.
+flask==2.0.1
+requests==2.25.1
+jinja2==2.11.2
+pyyaml==5.3.1
+cryptography==3.2

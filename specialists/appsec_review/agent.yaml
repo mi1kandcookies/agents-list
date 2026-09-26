@@ -1,0 +1,259 @@
+schema_version: 1
+slug: appsec-review
+name: Application Security Review
+version: 0.1.0
+summary: >-
+  White-box application security review: threat model and attack-surface map
+  from source and API specs, hard-coded-secret scan, OSV dependency audit, and a
+  SARIF 2.1.0 findings report with file:line evidence, a CVSS score, an exploit
+  scenario and a code-level fix per finding. Static analysis only - no live
+  exploitation, no testing outside the signed scope. A customer security lead
+  triages findings before the report is used for compliance.
+
+listing:
+  category: Security
+  description: >-
+    Get an auditor-grade application security review between your annual human
+    pentests. The agent reads your repository under a signed scope, models the
+    threat surface, finds and explains real weaknesses (injection, broken
+    access control, secrets in code, vulnerable dependencies), and hands you a
+    SARIF report you can import straight into GitHub code scanning - each finding
+    with reproducible evidence and a specific fix. The dependency audit sends
+    only pinned package names and versions to the public OSV database
+    (api.osv.dev); you can exclude internal packages or opt out at intake.
+  tags: [security, appsec, sast, sarif, owasp, cwe, cvss, dependency-audit, secrets]
+  capabilities:
+    - Threat model and attack-surface map tied back to source
+    - Hard-coded secret detection with redacted file:line evidence
+    - Dependency vulnerability audit against the OSV database
+    - SARIF 2.1.0 findings report importable by GitHub code scanning
+    - CVSS v3.1 scoring and per-finding remediation guidance
+  pricing:
+    model: per_milestone
+    currency: USDC
+    typical_low: 1200
+    typical_high: 15000
+    # Placeholder flat price of one paid agent-to-agent task (x402), stamped
+    # as the platform manifest's price; separate from the engagement range
+    # above, which is billed per milestone through the SOW.
+    task_price_usdc: 5.0
+
+models:
+  primary: anthropic:claude-opus-5
+  fallbacks: []
+  grader: anthropic:claude-sonnet-5
+
+profile: code
+
+prompts:
+  system: prompts/system.md
+  include:
+    - playbook/review-method.md
+    - playbook/owasp-checklist.md
+    - playbook/severity-and-cvss.md
+    - playbook/default-positions.md
+
+tools:
+  - read_document
+  - read_file
+  - write_file
+  - list_files
+  - search_files
+  - http_fetch
+  - record_source
+  - record_claim
+  - ask_client
+  - post_progress
+  - submit_milestone
+  - scan_secrets
+  - audit_dependencies
+  - parse_openapi
+  - cvss_base_score
+  - check_scope
+  - build_sarif
+
+shell:
+  allow: []
+  timeout_seconds: 300
+
+egress:
+  mode: allowlist
+  allow:
+    - api.osv.dev
+
+limits:
+  max_steps: 120
+  max_tokens: 4000000
+  max_usd: 60
+  max_wall_minutes: 300
+
+human_gate:
+  required: true
+  reviewer_role: customer security lead
+  disclaimer: >-
+    This is an automated, static-first application security review. It is not a
+    substitute for a full manual penetration test and a clean result is not
+    proof of security. Findings must be triaged by a qualified human before this
+    report is used for any compliance, audit or enterprise-attestation purpose.
+  checklist:
+    - Confirm the signed scope allow-list is correct and complete
+    - Confirm no target outside the signed scope was reviewed
+    - Review every secret-scan hit the agent dismissed and every third-party host the checks list
+    - Triage each finding's severity and validity
+    - Confirm remediation guidance is appropriate before it reaches developers
+    - Approve the final report before it is used as a compliance artifact
+
+intake:
+  - field: repo_provided
+    question: Is read-only source access to the repository under review available (git URL or upload)?
+    required: true
+  - field: authorized
+    question: Do you confirm you own or are explicitly authorized to have this application reviewed?
+    required: true
+  - field: scope_file
+    question: Provide the signed scope allow-list (hosts and repositories in scope) as inputs/scope.json.
+    required: true
+  - field: openapi_spec
+    question: Path to an OpenAPI/Swagger spec for the API, if one exists (improves endpoint coverage).
+    required: false
+  - field: environment
+    question: Which environment may be referenced (staging only by default; production needs written approval)?
+    required: false
+  - field: owasp_categories
+    question: Which OWASP Top 10 categories should the review prioritise?
+    required: false
+  - field: osv_lookup
+    question: >-
+      May the dependency audit send pinned package names and versions (nothing
+      else) to the public OSV database at api.osv.dev? Default yes; answer false
+      to keep the dependency list private (the audit is then skipped).
+    required: false
+  - field: internal_packages
+    question: >-
+      Internal package names or prefixes (e.g. acme-*, @acme/*) that must never
+      be sent to OSV.
+    required: false
+
+estimate:
+  usd_per_hour: 6.0
+
+milestones:
+  - id: m1-scope-threat-model
+    title: Scope confirmation, threat model and attack-surface map
+    description: >-
+      Confirm the signed scope, enumerate every endpoint from the API spec and
+      source, flag unauthenticated routes and trust boundaries, and produce a
+      prioritised attack-surface map and test plan tied back to source.
+    deliverables:
+      - deliverables/m1-scope-threat-model/threat-model.md
+      - deliverables/m1-scope-threat-model/attack-surface.json
+    hours: [1, 4]
+    acceptance:
+      - {check: file_exists, params: {path: deliverables/m1-scope-threat-model/threat-model.md}}
+      - {check: file_exists, params: {path: deliverables/m1-scope-threat-model/attack-surface.json}}
+      - {check: json_valid, params: {path: deliverables/m1-scope-threat-model/attack-surface.json}}
+      - check: attack_surface_covers_spec
+        params: {path: deliverables/m1-scope-threat-model/attack-surface.json}
+      - check: scope_respected
+        params:
+          paths:
+            - deliverables/m1-scope-threat-model/threat-model.md
+            - deliverables/m1-scope-threat-model/attack-surface.json
+          scope_file: inputs/scope.json
+      - {check: no_secret_values, params: {path: deliverables}}
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-scope-threat-model/threat-model.md
+          sections: [Scope, Assets, Trust Boundaries, Attack Surface, Test Plan]
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/threat-model.yaml
+          paths: [deliverables/m1-scope-threat-model/threat-model.md]
+          threshold: 0.8
+      - {check: human_signoff, kind: human, description: Customer confirms the scope allow-list is correct and complete}
+
+  - id: m2-findings
+    title: Validated findings with SARIF evidence
+    description: >-
+      Produce a findings register: hard-coded secrets, vulnerable dependencies
+      (OSV) and source->sink weaknesses, each with a CWE/OWASP class, a CVSS
+      score, an exploit scenario and a code-level fix, exported to SARIF 2.1.0.
+    deliverables:
+      - deliverables/m2-findings/findings.sarif
+      - deliverables/m2-findings/findings.md
+      - deliverables/m2-findings/secrets.json
+      - deliverables/m2-findings/dependencies.json
+    hours: [2, 5]
+    acceptance:
+      - {check: file_exists, params: {path: deliverables/m2-findings/findings.sarif}}
+      - {check: file_exists, params: {path: deliverables/m2-findings/findings.md}}
+      - {check: sarif_valid, params: {path: deliverables/m2-findings/findings.sarif}}
+      - check: sarif_locations_exist
+        params: {path: deliverables/m2-findings/findings.sarif, code_root: repo}
+      - check: findings_have_evidence
+        params: {path: deliverables/m2-findings/findings.sarif, summary: deliverables/m2-findings/findings.md}
+      - {check: cvss_consistent, params: {path: deliverables/m2-findings/findings.sarif}}
+      - check: scope_respected
+        params:
+          paths: [deliverables/m2-findings/findings.sarif, deliverables/m2-findings/findings.md]
+          scope_file: inputs/scope.json
+      - check: secret_findings_reconcile
+        params: {report: deliverables/m2-findings/secrets.json, code_root: repo}
+      - {check: no_secret_values, params: {path: deliverables}}
+      - check: advisories_reconcile
+        params: {paths: [deliverables/m2-findings/findings.sarif, deliverables/m2-findings/findings.md]}
+      - {check: ledger_verified, params: {min_claims: 0}}
+      - {check: citations_resolve, params: {path: deliverables/m2-findings/findings.md, min_citations: 0}}
+      # Not the kit's default placeholder patterns: {{...}}, TODO and XXX are
+      # legitimate inside quoted exploit payloads and code evidence, so only
+      # prose placeholders (a TODO/FIXME bullet, TBD, [insert ...]) count.
+      - check: no_placeholders
+        params:
+          path: deliverables/m2-findings/findings.md
+          patterns: ['lorem ipsum', '\[insert[^\]]*\]', '<placeholder>', '\bTBD\b',
+                     '^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:TODO|FIXME)\b']
+      - {check: human_signoff, kind: human, description: Customer security lead triages findings and confirms severity}
+
+  - id: m3-report
+    title: Remediation guidance and final report
+    description: >-
+      Deliver per-finding remediation mapped to file/line and a final report
+      (executive summary, scope, methodology, findings, remediation, coverage
+      limits) suitable for customer triage and audit hand-off.
+    deliverables:
+      - deliverables/m3-report/report.md
+      - deliverables/m3-report/remediation.md
+    hours: [1, 3]
+    acceptance:
+      - {check: file_exists, params: {path: deliverables/m3-report/report.md}}
+      - {check: file_exists, params: {path: deliverables/m3-report/remediation.md}}
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-report/report.md
+          sections: [Executive Summary, Scope, Methodology, Findings, Remediation, Coverage Limits]
+      - check: no_placeholders
+        params:
+          paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md]
+          patterns: ['lorem ipsum', '\[insert[^\]]*\]', '<placeholder>', '\bTBD\b',
+                     '^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:TODO|FIXME)\b']
+      - check: scope_respected
+        params:
+          paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md]
+          scope_file: inputs/scope.json
+      - {check: no_secret_values, params: {path: deliverables}}
+      - check: advisories_reconcile
+        params: {paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md]}
+      - {check: ledger_verified, params: {min_claims: 0}}
+      - check: citations_resolve
+        params: {paths: [deliverables/m3-report/report.md, deliverables/m3-report/remediation.md], min_citations: 0}
+      # The text defaults to human_gate.disclaimer; the kit puts it in the
+      # system prompt as the text to include verbatim.
+      - {check: disclaimer_present, params: {path: deliverables/m3-report/report.md}}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/report.yaml
+          paths: [deliverables/m3-report/report.md]
+          threshold: 0.8
+      - {check: human_signoff, kind: human, description: Customer security lead approves the final report before it is used as a compliance artifact}
