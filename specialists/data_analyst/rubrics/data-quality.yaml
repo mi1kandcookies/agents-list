@@ -1,0 +1,18 @@
+name: Data-quality write-up
+threshold: 0.75
+criteria:
+  - id: inventory
+    description: Every table has its grain, key, row count, date range and joins stated.
+    weight: 0.25
+  - id: quantified
+    description: Each issue gives the number of affected rows and its effect on the metrics, not vague wording.
+    weight: 0.25
+  - id: handling
+    description: Each issue has a concrete default handling that a reviewer could apply.
+    weight: 0.2
+  - id: questions
+    description: Open questions are specific, answerable by the customer, and state the default used meanwhile.
+    weight: 0.2
+  - id: clarity
+    description: Plain language a non-technical owner can follow; no filler or placeholders.
+    weight: 0.1

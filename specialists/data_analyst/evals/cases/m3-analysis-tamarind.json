@@ -1,0 +1,16 @@
+{
+  "name": "m3-analysis-tamarind",
+  "milestone": "m3-analysis",
+  "fixture": "evals/fixtures/tamarind-loop",
+  "brief": {
+    "engagement_id": "eval-da-m3",
+    "specialist": "data-analyst",
+    "objective": "Answer the four questions in inputs/questions.md for Tamarind Loop Software (fictional) in a report where every number cites a saved query.",
+    "intake": {
+      "data_files": "inputs/customers.csv and inputs/invoices.csv",
+      "business_questions": "inputs/questions.md",
+      "business_rules": "is_test = 1 marks QA and demo tenants; only status = paid is revenue"
+    }
+  },
+  "notes": "Look for revenue by month and by plan, August revenue by region (one customer has no region: say how it is handled), paying customers per month including the account closed in July, and the data fixes from M1 in the caveats. figures_match_queries must pass with at least three figures."
+}
