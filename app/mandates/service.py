@@ -141,7 +141,7 @@ def _check_human(human) -> None:
         raise MandateError("BANNED", "the approving human is banned")
 
 
-def _check_root_approval(root, approval, engagement) -> None:
+def _check_root_approval(approval, engagement) -> None:
     if approval is None or approval.kind != ROOT_APPROVAL_KIND:
         raise MandateError("MANDATE_INVALID", f"root approval must be of kind {ROOT_APPROVAL_KIND}")
     if approval.state != "consumed" or approval.consumed_at is None:
@@ -167,7 +167,7 @@ def _check_chain(row, now: int | None = None) -> list:
     engagement = db.session.get(Engagement, root.engagement_id)
     if engagement is None:
         raise MandateError("MANDATE_INVALID", "root engagement not found")
-    _check_root_approval(root, db.session.get(Approval, root.approval_id) if root.approval_id else None,
+    _check_root_approval(db.session.get(Approval, root.approval_id) if root.approval_id else None,
                          engagement)
     if root.depth != 0 or root.max_depth > max_depth_limit():
         raise MandateError("DEPTH_EXCEEDED", "root mandate depth is out of range")
@@ -177,6 +177,11 @@ def _check_chain(row, now: int | None = None) -> list:
         if child.human_id != root.human_id or child.root_id != root.id:
             raise MandateError("MANDATE_INVALID", f"mandate {child.id} does not belong to its root")
         check_attenuation(_cap(parent), _ts(parent.expires_at), _cap(child), _ts(child.expires_at))
+    root_claims = tokens.decode(root.token, verify_exp=False)
+    for node in chain[:-1]:
+        claims = tokens.decode(node.token, verify_exp=False)
+        if claims.get("apr") != root.approval_id or claims.get("hum") != root_claims.get("hum"):
+            raise MandateError("MANDATE_INVALID", f"mandate {node.id} does not trace to its root approval")
     return chain
 
 
@@ -186,9 +191,14 @@ def _cap(row) -> dict:
     for them."""
     claims = tokens.decode(row.token, verify_exp=False)
     cap = claims["cap"]
-    if (claims["jti"] != row.id or int(cap["budget_micro"]) != row.budget_micro
-            or list(cap["categories"]) != list(row.categories or [])
-            or int(claims.get("dep", -1)) != row.depth):
+    recorded = {"jti": row.id, "sub": row.grantee_agent_public_id, "root": row.root_id,
+                "par": row.parent_id, "dep": row.depth, "eng": row.engagement_id,
+                "apr": row.approval_id if row.parent_id is None else claims.get("apr"),
+                "exp": _ts(row.expires_at)}
+    if (any(claims.get(k) != v for k, v in recorded.items())
+            or cap.get("budget_micro") != row.budget_micro
+            or cap.get("max_depth") != row.max_depth
+            or list(cap.get("categories") or []) != list(row.categories or [])):
         raise MandateError("MANDATE_INVALID", f"mandate {row.id} token does not match its record")
     return {"budget_micro": row.budget_micro, "categories": list(row.categories or []),
             "max_depth": row.max_depth, "per_tx_max_micro": int(cap["per_tx_max_micro"]),
@@ -221,7 +231,7 @@ def issue_root(engagement, human, approval, grantee_agent_public_id: str, budget
     Mandate = _models()[3]
     now = _now()
     _check_human(human)
-    _check_root_approval(None, approval, engagement)
+    _check_root_approval(approval, engagement)
     if approval.human_sub and approval.human_sub != human.world_sub:
         raise MandateError("MANDATE_INVALID", "root approval was given by another human")
     if engagement.buyer_human_id is not None and engagement.buyer_human_id != human.id:
