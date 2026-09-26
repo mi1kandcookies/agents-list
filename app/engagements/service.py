@@ -7,9 +7,9 @@ executors below once a verified human approves. Every release needs its own
 fresh approval.
 
 Screening (§4) and approvals (§3) live in ``app.screening.service`` and
-``app.approvals.service``; both are imported lazily so this module works
-before they are installed. Without a screener every payment is refused
-(fail closed); without the approval service hiring returns 503.
+``app.approvals.service`` and are imported lazily: if the screener cannot be
+loaded or fails, every payment is refused (fail closed); without the approval
+service hiring returns 503. The verdict is never taken from a request.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from flask import current_app
 from sqlalchemy import select, update
 
-from app.approvals.actions import build_action, describe, format_usdc
+from app.approvals.actions import describe, format_usdc
 from app.approvals.executors import ExecutionResult, executor
 from app.common import agent_ids
 from app.common.ids import new_id
@@ -58,14 +58,6 @@ class EngagementError(Exception):
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
-def _ttl_seconds() -> int:
-    raw = current_app.config.get("APPROVAL_TTL_SECONDS") or os.environ.get("APPROVAL_TTL_SECONDS")
-    try:
-        return max(30, int(raw or 180))
-    except ValueError:
-        return 180
-
-
 def _default_cap_micro() -> int:
     from app.engagements.sow import parse_usdc
     try:
@@ -202,15 +194,14 @@ def _approvals():
 
 def _create_approval(kind: str, fields: dict, *, flow: str, engagement, milestone=None,
                      screening_id: str):
-    """Build the §1 action (fresh approval_id + exp → single-use hash) and
-    hand it to the approval service. An approval the service creates
-    ``blocked`` (screening REFUSE, banned buyer, weekly cap) is an error."""
+    """Hand the action's §1 fields to the approval service, which adds a
+    fresh ``approval_id`` and ``exp`` (so the hash is single-use). An
+    approval it creates ``blocked`` (screening REFUSE, banned buyer, weekly
+    cap) is an error."""
     svc = _approvals()
-    action = build_action(kind, approval_id=new_id("APR"), exp=int(time.time()) + _ttl_seconds(),
-                          **fields)
     try:
         approval = svc.create_approval(
-            kind, action, flow=flow, engagement_id=engagement.id,
+            kind, fields, flow=flow, engagement_id=engagement.id,
             milestone_id=milestone.id if milestone else None, agent_id=engagement.agent_id,
             screening_id=screening_id)
     except Exception as exc:
