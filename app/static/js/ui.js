@@ -23,6 +23,7 @@
     toggle.addEventListener("click", function () {
       var field = document.documentElement.classList.toggle("banner-field");
       try { localStorage.setItem("al-banner-v2", field ? "field" : "surf"); } catch (e) {}
+      document.dispatchEvent(new CustomEvent("banner:change"));
     });
   }
 
