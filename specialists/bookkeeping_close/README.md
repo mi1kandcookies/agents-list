@@ -34,7 +34,7 @@ Each milestone also uses kit checks (`files_exist`, `markdown_sections`,
 | `prior_month_pl.csv` (optional) | account, debit, credit, for P&L flux |
 | `accrual_schedule.csv` (optional) | item_id, type, description, pl_account, balance_account, total_amount, start_date, months, booked_to_date, support |
 | `categorization_rules.csv` (optional) | pattern, account, confidence |
-| `close_parameters.json` | period, cash_account, statement_ending_balance, flux thresholds (from the intake) |
+| `close_parameters.json` | period, cash_account, statement_ending_balance, flux thresholds; written from the intake before the run when the client did not upload one |
 
 ## Tools
 
@@ -42,7 +42,14 @@ Each milestone also uses kit checks (`files_exist`, `markdown_sections`,
 `reconcile_bank`, `draft_journal_entry`, `build_accrual_schedule`,
 `build_trial_balance`, `flux_analysis`, `tie_opening_balances`,
 `build_account_map`, `build_financial_statements`, plus the kit's file,
-document, ledger and platform tools. No shell, no network.
+document, ledger and platform tools. No shell, no network. Every path a
+tool is given goes through the kit's policy gate, and every file a tool
+writes is recorded as agent-authored, so it can never be cited as a source.
+
+`agent.py` adds two hooks: `validate_intake` treats a period that is not
+YYYY-MM as a blocking gap, and `prepare` writes `inputs/close_parameters.json`
+from the intake (the materiality answer becomes the flux thresholds), so the
+checks recompute against the client's figures, not ones the agent reported.
 
 ## Human gate
 
