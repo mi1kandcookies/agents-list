@@ -46,6 +46,14 @@ Domain checks (`checks.py`, `CHECK_DEFS`): `profile_matches_source`,
 `queries_reexecute`, `figures_match_queries`, `metrics_valid`,
 `metrics_reconcile`.
 
+`agent.py` holds the `DataAnalyst` Specialist subclass; the kit's base class
+wires the manifest, `TOOL_DEFS` and `CHECK_DEFS`. Its `finalize` hook adds
+each milestone's `queries/*.sql` and `results/*.csv` to the submitted
+artifacts, so the evidence hash covers the SQL that acceptance re-runs.
+Domain tools resolve every file they write, and any path the model picks,
+through the kit's `resolve_path` (policy-checked; written files are marked
+agent-authored).
+
 ## Human gate
 
 No licensed-professional review (`human_gate.required: false`). The
