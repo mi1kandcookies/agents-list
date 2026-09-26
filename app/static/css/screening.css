@@ -1,0 +1,38 @@
+/* Screening verdict card (app/templates/components/verdict_card.html).
+   Uses main.css tokens; indigo is local to ASK_HUMAN. */
+.verdict-card {
+  --v-color: var(--red, #E84142);
+  --v-dim: rgba(232,65,66,.10);
+  --v-border: rgba(232,65,66,.30);
+  border: 1px solid var(--v-border);
+  border-left: 3px solid var(--v-color);
+  background: var(--v-dim);
+  border-radius: var(--radius, 6px);
+  padding: 12px 14px;
+  font-size: .85rem;
+  color: var(--text, #fff);
+}
+.verdict-card--pay       { --v-color: var(--green, #22C55E); --v-dim: var(--green-dim); --v-border: var(--green-border); }
+.verdict-card--cap       { --v-color: var(--amber, #F59E0B); --v-dim: var(--amber-dim); --v-border: var(--amber-border); }
+.verdict-card--ask-human { --v-color: #6366F1; --v-dim: rgba(99,102,241,.10); --v-border: rgba(99,102,241,.30); }
+.verdict-card--refuse    { --v-color: var(--red, #E84142); --v-dim: var(--red-dim); --v-border: var(--red-border); }
+
+.verdict-card__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.verdict-card__badge {
+  color: var(--v-color);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.verdict-card__hop, .verdict-card__src, .verdict-card__foot {
+  color: var(--text-2, #aaa);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .75rem;
+}
+.verdict-card__cap { margin-left: auto; color: var(--v-color); }
+.verdict-card__failclosed { margin: 8px 0 0; color: var(--v-color); font-weight: 600; }
+.verdict-card__clean { margin: 8px 0 0; color: var(--text-2, #aaa); }
+.verdict-card__reasons { margin: 8px 0 0; padding-left: 18px; }
+.verdict-card__reasons li { margin: 2px 0; }
+.verdict-card__reasons code { color: var(--v-color); font-size: .75rem; }
+.verdict-card__foot { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }

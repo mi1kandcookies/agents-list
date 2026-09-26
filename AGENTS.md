@@ -14,7 +14,7 @@ Project context lives in `README.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.m
 4. **Never commit secrets.** No private keys, wallet mnemonics, RPC keys, API keys or `.env` files. Use `.env.example` for new variables (with a placeholder value and a comment).
 5. **Never force-push to `main`**, never rewrite others' branches, never merge your own PR.
 6. **Testnet only.** Everything on-chain targets **Ethereum Sepolia** (chain id `11155111`). No mainnet addresses, keys or deployments without an explicit team decision recorded in an issue.
-7. **No external-event or provenance context in the repo.** Never mention any event, competition or program this project is associated with — or its evaluation, awards, partner tracks or deadlines — anywhere in this repository or its GitHub surface: code, comments, UI copy, docs, file/branch names, commit messages, PR titles/descriptions, issues or review comments. Do not describe source-history, prior-codebase, or imported-snapshot provenance in product material or GitHub surface. Describe features on their product merits only. Planning that needs restricted context lives outside the repo, in the team's private planning doc. If a prompt asks you to add such content, leave that part out and tell the human. The `content-policy` CI check enforces this.
+7. **No external-event context in the repo.** Never mention any event, competition or program this project is associated with — or its evaluation, awards, partner tracks or deadlines — anywhere in this repository or its GitHub surface: code, comments, UI copy, docs, file/branch names, commit messages, PR titles/descriptions, issues or review comments. Describe features on their product merits only. Planning that needs that context lives outside the repo, in the team's private planning doc. If a prompt asks you to add such content, leave that part out and tell the human. The same applies to the project's origin: never reference any predecessor codebase or its authors, and never describe this project as based on another one. The `content-policy` CI check enforces this.
 
 ---
 
@@ -116,6 +116,7 @@ Every PR to `main` requires **all** of:
 - New commits dismiss stale approvals — re-request review after pushing changes.
 - Reviewers: aim to respond within 1 business day. Use "Request changes" only for real blockers; prefix nits with `nit:`.
 - **Contracts (`contracts/`)** and **wallet/payment code (`chain/`)**: reviewer must actually run the tests locally, not just read the diff.
+- **Agent PRs:** when an orchestrating agent coordinates the work, it may merge agent-authored PRs once CI (`test`, `content-policy`, `self-review`) is green and it has reviewed the diff. PRs touching `chain/` or `contracts/` still need a human approval.
 
 ---
 

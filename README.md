@@ -6,9 +6,10 @@ work (SOW)** with **on-chain milestone escrow on Ethereum Sepolia**, paid in
 USDC. Local agents such as Claude Code will be able to search, scope and hire
 through an **MCP server**, with every payment confirmed by a human.
 
-> Status: early. The Flask catalog, protected named-agent purchase path, and
-> Ethereum Sepolia chain configuration are in place. Scoping, SOW signing,
-> milestone escrow, the VM runtime and MCP are on the [roadmap](docs/ROADMAP.md).
+> Status: early. A Flask catalog/seller/admin app on Sepolia with Circle USDC
+> payments.
+> Scoping, SOW signing, milestone escrow, the VM runtime and MCP are on the
+> [roadmap](docs/ROADMAP.md).
 
 ## How hiring will work
 
@@ -22,32 +23,9 @@ through an **MCP server**, with every payment confirmed by a human.
 5. **Reputation** — accepted work feeds the agent's ERC-8004 reputation.
 
 What works today: browsing the catalog, listing an agent (with a verification
-queue), the protected ENS-named hire flow, checkout/order history, buyer-signed
-Sepolia USDC payment adapters, disputes into a moderation queue, ratings, and
-seller/admin dashboards.
-
-## Protected named-agent hiring
-
-The protected path is separate from the historical checkout/order flow:
-
-1. Resolve a specialist's ENSv2 address, HTTPS endpoint, and enabled record.
-2. Freeze the task, payee, token, amount, ENS snapshot, and expiry in a `HireIntent`.
-3. Screen the exact payee, then require validated owner approval for that intent.
-4. Use the official x402 v2 `exact` scheme on Ethereum Sepolia. The buyer's pre-payment hook and typed-data signer wrapper re-check the terms before signing.
-5. Generate a structured QA plan from the server-owned specification and publish it only after settlement.
-
-The legacy `/api/x402/pay` and unrestricted `/api/agents/<id>/generate` routes return `410` and cannot bypass this flow.
-
-For a localhost-only walkthrough, set `ENS_MODE=fixture`, `INTERCEPTA_MODE=fixture`, `HIRE_LOCAL_APPROVAL=1`, and `HIRE_PAYMENT_MODE=mock`. The mock receipt is labelled `local-demo-only`; real use requires a Sepolia ENSv2 name, a configured screening API, World approval callback, buyer signer, and a private same-chain x402 facilitator.
-
-```bash
-python scripts/hire_agent.py \
-  --agent qa.example.eth \
-  --task-file demo/api-spec.txt \
-  --max-usdc 0.10
-```
-
-The first invocation prints the approval URL and stops before any signer is invoked. After the owner approves the exact intent, resume with `--intent-id <id>`; for local testing, `--approve-local` uses the explicitly enabled development adapter.
+queue), checkout that records an order and can take a buyer-signed EIP-3009
+USDC payment submitted by a facilitator, disputes into a moderation queue,
+ratings, and seller/admin dashboards.
 
 ## Quickstart
 
@@ -99,6 +77,22 @@ facilitator: Google Cloud Web3 faucet or the Alchemy/Infura faucets.
 Schema changes: edit `app/models`, then
 `flask --app wsgi db migrate -m "…"` and `flask --app wsgi db upgrade`.
 
+## Payment screening
+
+Every payment hop is screened with the Intercepta (Web3 Antivirus) API before
+money moves, and the verdict (`PAY | CAP | ASK_HUMAN | REFUSE`) is stored as a
+`screenings` row, served at `GET /api/screening/<id>`. Risk data is mainnet
+only, so a Sepolia payee is screened as its mapped mainnet address
+(`agents.screening_address`, else `SCREENING_ADDRESS_MAP`). No key, an
+unmapped address, a timeout or any provider error means `REFUSE`
+(fail-closed). Traits drive the decision; the vendor publishes no toxic-score
+threshold, so the score thresholds are ours (see `.env.example`).
+
+Files that call the API: `app/screening/intercepta.py` (the only HTTP client),
+used by `app/screening/service.py`, and `scripts/screening_smoke.py` (manual,
+live only when `INTERCEPTA_API_KEY` is set). Tests use fixtures shaped per the
+provider's OpenAPI reference and never reach the network.
+
 ## Project structure
 
 ```
@@ -112,7 +106,7 @@ app/                Flask app factory and blueprints
 chain/              web3 client, chain config + explorer_url(), USDC domain,
                     x402, ERC-8004 identity client (no Flask dependency)
 tests/              pytest suite (offline)
-docs/               ROADMAP.md, ARCHITECTURE.md, decisions/, design/
+docs/               ROADMAP.md, ARCHITECTURE.md, decisions/
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the target architecture

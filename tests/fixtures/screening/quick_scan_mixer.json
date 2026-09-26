@@ -1,0 +1,17 @@
+{
+  "toxicScore": 20,
+  "traits": [
+    {
+      "risk": 40,
+      "name": "mixer_transfers",
+      "txsCount": 3,
+      "description": "The address received funds from a mixer"
+    },
+    {
+      "risk": 20,
+      "name": "non_kyc_transfers",
+      "txsCount": 2,
+      "description": "The address interacted with a non-KYC exchange"
+    }
+  ]
+}

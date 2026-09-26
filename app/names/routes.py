@@ -1,32 +1,26 @@
-"""Read-only ENSv2 resolution endpoints used by discovery and the UI."""
-from __future__ import annotations
+"""Routes for the names blueprint (docs/decisions/0001-custody-chain.md §10)."""
+from flask import jsonify, render_template, request
 
-from flask import jsonify, request
-
-from app.names import bp
-from chain.ens_v2 import ENSResolutionError, resolve_authorized_agent
+from app.auth import require_api_key
+from app.names import bp, service
 
 
-def _resolve(name: str):
-    try:
-        return resolve_authorized_agent(name)
-    except ENSResolutionError as exc:
-        return jsonify({"error": str(exc), "code": "ENS_RESOLUTION_FAILED"}), 409
+@bp.get("/api/names/tree")
+def names_tree():
+    return jsonify(service.tree(request.args.get("root") or None))
 
 
-@bp.get("/resolve")
-def resolve_name():
-    name = str(request.args.get("name") or "")
-    result = _resolve(name)
-    if isinstance(result, tuple):
-        return result
-    return jsonify({"name": result.name, "records": result.snapshot(),
-                    "authorization": "ENS records are checked again before payment"})
+@bp.post("/api/names/<path:name>/retry")
+@require_api_key
+def names_retry(name: str):
+    row = service.retry(name.strip().lower())
+    if row is None:
+        return jsonify({"error": "name not found", "code": "NOT_FOUND"}), 404
+    return jsonify({"name": row.name, "kind": row.kind, "status": row.status,
+                    "tx_hashes": row.tx_hashes or []})
 
 
-@bp.get("/<path:name>")
-def resolve_name_path(name):
-    result = _resolve(name)
-    if isinstance(result, tuple):
-        return result
-    return jsonify(result.snapshot())
+@bp.get("/names")
+def names_page():
+    root = request.args.get("root") or None
+    return render_template("names.html", tree=service.tree(root))

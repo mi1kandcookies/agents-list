@@ -14,21 +14,25 @@ def _permit(**overrides):
 
 def test_x402_pay_rejects_invalid_wallet(client):
     resp = client.post("/api/x402/pay", json=_permit(**{"from": "0x123", "to": "0x456", "value": 0}))
-    assert resp.status_code == 410
+    assert resp.status_code == 400
     body = resp.get_json()
-    assert body["code"] == "LEGACY_PAYMENT_DISABLED"
+    assert body["code"] == "INVALID_REQUEST"
+    assert body["field"] == "from"
 
 
 def test_x402_pay_rejects_zero_value(client, agent):
     resp = client.post("/api/x402/pay", json=_permit(value=0, agentId=agent))
-    assert resp.status_code == 410
-    assert resp.get_json()["code"] == "LEGACY_PAYMENT_DISABLED"
+    assert resp.status_code == 400
+    assert resp.get_json()["field"] == "value"
 
 
 def test_x402_pay_without_facilitator_records_pending_order(client, agent):
     resp = client.post("/api/x402/pay", json=_permit(agentId=agent, task="build it"))
-    assert resp.status_code == 410
-    assert resp.get_json()["code"] == "LEGACY_PAYMENT_DISABLED"
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["realTx"] is False
+    assert body["status"] == "pending_payment"
+    assert client.get(f"/order/{body['orderId']}").status_code == 200
 
 
 def test_agent_register_requires_valid_wallet(client):
@@ -64,24 +68,3 @@ def test_seller_create_requires_wallet(client):
         "name": "X Agent", "description": "d", "category": "Development", "billing": "per_token"})
     assert resp.status_code == 400
     assert resp.get_json()["field"] == "wallet"
-
-
-def test_seller_listing_gets_stable_public_agent_id(client, db):
-    from app.common.agent_ids import is_valid_agent_id
-    from app.models import Agent
-    response = client.post("/seller/create", json={
-        "wallet": WALLET, "name": "Scoped QA Agent", "description": "Writes plans",
-        "category": "Development", "billing": "per_token",
-    })
-    assert response.status_code == 201, response.get_json()
-    row = Agent.query.filter_by(name="Scoped QA Agent").one()
-    assert is_valid_agent_id(row.public_id)
-    public = client.get(f"/api/agents/public/{row.public_id}")
-    assert public.status_code == 200
-    assert public.get_json()["public_id"] == row.public_id
-
-
-def test_public_agent_endpoint_rejects_unchecked_identifier(client):
-    response = client.get("/api/agents/public/1")
-    assert response.status_code == 400
-    assert response.get_json()["code"] == "INVALID_AGENT_ID"

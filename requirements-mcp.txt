@@ -1,0 +1,4 @@
+# MCP server (agentslist_mcp/), installed separately from the web app:
+#   pip install -r requirements-mcp.txt
+mcp>=1.2
+requests>=2.32.0
