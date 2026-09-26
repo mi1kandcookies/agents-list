@@ -318,6 +318,19 @@ def csv_safe(value: Any) -> str:
     return "'" + text if text.startswith(CSV_DANGEROUS) else text
 
 
+def plain_newlines(value: Any) -> Any:
+    """Strings (also inside lists and dicts) with \\r\\n and \\r turned into \\n.
+    Recorded text then reads back from disk exactly as rendered on every
+    platform, so a check can compare a delivered file with a fresh rendering."""
+    if isinstance(value, str):
+        return value.replace("\r\n", "\n").replace("\r", "\n")
+    if isinstance(value, list):
+        return [plain_newlines(v) for v in value]
+    if isinstance(value, dict):
+        return {k: plain_newlines(v) for k, v in value.items()}
+    return value
+
+
 # --- playbook --------------------------------------------------------------------
 
 def playbook_errors(data: Any, required_families: list[str] | None = None) -> list[str]:
@@ -632,6 +645,7 @@ def record_issues(workspace: Path, *, fetch=None, run=None, resolve_path: Resolv
                   out_dir: str = "deliverables/m2-issues", **_: Any) -> dict:
     """Validate and write issues.json, issues.md and issues.csv. Nothing is
     written if any quote fails to match or any playbook family is unaddressed."""
+    issues, coverage = plain_newlines(issues), plain_newlines(coverage)
     doc = {"schema_version": 1, "contract": contract, "playbook": playbook,
            "contract_sha256": "", "issues": issues, "coverage": coverage}
     errors = issue_list_errors(workspace, doc)
@@ -693,11 +707,11 @@ def redline_plan(paragraphs: list[str], ops: list[dict]) -> tuple[list[list[tupl
         if not isinstance(target, str) or not target.strip():
             errors.append(f"ops[{k}].target_text is required")
             continue
-        if "\n" in target:
+        if "\n" in target or "\r" in target:
             errors.append(f"ops[{k}].target_text must stay within one paragraph")
             continue
         new = op.get("new_text", target)
-        if not isinstance(new, str) or "\n" in new:
+        if not isinstance(new, str) or "\n" in new or "\r" in new:
             errors.append(f"ops[{k}].new_text must be a single-paragraph string")
             continue
         if new == target and not str(op.get("comment") or "").strip():
@@ -862,6 +876,7 @@ def build_redline(workspace: Path, *, fetch=None, run=None, resolve_path: Resolv
     src = input_file(workspace, contract)
     if not isinstance(ops, list) or not ops:
         raise ToolError("ops must be a non-empty list")
+    ops = plain_newlines(ops)
     rp = _resolver(workspace, resolve_path)
     paragraphs = load_paragraphs(src)
     plan, errors = redline_plan(paragraphs, ops)

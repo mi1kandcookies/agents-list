@@ -636,3 +636,18 @@ def test_manifest_pins_the_delivered_paths():
     assert checks["references_resolve"]["proposed"] == "deliverables/m3-redline/proposed.txt"
     assert checks["issue_list_valid"]["markdown"] == "deliverables/m2-issues/issues.md"
     assert checks["issue_list_valid"]["csv"] == "deliverables/m2-issues/issues.csv"
+
+
+def test_rendered_views_survive_carriage_returns(ws):
+    issues = _issues()
+    issues[0]["recommendation"] = "Raise the cap.\r\nSee the playbook.\rThen escalate."
+    _record(ws, issues)
+    p = {"issues": "deliverables/m2-issues/issues.json", "markdown": "deliverables/m2-issues/issues.md",
+         "csv": "deliverables/m2-issues/issues.csv"}
+    assert c.issue_list_valid(ws, p)["passed"] is True
+    with pytest.raises(ToolError, match="single-paragraph"):
+        t.build_redline(ws, contract="inputs/msa.txt",
+                        ops=[{"target_text": "at least ninety (90) days before", "new_text": "a\rb"}])
+    ops = [dict(OPS[0], comment="Twelve months.\r\nPer the playbook.")]
+    t.build_redline(ws, contract="inputs/msa.txt", ops=ops)
+    assert c.redline_roundtrip(ws, {"redline": "deliverables/m3-redline/redline.json"})["passed"] is True
