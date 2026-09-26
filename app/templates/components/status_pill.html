@@ -1,0 +1,27 @@
+{#- status_pill: compact lifecycle state for SOWs, milestones and payments.
+
+    Usage:
+      {% from "components/status_pill.html" import status_pill %}
+      {{ status_pill('in_progress') }}
+      {{ status_pill('released', label='Paid out') }}
+
+    States (unknown values fall back to a neutral pill with the raw text):
+      draft, pending, approved, denied, expired,
+      funded, in_progress, submitted, released, refused,
+      scoped, awaiting_approval, completed, cancelled, held
+-#}
+{% set STATUS_LABELS = {
+  'draft': 'Draft', 'pending': 'Pending', 'approved': 'Approved',
+  'denied': 'Denied', 'expired': 'Expired', 'funded': 'Funded',
+  'in_progress': 'In progress', 'submitted': 'Submitted',
+  'released': 'Released', 'refused': 'Refused',
+  'scoped': 'Scoped', 'awaiting_approval': 'Awaiting approval',
+  'completed': 'Completed', 'cancelled': 'Cancelled', 'held': 'Partly held',
+} %}
+
+{% macro status_pill(state, label=None) -%}
+{%- set key = (state or '')|lower -%}
+<span class="status-pill is-{{ key if key in STATUS_LABELS else 'unknown' }}" data-state="{{ key }}">
+  {{- label or STATUS_LABELS.get(key, key|replace('_', ' ')|capitalize) -}}
+</span>
+{%- endmacro %}

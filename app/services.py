@@ -239,31 +239,6 @@ def new_order_id() -> str:
     return f"ORD-{uuid.uuid4().hex[:8].upper()}"
 
 
-def record_order_from_payment(agent_id: int, buyer: str, amount_usdc: float, *,
-                               paid: bool, task: str = "", tx_hash: str = "") -> str:
-    """Persist an Order (and, for real payments, a ChainTransaction row).
-    Returns the new order id."""
-    from app.models import Order as OrderModel, ChainTransaction as CT
-    import json as _json
-    order_id = new_order_id()
-    status = "in_escrow" if paid else "pending_payment"
-    today = time.strftime("%Y-%m-%d")
-    db.session.add(OrderModel(
-        id=order_id, agent_id=int(agent_id), buyer=buyer,
-        amount=float(amount_usdc), status=status,
-        task=task or "Hire via x402 payment", date=today,
-    ))
-    if paid and tx_hash:
-        db.session.add(CT(
-            tx_hash=tx_hash, ts=int(time.time()), kind="payment",
-            agent_id=int(agent_id), from_addr=buyer, to_addr="",
-            amount_usdc=int(round(amount_usdc * 1_000_000)),
-            meta=_json.dumps({"real": True, "orderId": order_id}),
-        ))
-    db.session.commit()
-    return order_id
-
-
 def get_transactions(agent_id=None, kinds=None, limit=50, real_only=False) -> list:
     """Read the ChainTransaction audit log, newest first."""
     from app.models import ChainTransaction as CT
