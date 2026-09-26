@@ -780,6 +780,27 @@ def test_manifest_policy_matches_tool_needs():
     assert pricing["currency"] == "USDC" and pricing["typical_low"] < pricing["typical_high"]
 
 
+def test_manifest_loads_strictly_into_the_catalog_and_the_stamp():
+    import re
+
+    from agentkit.manifest import load_manifest as load_strict, operator_fields, task_price_micro
+    from app.services import CATEGORIES
+
+    m = load_strict(PKG_DIR)                         # unknown keys, types and prompt files checked
+    assert m.listing.category == "Development" and m.listing.category in CATEGORIES
+    pricing = m.listing.pricing
+    assert pricing.model == "per_milestone" and 0 < pricing.typical_low < pricing.typical_high
+    assert task_price_micro(m) == 5_000_000          # the stamped x402 per-task price, in micro-USDC
+    assert m.public_listing()["pricing"]["task_price_usdc"] == 5.0
+    # Production runs the stamped model: no fallback chain, no server-side fallbacks.
+    assert m.models.fallbacks == []
+    assert not m.models.options.get("anthropic", {}).get("server_fallbacks")
+    fields = operator_fields(m)
+    assert fields["model"] == m.models.primary and fields["tools"] == sorted(m.tools)
+    assert fields["skills"] == sorted(m.listing.capabilities) and fields["mcp_servers"] == []
+    assert re.fullmatch(r"0x[0-9a-f]{64}", fields["spec_hash"])
+
+
 def test_eval_cases_reference_real_milestones_and_fixtures(tmp_path):
     from agentkit.evals import case_brief, load_cases, prepare_workspace
     from agentkit.registry import load_specialist

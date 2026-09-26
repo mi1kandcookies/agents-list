@@ -26,7 +26,11 @@ listing:
     - Framework/runtime migration with old-API detectors driven to zero
     - Test-integrity diff audit (no skipped, deleted or weakened tests)
     - Residual-risk register for advisories without a fix
-  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 15000}
+  # typical_low/high: the engagement range, billed per milestone through the
+  # SOW. task_price_usdc: the flat x402 price of one agent-to-agent task,
+  # stamped as the platform manifest's price (placeholder until priced).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 15000,
+            task_price_usdc: 5.0}
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: code
 prompts:

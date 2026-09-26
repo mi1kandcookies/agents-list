@@ -26,7 +26,7 @@ import pytest
 
 from agentkit.events import MemorySink
 from agentkit.evals import load_cases, prepare_workspace
-from agentkit.evidence import evidence_hash
+from agentkit.evidence import EVIDENCE_MAX_CHARS, evidence_hash, platform_evidence
 from agentkit.llm import ScriptedAdapter
 from agentkit.policy import executable_name
 from agentkit.registry import load_specialist
@@ -191,6 +191,15 @@ def assert_ready(spec, ws, sub: Submission, milestone: str) -> None:
     assert re.fullmatch(r"0x[0-9a-f]{64}", sub.evidence_hash)
     saved = json.loads(spec.submission_path(ws, milestone).read_text(encoding="utf-8"))
     assert evidence_hash(Submission.from_dict(saved)) == sub.evidence_hash == saved["evidence_hash"]
+    # The evidence a harness posts: bound to the SOW index (manifest order here)
+    # and hashed exactly as the platform's submit endpoint hashes it.
+    idx = [x.id for x in spec.manifest.milestones].index(milestone)
+    assert sub.milestone_idx == saved["milestone_idx"] == idx
+    text = platform_evidence(sub)
+    assert len(text) <= EVIDENCE_MAX_CHARS
+    posted = json.loads(text)
+    assert (posted["milestone_idx"], posted["milestone_id"], posted["status"]) == (idx, milestone, sub.status)
+    assert "0x" + hashlib.sha256(text.encode("utf-8")).hexdigest() == sub.evidence_hash
 
 
 def tool_errors(events: MemorySink) -> list:
