@@ -623,15 +623,18 @@ def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, re
     if not re.fullmatch(r"[A-Za-z0-9._/~^-]{1,100}", base) or base.startswith("-"):
         raise ToolError("invalid base revision")
     work = str(_ws_path(workspace, cwd, resolve_path=resolve_path))
-    # Mark untracked files intent-to-add so they appear in the diff.
-    run(["git", "add", "-N", "."], cwd=work)
-    res = run(["git", "diff", "--no-color", "--no-ext-diff", base], cwd=work)
-    if _get(res, "exit_code") != 0:
-        raise ToolError(f"git diff failed: {(_get(res, 'stderr') or '')[:500]}")
-    text = _get(res, "stdout") or ""
     target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf-8")
+    # Mark untracked files intent-to-add so they appear in the diff.
+    run(["git", "add", "-N", "."], cwd=work)
+    # git writes the file itself: command output reaching a tool is capped
+    # and truncated in the middle, which would silently drop part of a patch.
+    res = run(["git", "diff", "--no-color", "--no-ext-diff", f"--output={target}", base], cwd=work)
+    if _get(res, "exit_code") != 0:
+        raise ToolError(f"git diff failed: {(_get(res, 'stderr') or '')[:500]}")
+    if not target.is_file():
+        target.write_text("", encoding="utf-8")
+    text = target.read_text(encoding="utf-8", errors="replace")
     report = scope_report(parse_patch(text))
     report["written"] = out
     return report
@@ -892,17 +895,21 @@ def git_churn(workspace: Path, *, fetch=None, run: Callable | None = None, resol
     days = int(since_days)
     if not 1 <= days <= 3650:
         raise ToolError("since_days must be between 1 and 3650")
-    res = run(["git", "log", f"--since={days}.days", "--name-only", "--pretty=format:", "--no-renames"],
-              cwd=str(_ws_path(workspace, cwd, resolve_path=resolve_path)))
+    work = str(_ws_path(workspace, cwd, resolve_path=resolve_path))
+    target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # git writes the raw log into `out` (captured command output is truncated
+    # in the middle, which would undercount); the CSV then replaces it.
+    res = run(["git", "log", f"--since={days}.days", "--name-only", "--pretty=format:", "--no-renames",
+               f"--output={target}"], cwd=work)
     if _get(res, "exit_code") != 0:
         raise ToolError(f"git log failed: {(_get(res, 'stderr') or '')[:500]}")
     counts: dict[str, int] = {}
-    for line in (_get(res, "stdout") or "").splitlines():
+    raw = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""
+    for line in raw.splitlines():
         line = _norm(line)
         if line:
             counts[line] = counts.get(line, 0) + 1
-    target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
     rows = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     target.write_text("path,commits\n" + "".join(f"{p},{c}\n" for p, c in rows), encoding="utf-8")
     return {"files": len(rows), "written": out, "top": rows[:10]}

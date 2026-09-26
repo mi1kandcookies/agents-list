@@ -230,17 +230,29 @@ def test_diff_scope_flags_production_changes_and_renames(tmp_path):
     assert T.diff_scope(tmp_path, patch="bad.patch", allow=["ledgerly/rates.py"])["test_only"]
 
 
+def git_writes(argv, text):
+    """What git does with --output=<file>: the file gets the text, stdout nothing."""
+    target = next(a.split("=", 1)[1] for a in argv if a.startswith("--output="))
+    Path(target).write_text(text, encoding="utf-8")
+    return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+
 def test_export_patch_writes_git_diff(tmp_path):
     (tmp_path / "repo").mkdir()
     seen = []
+    # Longer than the kit's cap on captured command output: git must write
+    # the file itself, or the middle of the patch would be dropped.
+    big = PATCH_TESTS_ONLY + "".join(PATCH_TESTS_ONLY.replace("test_rates", f"test_r{i}") for i in range(200))
 
     def fake_run(argv, *, cwd=None, timeout=None):
         seen.append(argv)
-        return {"exit_code": 0, "stdout": PATCH_TESTS_ONLY if "diff" in argv else "", "stderr": ""}
+        return git_writes(argv, big) if "diff" in argv else {"exit_code": 0, "stdout": "", "stderr": ""}
 
     out = T.export_patch(tmp_path, run=fake_run, out="deliverables/m3-coverage-uplift/repo.patch")
-    assert out["test_only"] and seen[0][:3] == ["git", "add", "-N"]
-    assert (tmp_path / "deliverables/m3-coverage-uplift/repo.patch").read_text() == PATCH_TESTS_ONLY
+    target = tmp_path / "deliverables/m3-coverage-uplift/repo.patch"
+    assert out["test_only"] and out["files_changed"] == 201 and seen[0][:3] == ["git", "add", "-N"]
+    assert f"--output={target.resolve()}" in seen[1] and len(big) > 30_000
+    assert target.read_text() == big
     with pytest.raises(ToolError):
         T.export_patch(tmp_path, run=fake_run, out="x.patch", base="--output=/etc/x")
 
@@ -321,7 +333,7 @@ def test_git_churn_counts_commits(tmp_path):
     (tmp_path / "repo").mkdir()
 
     def fake_run(argv, *, cwd=None, timeout=None):
-        return {"exit_code": 0, "stdout": "a.py\nb.py\n\na.py\n", "stderr": ""}
+        return git_writes(argv, "a.py\nb.py\n\na.py\n")
 
     out = T.git_churn(tmp_path, run=fake_run, out="deliverables/churn.csv")
     assert out["top"][0] == ("a.py", 2)
