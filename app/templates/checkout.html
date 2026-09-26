@@ -23,9 +23,9 @@
         </div>
         <p class="text-sm mb-16" id="checkout-wallet-desc">Connect a wallet to pay in USDC on {{ chain.name }}.</p>
         <button class="btn btn-secondary w-full" id="checkout-wallet-btn" type="button" onclick="__walletClick(event)">Connect Wallet</button>
-        <div class="flex-between mt-12 text-xs text-muted" style="font-family:var(--font-mono);">
+        <div class="flex-between mt-12 text-xs text-muted" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;">
           <span>Token</span>
-          {% if usdc_address %}<a id="checkout-token" href="{{ explorer_url('token', usdc_address) }}" target="_blank" rel="noopener" style="color:var(--accent);">USDC · {{ usdc_address[:6] }}…{{ usdc_address[-4:] }} ↗</a>
+          {% if usdc_address %}<a id="checkout-token" href="{{ explorer_url('token', usdc_address) }}" target="_blank" rel="noopener" style="color:var(--accent);">USDC at {{ usdc_address[:6] }}…{{ usdc_address[-4:] }} ↗</a>
           {% else %}<span id="checkout-token">USDC (not configured)</span>{% endif %}
         </div>
       </div>
@@ -55,7 +55,7 @@
         <div class="flex-between mb-16 text-sm"><span class="text-muted">Platform fee</span><span>10 bps</span></div>
 
         <div class="escrow-notice mb-16">
-          <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">EIP</span>
+          <span class="icon" style="font-size:.75rem; font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums; color:var(--blue); font-weight:700;">EIP</span>
           <p>The protected flow resolves the payee, screens the exact x402 authorization, and requires approval before escrow is funded.</p>
         </div>
 

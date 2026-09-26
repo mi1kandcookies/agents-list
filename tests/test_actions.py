@@ -78,7 +78,7 @@ def test_none_fields_are_omitted_and_each_approval_hashes_differently():
 def test_describe_rows():
     rows = dict(describe(VECTORS["actions"][1]["action"]))
     assert rows["Action"] == "Release milestone"
-    assert rows["Amount"] == "15.00 USDC"
+    assert rows["Amount"] == "15 USDC"
     assert rows["Milestone"] == "#2"
     assert rows["Risk screening"].endswith("(warning acknowledged)")
     assert rows["Expires"].endswith("UTC")

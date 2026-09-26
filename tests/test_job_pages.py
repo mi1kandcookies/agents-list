@@ -124,7 +124,7 @@ def _html(client, url):
 def test_scoped_job_offers_funding_and_tabs(client, rows):
     eng = rows.job("scoped")
     html = _html(client, f"/jobs/{eng.id}")
-    assert "Approve &amp; fund 25.00 USDC" in html and "Approve &amp; release" not in html
+    assert "Approve &amp; fund 25 USDC" in html and "Approve &amp; release" not in html
     assert f'href="/jobs/{eng.id}/chain"' in html and "Delegation chain" in html
     assert "Not funded" in html and "Nothing has moved yet." in html
     assert "No approvals requested yet." in html
@@ -143,7 +143,7 @@ def test_in_progress_job_shows_money_timeline_and_actions(client, db, rows):
     m1.status, m1.submitted_at = "submitted", NOW - timedelta(days=1)
     db.session.commit()
     html = _html(client, f"/jobs/{eng.id}")
-    assert "10.00 USDC" in html and "15.00 USDC" in html            # released, in escrow
+    assert "10 USDC" in html and "15 USDC" in html            # released, in escrow
     assert 'class="is-released" style="width:40.0%"' in html
     assert html.count("Approve &amp; release") == 1                 # only the submitted one
     assert 'data-tip="Coming soon"' in html and "Dispute" in html and "Request changes" in html
@@ -173,7 +173,7 @@ def test_held_completed_and_refused_jobs(client, db, rows):
     m.status = "held"
     db.session.commit()
     html = _html(client, f"/jobs/{held.id}")
-    assert "50.00 USDC held" in html and "Partly held" in html and "Approve &amp; release" in html
+    assert "50 USDC held" in html and "Partly held" in html and "Approve &amp; release" in html
 
     done = rows.job("completed", plan=((5_000_000, "Done"),), deadline_days=None)
     done.milestones[0].status = "released"
@@ -220,7 +220,7 @@ def test_jobs_list_filters_and_empty_states(client, rows):
     assert "No jobs yet" in html and 'href="/new"' in html and "Describe your job" in html
     a, b = rows.job("scoped"), rows.job("completed")
     html = _html(client, "/jobs")
-    assert a.id in html and b.id in html and "25.00 USDC" in html
+    assert a.id in html and b.id in html and "25 USDC" in html
     html = _html(client, "/jobs?status=completed")
     assert b.id in html and a.id not in html and 'aria-current="true">Completed' in html
     assert "No closed jobs" in _html(client, "/jobs?status=closed")
@@ -260,7 +260,7 @@ def test_pending_approval_pages_keep_the_poll_hooks(client, rows):
 
     html = _html(client, f"/approvals/{created.id}")
     assert all(h in html for h in HOOKS) and "Get approval code" in html
-    assert "data-cancel-button" in html and "25.00 USDC" in html and rows.agent.name in html
+    assert "data-cancel-button" in html and "25 USDC" in html and rows.agent.name in html
     assert "verdict-card--pay" in html and "css/screening.css" in html
 
     html = _html(client, f"/approvals/{pending.id}")
@@ -300,4 +300,4 @@ def test_consumed_approval_shows_done_with_ledger(client, rows):
     entry = rows.ledger(eng, "fund", eng.total_micro, approval=apr)
     html = _html(client, f"/approvals/{apr.id}")
     assert "Approved &amp; done" in html and "Funded 25.00 USDC into escrow" in html
-    assert f"{entry.id} · simulated" in html and f'href="/jobs/{eng.id}">Continue' in html
+    assert f"{entry.id} (simulated)" in html and f'href="/jobs/{eng.id}">Continue' in html

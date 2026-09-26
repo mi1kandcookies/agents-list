@@ -6,11 +6,11 @@
   <aside class="admin-sidebar">
     <div class="sidebar-section">
       <div class="sidebar-label">Protocol</div>
-      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
-      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
-      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
-      <a href="/admin/payouts" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
-      <a href="/admin/humans" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
+      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+      <a href="/admin/humans" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-num);font-variant-numeric:tabular-nums lining-nums;font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
     </div>
   </aside>
 
@@ -30,12 +30,12 @@
     <div class="grid-4 mb-32">
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Pending Release</div>
-        <div class="stat-value" style="color:var(--warning);">${{ "{:,.2f}".format(pending if pending > 0 else 0) }}</div>
+        <div class="stat-value" style="color:var(--warning);">${{ (pending if pending > 0 else 0)|usdc('dollars', unit=False) }}</div>
         <div class="text-xs text-muted mt-8">{{ stats.active_orders }} escrow sessions</div>
       </div>
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Released (lifetime)</div>
-        <div class="stat-value" style="color:var(--success);">${{ "{:,.2f}".format(stats.usdc_settled) }}</div>
+        <div class="stat-value" style="color:var(--success);">${{ stats.usdc_settled|usdc('dollars', unit=False) }}</div>
         <div class="stat-change up mt-8">{{ stats.settle_count }} settle events</div>
       </div>
       <div class="stat-card">
@@ -45,8 +45,8 @@
       </div>
       <div class="stat-card">
         <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Protocol Revenue</div>
-        <div class="stat-value" style="color:var(--accent);">${{ "{:,.2f}".format(stats.platform_fees) }}</div>
-        <div class="text-xs text-muted mt-8">10 bps of ${{ "{:,.0f}".format(stats.total_volume) }}</div>
+        <div class="stat-value" style="color:var(--accent);">${{ stats.platform_fees|usdc('dollars', unit=False) }}</div>
+        <div class="text-xs text-muted mt-8">10 bps of ${{ stats.total_volume|usdc('dollars', unit=False) }}</div>
       </div>
     </div>
 
@@ -80,8 +80,8 @@
               <td class="font-bold text-accent">{{ payout.id }}</td>
               <td class="font-bold">{{ payout.seller }}</td>
               <td class="text-muted">{{ payout.agent }}</td>
-              <td class="font-bold">${{ "{:,.2f}".format(payout.amount) }}</td>
-              <td class="text-success font-bold">${{ "{:,.2f}".format(payout.amount * 0.999) }}</td>
+              <td class="font-bold">${{ payout.amount|usdc('dollars', unit=False) }}</td>
+              <td class="text-success font-bold">${{ (payout.amount * 0.999)|usdc('dollars', unit=False) }}</td>
               <td>
                 {% if payout.status == 'released' %}
                 <span class="badge badge-approved">Released</span>

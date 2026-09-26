@@ -552,7 +552,7 @@ def test_verdict_card_renders_each_verdict(app, screener, http, quick_body, css,
     for r in v["reasons"]:
         assert r["code"] in html
     if css.endswith("cap"):
-        assert "max 10.00 USDC" in html
+        assert "max 10 USDC" in html
 
 
 def test_verdict_card_fail_closed_note(app, screener, http):

@@ -13,10 +13,10 @@
 }
 .flow [hidden] { display: none !important; }
 .flow p { color: inherit; }
-.flow .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.flow .mono { letter-spacing: 0; }
 .flow .muted { color: var(--ink-3); }
 .flow kbd {
-  font-family: var(--font-mono); font-size: .8em; padding: 1px 5px;
+  font-family: var(--font-body); font-size: .8em; font-weight: 500; padding: 1px 5px;
   border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface);
 }
 
@@ -261,7 +261,7 @@
   position: sticky; top: 16px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 20px;
 }
-.flow-summary h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 0 0 12px; }
+.flow-summary h2 { font-size: 15px; font-weight: 600; letter-spacing: -.005em; color: var(--ink); margin: 0 0 14px; }
 .flow-summary dl { margin: 0; display: grid; gap: 12px; }
 .flow-summary dt { font-size: 12px; color: var(--ink-3); }
 .flow-summary dd { margin: 2px 0 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }

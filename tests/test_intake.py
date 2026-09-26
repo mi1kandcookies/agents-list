@@ -77,7 +77,7 @@ def test_estimate_page_shows_contract_for_engagement(client, db, agent, human):
     html = res.get_data(as_text=True)
     assert eng.id in html
     assert "Scope and sources" in html and "Questions signed off" in html
-    assert "500.00" in html and "200.00" in html
+    assert 'data-bind="c-total">500<' in html and "200 USDC" in html and "500.00" not in html
     assert eng.sow_hash in html
     assert "Each milestone is paid only when you approve it." in html
     assert 'id="estimate-approve"' in html

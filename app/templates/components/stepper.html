@@ -18,7 +18,7 @@
   {%- for s in steps %}
   {%- set state = 'done' if loop.index0 < current else ('current' if loop.index0 == current else 'upcoming') %}
   <li class="stepper-item is-{{ state }}"{% if state == 'current' %} aria-current="step"{% endif %}>
-    <span class="stepper-index">{{ '%02d' % loop.index }}{% if state == 'done' %} · done{% endif %}</span>
+    <span class="stepper-index">{{ '%02d' % loop.index }}{% if state == 'done' %} <span class="stepper-done">Done</span>{% endif %}</span>
     <span class="stepper-label">{{ s.label }}</span>
     {%- if s.hint %}<span class="stepper-hint">{{ s.hint }}</span>{% endif %}
   </li>
