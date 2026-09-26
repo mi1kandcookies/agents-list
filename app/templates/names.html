@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Names{% endblock %}
+
+{% block head %}
+<style>
+  .names { max-width: 960px; margin: 2rem auto; padding: 0 16px; }
+  .names ul { list-style: none; margin: 0; padding-left: 1.25rem; border-left: 1px solid #e5e5e5; }
+  .names > ul { padding-left: 0; border-left: 0; }
+  .names li { margin: .5rem 0; }
+  .names code { font-family: 'IBM Plex Mono', monospace; font-size: .9rem; overflow-wrap: anywhere; }
+  .names .meta { color: #666; font-size: .8rem; margin-left: .5rem; }
+  .names .st { font-size: .75rem; padding: 0 .4rem; border-radius: 3px; background: #f0f0f0; }
+  .names .st-active { background: #e6f4ea; color: #1e6b34; }
+  .names .st-failed { background: #fdecea; color: #9b1c1c; }
+  .names .st-revoked { color: #888; text-decoration: line-through; }
+  .names dl { margin: .25rem 0 0; font-size: .8rem; color: #444; }
+  .names dt { display: inline; font-weight: 600; }
+  .names dd { display: inline; margin: 0 .75rem 0 .25rem; overflow-wrap: anywhere; }
+</style>
+{% endblock %}
+
+{% macro render(node) %}
+<li>
+  <code>{{ node.name }}</code>
+  <span class="st st-{{ node.status }}">{{ node.status }}</span>
+  <span class="meta">{{ node.kind }}{% if node.expires_at %} · expires {{ node.expires_at[:16] | replace('T', ' ') }} UTC{% endif %}{% if node.tx_hashes %} · {{ node.tx_hashes | length }} tx{% endif %}</span>
+  {% if node.records %}
+  <dl>{% for k, v in node.records.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+  {% endif %}
+  {% if node.children %}
+  <ul>{% for child in node.children %}{{ render(child) }}{% endfor %}</ul>
+  {% endif %}
+</li>
+{% endmacro %}
+
+{% block content %}
+<section class="names">
+  <h1>Names</h1>
+  <p class="meta">Agent and job names under <code>{{ tree.name }}</code> (Ethereum Sepolia, ENSv2). Job names expire at the SOW deadline and are revoked at settlement.</p>
+  <ul>{{ render(tree) }}</ul>
+</section>
+{% endblock %}

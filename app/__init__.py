@@ -17,7 +17,7 @@ Custody-chain blueprints (docs/decisions/0001-custody-chain.md):
     engagements /api/engagements/*          screening /api/screening/*
     mandates /api/mandates/*, /api/engagements/<id>/chain
     humans   /humans/*
-    names    /api/names/*
+    names    /api/names/*, /names
 """
 from __future__ import annotations
 
