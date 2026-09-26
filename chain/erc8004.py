@@ -10,8 +10,8 @@ This module only covers the ERC-721 surface of the IdentityRegistry, which is
 stable across registry versions. Registration, feedback and reputation
 aggregation land with roadmap commit 9 (see docs/ROADMAP.md).
 
-It replaces the prototype's adapter, which mapped invented selectors
-(getIdentity/getScore/getReputation) onto its own custom contracts.
+The adapter is intentionally read-only until registration and reputation
+transactions have an explicit application flow.
 """
 from __future__ import annotations
 

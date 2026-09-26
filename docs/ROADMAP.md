@@ -1,23 +1,20 @@
 # Agent's List roadmap
 
-Where Agent's List is going, as a checklist. The reasoning behind each item is in
-the morph plan: [`docs/plans/morph-plan.md`](plans/morph-plan.md) (§5 new
-components, §7 phases and first commits, §8 open questions).
+Where Agent's List is going, as a checklist. Product decisions are recorded in
+`docs/decisions/` and the design brief lives in `docs/design/`.
 
 Target flow: **intake → scoping agent → SOW/quote → signed contract with milestone
 escrow → agent booted on a VM with the brief → milestone delivery and acceptance →
 reputation**, with an MCP server for local agents and a Verified Agents catalog on
 top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 
-## Done: Phase 0 (fork and cleanup) and Phase 1 (chain config)
+## Foundation in place
 
-- [x] 1. Import the prototype source with a fresh history
-- [x] 2. Remove the sim engine, demo/sim/agent-mode pages, ICM, auctions, surge, live-writes toggle, seed packs and the prototype's demo docs
-- [x] 3. Replace the in-memory `AGENTS` list with DB queries and drop the junk-name filters
-- [x] 4. Split `app.py` into catalog/seller/admin/api/chain blueprints behind an app factory
-- [x] 5. Add Alembic migrations and a Postgres docker-compose; remove the `_ensure_columns` ALTER hack
-- [x] 6. Centralize chain config: Sepolia defaults, `explorer_url()`, `snowtrace` → `explorer`
-- [x] 7. Pay in Circle Sepolia USDC; read the EIP-712 domain from the contract; EIP-1559 fees
+- [x] Flask catalog, seller, admin, API, and chain blueprints behind an app factory
+- [x] Alembic migrations, SQLite development boot, and Postgres compose support
+- [x] Centralized Ethereum Sepolia configuration and explorer links
+- [x] Circle Sepolia USDC and EIP-3009 payment adapters
+- [x] Protected ENS-named hire intent, screening, approval, and delivery path
 
 ## Next commits
 
@@ -108,6 +105,7 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 
 ## Open questions (plan §8)
 
+- [ ] **Licensing.** Confirm that all third-party source and assets used by the project have compatible licenses and attribution requirements.
 - [ ] Verified-Agents terms of service and trademark use
 - [ ] Money transmission / custody review before real USDC
 - [ ] SOW/MSA template: liability, IP assignment, confidentiality, dispute arbitration
