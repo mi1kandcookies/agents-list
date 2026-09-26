@@ -447,6 +447,8 @@ def test_sec_company_lookup_resolves_tickers_and_names(tmp_path, monkeypatch):
     assert by_name["origin"] == "cache" and [m["cik"] for m in by_name["matches"]] == ["9900002"]
     assert len(fetch.calls) == 1
     assert T.sec_company_lookup(tmp_path, query="Nonexistent Holdings")["matches"] == []
+    assert [m["ticker"] for m in T.sec_company_lookup(tmp_path, query="CIK0009900001")["matches"]] \
+        == ["HLVI"]
     with pytest.raises(ToolError):
         T.sec_company_lookup(tmp_path, query=" ")
 
@@ -692,6 +694,14 @@ def test_memo_figures_match_accepts_equivalent_forms(built, old, new):
     assert res["passed"] is True, res["details"]
 
 
+def test_memo_bullet_dash_is_not_a_minus_sign(built):
+    _memo(built, MEMO + "\n- 14.1% [F:9900003:2024:ebitda_margin] EBITDA margin\n"
+                        "- -4.5% [F:9900003:2024:revenue_growth] would be a decline\n")
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is False and res["details"].count("shows") == 1
+    assert "shows -4.5%" in res["details"]
+
+
 def test_memo_bullets_are_checked_one_by_one(built):
     _memo(built, MEMO + "\n- Backlog fell to $120 million\n- Customer churn hit 18%\n"
                         "- The revolver matures in 2028 [C1]\n")
@@ -703,6 +713,7 @@ def test_memo_bullets_are_checked_one_by_one(built):
     "Backlog grew 25 percent to 900M.", "The deal values it at 3.1 times revenue.",
     "Backlog was 902,300,000 at year end.", "Backlog is now 1.2B.", "Leverage is 4.5 turns.",
     "Churn improved by 150 bps.", "The company has 12500 customers.",
+    "Gross margin widened 1.2pp.", "Margin fell 3 percentage points.",
 ])
 def test_memo_figures_in_other_formats_need_a_citation(built, sentence):
     _memo(built, MEMO + "\n" + sentence + "\n")
@@ -782,14 +793,15 @@ def test_no_recommendation_language_needs_its_files(built):
     assert C.no_recommendation_language(built, {"paths": ["nope.md"]})["passed"] is False
 
 
-def _checklist(ws: Path, overrides: dict | None = None, drop: str | None = None) -> None:
+def _checklist(ws: Path, overrides: dict | None = None, drop: str | None = None,
+               window: str | None = "Window: 2022-11-04 to 2025-11-04") -> None:
     hits = {k: v["filings"] for k, v in T.filing_red_flags(ws, cik=9900003)["flags"].items()}
     out = []
     for cik, name in ((9900001, "Halvorsen Instruments Inc."),
                       (9900002, "Brightwater Analytics Corp."),
                       (9900003, "Coldharbor Systems, Inc.")):
-        out += [f"## {name} (CIK {cik})", "", "| ID | Item | Status | Evidence |",
-                "|---|---|---|---|"]
+        out += [f"## {name} (CIK {cik})", "", *([window, ""] if window else []),
+                "| ID | Item | Status | Evidence |", "|---|---|---|---|"]
         for item, title in C.RED_FLAG_ITEMS.items():
             if drop == f"{cik}:{item}":
                 continue
@@ -841,6 +853,20 @@ def test_red_flag_checklist_covers_companies_dropped_from_comps(built):
     _write_rows(comps, [r for r in _rows(comps) if r["cik"] != "9900002"])
     res = C.red_flag_checklist(built, {})
     assert res["passed"] is False and "CIK 9900002 RF01: missing" in res["details"]
+
+
+def test_red_flag_checklist_states_a_window_covering_the_lookback(built):
+    _checklist(built)
+    assert C.red_flag_checklist(built, {"lookback_years": 3})["passed"] is True
+    _checklist(built, window=None)
+    res = C.red_flag_checklist(built, {"lookback_years": 3})
+    assert res["passed"] is False and "state the review window (Window: 2022-11-04 to 2025-11-04)" \
+        in res["details"]
+    _checklist(built, window="Window: 2024-01-01 to 2025-11-04")        # one year short
+    res = C.red_flag_checklist(built, {"lookback_years": 3})
+    assert res["passed"] is False and "starts 2024-01-01, after 2022-11-04" in res["details"]
+    _checklist(built, window="Review window 2020-01-01 through 2025-11-04")   # longer is fine
+    assert C.red_flag_checklist(built, {"lookback_years": 3})["passed"] is True
 
 
 def test_red_flag_evidence_files_must_exist(built):

@@ -278,10 +278,11 @@ def load_filing_index(workspace: Path, cik: Any) -> tuple[dict | None, list[dict
     rows, missing = recent_filings(data), []
     for page in history_pages(data):
         path = _cached_file(workspace, f"submissions/{page['name']}")
-        if path is None:
-            missing.append(page)
+        block = json.loads(path.read_text(encoding="utf-8")) if path else None
+        if isinstance(block, dict):
+            rows += _block_rows(block)
         else:
-            rows += _block_rows(json.loads(path.read_text(encoding="utf-8")))
+            missing.append(page)
     return data, rows, missing
 
 
@@ -489,7 +490,9 @@ def sec_company_lookup(workspace: Path, *, fetch=None, run=None, query: str = ""
             continue
         companies.append({"cik": cik, "ticker": str(e.get("ticker", "")), "name": str(e.get("title", ""))})
     key = q.casefold()
-    exact = [c for c in companies if c["ticker"].casefold() == key or c["cik"] == q.lstrip("0")]
+    as_cik = re.fullmatch(r"(?i)(?:CIK\s*)?0*(\d{1,10})", q)
+    exact = [c for c in companies if c["ticker"].casefold() == key
+             or (as_cik is not None and c["cik"] == as_cik.group(1))]
     taken = {id(c) for c in exact}
     by_name = [c for c in companies if id(c) not in taken and key in c["name"].casefold()]
     return {"query": q, "origin": origin, "matches": (exact + by_name)[: max(1, int(limit))],

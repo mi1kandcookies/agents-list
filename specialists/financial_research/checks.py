@@ -121,14 +121,17 @@ INPUT_REF_RE = re.compile(r"inputs/[^\s|,;()\[\]<>`'\"]+")
 ACCESSION_RE = re.compile(r"\b\d{10}-\d{2}-\d{6}\b")
 # One or more ledger claims in a bracket: [C1], [C1, C2], [C3; C4].
 CLAIM_GROUP_RE = re.compile(r"\[\s*(C\d+(?:\s*[,;]\s*C\d+)*)\s*\]")
+# A minus sign counts only when attached to the figure ("-4.5%", "-$12.3"),
+# so the dash of a bullet ("- 14.1% [F:...]") is not read as one.
 FIGURE_REF_RE = re.compile(
-    r"(?P<neg>[-−])?(?P<cur>\$)?\s?(?P<num>\d[\d,]*(?:\.\d+)?)\s?"
+    r"(?:(?<![\w.])(?P<neg>[-−])(?=[$\d]))?(?P<cur>\$)?\s?(?P<num>\d[\d,]*(?:\.\d+)?)\s?"
     r"(?P<suf>%|percent|x|×|times|bn|billion|mm|mn|million|m|k|thousand|b)?"
     r"\s*\[F:(?P<cik>\d+):(?P<fy>\d{4}):(?P<col>[a-z_]+)\]", re.I)
 # Any amount in prose: optional sign and $, a number, an optional unit.
 AMOUNT_RE = re.compile(
     r"(?<![\w.,])(?P<neg>[-−])?(?P<cur>\$)?\s?(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
-    r"(?:\s?(?P<suf>%|per\s?cent\b|pct\b|bps\b|basis\s+points?\b|x(?![A-Za-z])|×|times\b|"
+    r"(?:\s?(?P<suf>%|per\s?cent\b|pct\b|bps\b|basis\s+points?\b|pp\b|ppts?\b|"
+    r"percentage\s+points?\b|x(?![A-Za-z])|×|times\b|"
     r"turns\b|bn\b|billion\b|b\b|mm\b|mn\b|million\b|m\b|thousand\b|k\b))?", re.I)
 SCALES = {"bn": 10**9, "billion": 10**9, "b": 10**9, "mm": 10**6, "mn": 10**6,
           "million": 10**6, "m": 10**6, "thousand": 10**3, "k": 10**3}
@@ -216,7 +219,8 @@ def _source_file(workspace: Path, rel: str) -> Any:
 
 def _source_json(workspace: Path, kind: str, cik: Any) -> dict | None:
     c = _cik10(cik)
-    return _source_file(workspace, f"{kind}/CIK{c}.json") if c else None
+    data = _source_file(workspace, f"{kind}/CIK{c}.json") if c else None
+    return data if isinstance(data, dict) else None
 
 
 def _num(value: Any) -> Decimal | None:
@@ -696,7 +700,9 @@ def _amount(m: re.Match) -> Amount:
     scale = SCALES.get(suffix, 1)
     places = len(num.split(".")[1]) if "." in num else 0
     kind = ("%" if suffix in ("%", "percent", "pct") else "x" if suffix in ("x", "×", "times", "turns")
-            else "bps" if suffix in ("bps", "basispoint", "basispoints") else "")
+            else "bps" if suffix in ("bps", "basispoint", "basispoints")
+            else "pp" if suffix in ("pp", "ppt", "ppts", "percentagepoint", "percentagepoints")
+            else "")
     return raw, raw * scale, Decimal(5).scaleb(-(places + 1)) * scale, kind
 
 
@@ -776,8 +782,8 @@ def _figure_ok(match: re.Match, comps: dict, before: str) -> str:
 def memo_figures_match(workspace: Path, params: dict, *, run=None) -> dict:
     """Memo numbers are cited and match their source.
 
-    Every figure ($, %, x, times, million/billion, M/B, bps, or a bare number
-    of four or more digits other than a year) is either followed by its own
+    Every figure ($, %, x, times, million/billion, M/B, bps, pp, or a bare
+    number of four or more digits other than a year) is either followed by its own
     figure tag `[F:<cik>:<fiscal_year>:<comps column>]` or sits in a
     sentence, list item or table row citing ledger claims `[C#]` whose
     verbatim quotes contain it. A figure tag must match the comps.csv value
@@ -877,8 +883,13 @@ def no_recommendation_language(workspace: Path, params: dict, *, run=None) -> di
     return _result(True, f"no recommendation language in {len(paths)} file(s)", 1.0)
 
 
+WINDOW_RE = re.compile(r"(?i)\bwindow\b\D*?(\d{4}-\d{2}-\d{2})\s*(?:to|through|-|–|\.\.)\s*"
+                       r"(\d{4}-\d{2}-\d{2})")
+
+
 def _checklist_tables(text: str) -> dict[str, dict[str, dict[str, str]]]:
-    """{cik: {RFxx: {status, evidence}}} from '## Name (CIK n)' sections."""
+    """{cik: {RFxx: {status, evidence}, "window": {from, to}}} from
+    '## Name (CIK n)' sections ("Window: 2022-11-04 to 2025-11-04")."""
     out: dict[str, dict[str, dict[str, str]]] = {}
     current = None
     for line in text.splitlines():
@@ -887,6 +898,9 @@ def _checklist_tables(text: str) -> dict[str, dict[str, dict[str, str]]]:
             current = str(int(head.group(1)))
             out.setdefault(current, {})
             continue
+        window = WINDOW_RE.search(line) if current else None
+        if window and "window" not in out[current]:
+            out[current]["window"] = {"from": window.group(1), "to": window.group(2)}
         if current and line.strip().startswith("|"):
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if cells and re.fullmatch(r"RF\d{2}", cells[0]) and len(cells) >= 4:
@@ -934,8 +948,9 @@ def red_flag_checklist(workspace: Path, params: dict, *, run=None) -> dict:
     company's filing index and every inputs/ path must exist. Items RF01-RF04
     and RF09 are recomputed from the SEC filing index over the window from
     params.since, else params.lookback_years before the latest filing: a
-    hit there must be marked found and cite one of the hit accessions, and
-    the index must reach back to the window's start.
+    hit there must be marked found and cite one of the hit accessions, the
+    index must reach back to the window's start, and each section must state
+    a window ("Window: <from> to <to>") that starts no later.
     """
     rel = params.get("path", RED_FLAGS_PATH)
     path = _ws(workspace, rel)
@@ -974,6 +989,11 @@ def red_flag_checklist(workspace: Path, params: dict, *, run=None) -> dict:
             if short:
                 failures.append(f"CIK {cik}: filing index not loaded back to {since or 'the start'} "
                                 f"({', '.join(short)}); call edgar_submissions with since")
+            stated = table.get("window")
+            if since and stated is None:
+                failures.append(f"CIK {cik}: state the review window (Window: {since} to {latest})")
+            elif since and stated["from"] > since:
+                failures.append(f"CIK {cik}: stated window starts {stated['from']}, after {since}")
         known = {f["accession"] for f in index}
         for item in RED_FLAG_ITEMS:
             checked += 1
