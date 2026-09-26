@@ -629,6 +629,76 @@ tbody tr:hover { background: var(--surface-2); }
 }
 .trust-badge svg { flex-shrink: 0; }
 
+/* ══ Agent profile ═════════════════════════════════════════════════════════ */
+.profile-head { padding: 32px 0 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.profile-head-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: start; }
+.profile-id { display: flex; gap: 16px; align-items: flex-start; }
+.profile-id .agent-avatar { width: 56px; height: 56px; border-radius: var(--radius); font-size: var(--fs-sm); }
+.profile-id h1 { font-size: var(--fs-xl); letter-spacing: -0.025em; }
+.profile-specialty { font-size: var(--fs-base); color: var(--ink-2); margin-top: 6px; max-width: 640px; }
+.profile-operator { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 0.8125rem; color: var(--ink-3); }
+.profile-cta { display: flex; gap: 8px; }
+
+.stat-row {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
+}
+.stat-row > * + * { border-left: 1px solid var(--border); }
+
+.profile-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start; padding-top: 32px; }
+.profile-main > section { padding: 28px 0; border-bottom: 1px solid var(--border); }
+.profile-main > section:first-child { padding-top: 0; }
+.profile-main > section:last-child { border-bottom: none; }
+.profile-main h2 { font-size: var(--fs-lg); letter-spacing: -0.015em; margin-bottom: 16px; }
+.profile-main .prose { font-size: var(--fs-base); color: var(--ink-2); line-height: 1.65; max-width: 680px; }
+
+.does-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.does-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.does-list li { display: flex; gap: 10px; font-size: var(--fs-sm); color: var(--ink); line-height: 1.5; }
+.does-list li::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 8px; border-radius: 2px; background: var(--success); }
+.does-list.no li::before { background: var(--ink-3); }
+.kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px 16px; font-size: var(--fs-sm); }
+.kv dt { color: var(--ink-3); }
+.kv dd { color: var(--ink); }
+
+.review { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.review:last-child { border-bottom: none; }
+.review-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: var(--fs-sm); }
+.review-head strong { font-weight: 600; }
+.review p { font-size: var(--fs-sm); line-height: 1.6; }
+
+.faq details { border-bottom: 1px solid var(--border); }
+.faq details:first-child { border-top: 1px solid var(--border); }
+.faq summary { list-style: none; cursor: pointer; padding: 14px 0; font-size: var(--fs-sm); font-weight: 600; display: flex; justify-content: space-between; gap: 12px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: '+'; font-family: var(--font-mono); color: var(--ink-3); }
+.faq details[open] summary::after { content: '−'; }
+.faq details p { padding: 0 0 14px; font-size: var(--fs-sm); line-height: 1.6; max-width: 640px; }
+
+.hire-panel { position: sticky; top: 88px; display: flex; flex-direction: column; gap: 16px; }
+.hire-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
+.hire-price { font-family: var(--font-mono); font-size: var(--fs-xl); font-weight: 500; letter-spacing: -0.02em; }
+.hire-price small { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 400; }
+.hire-rows { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.hire-rows div { display: flex; justify-content: space-between; gap: 12px; font-size: 0.8125rem; }
+.hire-rows dt { color: var(--ink-3); }
+.hire-rows dd { font-family: var(--font-mono); color: var(--ink); text-align: right; }
+.hire-actions { display: flex; flex-direction: column; gap: 8px; }
+.hire-note { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.5; }
+.hire-note svg { color: var(--success); flex-shrink: 0; margin-top: 1px; }
+
+.activity { display: flex; flex-direction: column; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.activity-row { display: grid; grid-template-columns: 90px 90px 1fr auto; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); color: var(--ink-2); }
+.activity-row a { color: var(--link); }
+.activity .empty-state { font-family: var(--font-body); }
+
+.ask textarea { width: 100%; min-height: 72px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: var(--fs-sm); outline: none; }
+.ask textarea:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.ask pre { display: none; margin-top: 10px; padding: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-2); }
+
+/* Mobile sticky hire bar on the profile */
+.hire-bar { display: none; }
+
 /* ══ How it works / simple content pages ═══════════════════════════════════ */
 .steps-list { list-style: none; display: flex; flex-direction: column; }
 .steps-list li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 16px; padding: 20px 0; border-top: 1px solid var(--border); }
@@ -1397,6 +1467,7 @@ tbody tr:hover { background: var(--surface-2); }
     padding: 12px 16px; background: var(--surface); border-top: 1px solid var(--border);
   }
   .hire-bar .btn { flex: 1; }
+  main:has(.hire-bar) { padding-bottom: 72px; }
   .toolbar { grid-template-columns: 1fr; }
   .admin-layout { flex-direction: column; }
   .admin-sidebar { position: static; width: 100%; height: auto; }
