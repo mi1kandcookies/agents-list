@@ -119,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
             if agent.erc8004_agent_id:
                 uri = _data_uri(_registration(agent, registry, agent_id=agent.erc8004_agent_id))
                 tx_hash = identity.set_agent_uri(signer, agent.erc8004_agent_id, uri)
+                agent.erc8004_registry = registry
+                db.session.commit()
                 results.append({"agent_id": agent.public_id, "erc8004_agent_id": agent.erc8004_agent_id,
                                 "uri_update_tx": tx_hash, "explorer": explorer_url("tx", tx_hash)})
                 continue
@@ -127,11 +129,14 @@ def main(argv: list[str] | None = None) -> int:
             token_id = minted["agent_id"]
             if token_id is None:
                 raise RuntimeError(f"registration event missing agent id for {agent.public_id}")
-            final_uri = _data_uri(_registration(agent, registry, agent_id=token_id))
-            uri_tx = identity.set_agent_uri(signer, token_id, final_uri)
+            # Persist the token before the second transaction. If the URI
+            # update is interrupted, --update-existing can resume it without
+            # minting a second identity.
             agent.erc8004_agent_id = int(token_id)
             agent.erc8004_registry = registry
             db.session.commit()
+            final_uri = _data_uri(_registration(agent, registry, agent_id=token_id))
+            uri_tx = identity.set_agent_uri(signer, token_id, final_uri)
             results.append({"agent_id": agent.public_id, "erc8004_agent_id": int(token_id),
                             "register_tx": minted["tx_hash"], "uri_update_tx": uri_tx,
                             "register_explorer": explorer_url("tx", minted["tx_hash"]),

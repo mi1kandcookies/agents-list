@@ -90,7 +90,7 @@ class ERC8004Identity:
             "from": Web3.to_checksum_address(signer.address),
             "nonce": self.w3.eth.get_transaction_count(signer.address, "pending"),
             "chainId": chain.chain_id,
-            **eip1559_fees(self.contract.w3),
+            **eip1559_fees(self.w3),
         })
         tx["gas"] = int(self.w3.eth.estimate_gas(tx) * 1.2)
         _ensure_eth_reserve(self.w3, tx, signer.address)
@@ -124,7 +124,7 @@ class ERC8004Identity:
             "from": Web3.to_checksum_address(signer.address),
             "nonce": self.w3.eth.get_transaction_count(signer.address, "pending"),
             "chainId": chain.chain_id,
-            **eip1559_fees(self.contract.w3),
+            **eip1559_fees(self.w3),
         })
         tx["gas"] = int(self.w3.eth.estimate_gas(tx) * 1.2)
         _ensure_eth_reserve(self.w3, tx, signer.address)
