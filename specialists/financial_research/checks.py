@@ -4,7 +4,7 @@ financial-research specialist.
 
 Each check is `fn(workspace, params, *, run=None) -> {"passed", "details",
 "score"}` and is listed in CHECK_DEFS. Checks never trust the agent's own
-report: every figure is re-derived from the cached SEC JSON
+report: every figure is checked against the cached SEC JSON
 (.agentkit/edgar/, falling back to inputs/edgar/), the client's market data,
 the claim ledger and the data-room files themselves. The recomputation here
 (fiscal years, debt, multiples) is written independently of tools.py so a
@@ -282,7 +282,7 @@ def _full_year(r: dict) -> bool:
 
 
 def _fy_ends(facts: dict) -> dict[int, str]:
-    """Fiscal year -> year-end, re-derived from the SEC source: each 10-K's
+    """Fiscal year -> year-end, worked out from the SEC source: each 10-K's
     year is the latest full-year period it reports; the original 10-K's fy
     labels that year-end when fy is its calendar year or the one before,
     else the calendar year does. On a clash the year-end falling in the
