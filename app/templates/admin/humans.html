@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Humans{% endblock %}
+{% block head %}
+<style>
+  .hm-table { width: 100%; border-collapse: collapse; }
+  .hm-table th, .hm-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: var(--fs-sm); }
+  .hm-table th { color: var(--ink-2); font-weight: 500; white-space: nowrap; }
+  .hm-forms { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+  .hm-forms form { display: flex; gap: 6px; }
+  .hm-forms .form-input { height: 32px; font-size: 0.8125rem; }
+  .hm-over { color: var(--danger); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="admin-layout">
+  <aside class="admin-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Protocol</div>
+      <a href="/admin/dashboard" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+      <a href="/admin/humans" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">HUM</span> Humans</a>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <div class="flex-between mb-24" style="gap:16px; flex-wrap:wrap;">
+      <div>
+        <h1 style="font-size:1.75rem; margin-bottom:4px;">Humans</h1>
+        <p>Verified people, by hashed World ID subject. A ban blocks their approvals and makes every agent they operate unhireable.</p>
+      </div>
+      <label class="text-sm text-muted" style="display:flex; gap:8px; align-items:center;">Admin key
+        <input type="password" class="form-input mono" id="admin-key" autocomplete="off" style="height:32px; width:180px;">
+      </label>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="hm-table" id="humans-table">
+        <thead><tr><th>Subject (sha256)</th><th>Last seen</th><th>Jobs</th><th>Agents</th><th>This week</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+          {% set h = r.human %}
+          <tr data-human-id="{{ h.id }}">
+            <td class="mono">{{ r.sub_hash }}</td>
+            <td class="mono">{{ h.last_seen_at.strftime('%Y-%m-%d %H:%M') if h.last_seen_at else '—' }}</td>
+            <td class="mono">{{ r.jobs }}</td>
+            <td class="mono">{{ r.agents }}</td>
+            <td class="mono {{ 'hm-over' if r.cap is not none and r.spent > r.cap }}">
+              {{ '%.2f'|format(r.spent / 1000000) }} / {{ '%.2f'|format(r.cap / 1000000) if r.cap is not none else 'no cap' }} USDC
+            </td>
+            <td>
+              {% if h.banned %}
+              <span class="badge badge-rejected">Banned</span>
+              <div class="text-xs text-muted" style="margin-top:4px;">{{ h.ban_reason }}</div>
+              {% else %}<span class="badge badge-approved">Active</span>{% endif %}
+            </td>
+            <td>
+              <div class="hm-forms">
+                {% if h.banned %}
+                <form method="post" action="{{ url_for('admin.admin_unban_human', human_id=h.id) }}" data-admin-form>
+                  <button class="btn btn-secondary btn-sm" type="submit">Unban</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('admin.admin_ban_human', human_id=h.id) }}" data-admin-form>
+                  <input class="form-input" name="reason" placeholder="Ban reason" required maxlength="500">
+                  <button class="btn btn-danger btn-sm" type="submit">Ban</button>
+                </form>
+                {% endif %}
+                <form method="post" action="{{ url_for('admin.admin_set_human_cap', human_id=h.id) }}" data-admin-form>
+                  <input class="form-input mono" name="weekly_cap_usdc" inputmode="decimal" placeholder="default" value="{{ '%g'|format(h.weekly_cap_micro / 1000000) if h.weekly_cap_micro is not none else '' }}" aria-label="Weekly cap (USDC)">
+                  <button class="btn btn-secondary btn-sm" type="submit">Set cap</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card"><p class="text-muted">No verified humans yet.</p></div>
+    {% endif %}
+  </main>
+</div>
+<script>
+  // Mutations need X-Api-Key when API_KEY is configured.
+  document.querySelectorAll('[data-admin-form]').forEach(function (form) {
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var key = document.getElementById('admin-key').value;
+      fetch(form.action, {method: 'POST', body: new FormData(form),
+                          headers: key ? {'X-Api-Key': key} : {}})
+        .then(function (resp) {
+          if (resp.ok) { window.location.reload(); return; }
+          return resp.json().then(function (body) { alert(body.error || 'Request failed'); });
+        })
+        .catch(function () { alert('Request failed'); });
+    });
+  });
+</script>
+{% endblock %}

@@ -51,6 +51,23 @@ def ban(human: Human, reason: str, *, now: Optional[datetime] = None) -> Human:
     return human
 
 
+def unban(human: Human) -> Human:
+    human.banned_at = None
+    human.ban_reason = None
+    db.session.flush()
+    return human
+
+
+def set_weekly_cap(human: Human, cap_micro: Optional[int]) -> Human:
+    """Per-human cap in micro-USDC; None falls back to HUMAN_WEEKLY_CAP_USDC."""
+    if cap_micro is not None and (isinstance(cap_micro, bool) or not isinstance(cap_micro, int)
+                                  or cap_micro < 0):
+        raise ValueError("weekly cap must be a non-negative integer (micro-USDC)")
+    human.weekly_cap_micro = cap_micro
+    db.session.flush()
+    return human
+
+
 def ensure_not_banned(human: Optional[Human]) -> None:
     if human is not None and human.banned:
         raise ApprovalError("BANNED", "this human is banned")
