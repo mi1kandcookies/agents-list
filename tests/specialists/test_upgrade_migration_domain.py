@@ -612,3 +612,64 @@ def test_residual_risks_registered(tmp_path):
 
 def test_check_defs_callable():
     assert set(C.CHECK_DEFS) and all(callable(f) for f in C.CHECK_DEFS.values())
+
+
+# === manifest, prompts, rubrics ======================================================
+
+import yaml  # noqa: E402
+
+KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+             "http_fetch", "web_search", "read_document", "record_source", "record_claim",
+             "ask_client", "post_progress", "submit_milestone"}
+KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+              "json_valid", "csv_columns", "command_succeeds", "ledger_verified", "citations_resolve",
+              "disclaimer_present", "rubric_grader", "human_signoff"}
+
+
+def load_manifest():
+    return yaml.safe_load((PKG_DIR / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_manifest_parses_and_references_known_tools_and_checks():
+    m = load_manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "upgrade-migration"
+    assert m["profile"] == "code"
+    assert m["models"]["primary"] == "anthropic:claude-opus-5"
+    assert m["models"]["grader"] == "anthropic:claude-sonnet-5"
+    tool_names = {d["name"] for d in T.TOOL_DEFS}
+    unknown_tools = set(m["tools"]) - KIT_TOOLS - tool_names
+    assert not unknown_tools, unknown_tools
+    assert tool_names <= set(m["tools"])                      # every domain tool is exposed
+    for ms in m["milestones"]:
+        for crit in ms["acceptance"]:
+            assert crit["check"] in KIT_CHECKS | set(C.CHECK_DEFS), crit["check"]
+            assert crit.get("kind", "automated") in ("automated", "rubric", "human")
+        for path in ms["deliverables"]:
+            assert path.startswith(f"deliverables/{ms['id']}/")
+        assert len(ms["hours"]) == 2 and ms["hours"][0] <= ms["hours"][1]
+    assert [ms["id"] for ms in m["milestones"]] == ["m1-assess", "m2-upgrade", "m3-migrate"]
+
+
+def test_manifest_files_exist_and_rubrics_are_well_formed():
+    m = load_manifest()
+    assert (PKG_DIR / m["prompts"]["system"]).is_file()
+    for inc in m["prompts"]["include"]:
+        assert (PKG_DIR / inc).is_file(), inc
+    rubrics = {c["params"]["rubric"] for ms in m["milestones"] for c in ms["acceptance"]
+               if c["check"] == "rubric_grader"}
+    assert rubrics
+    for rel in rubrics:
+        rub = yaml.safe_load((PKG_DIR / rel).read_text(encoding="utf-8"))
+        assert rub["name"] and 0 < rub["threshold"] <= 1
+        ids = [c["id"] for c in rub["criteria"]]
+        assert len(ids) == len(set(ids)) and all(c["weight"] > 0 and c["description"] for c in rub["criteria"])
+
+
+def test_manifest_policy_matches_tool_needs():
+    m = load_manifest()
+    assert m["egress"]["mode"] == "allowlist" and "api.osv.dev" in m["egress"]["allow"]
+    assert "git" in m["shell"]["allow"]
+    assert m["human_gate"]["required"] is False and m["human_gate"]["disclaimer"]
+    assert {f["field"] for f in m["intake"] if f["required"]} >= {"repository", "test_command", "targets"}
+    pricing = m["listing"]["pricing"]
+    assert pricing["currency"] == "USDC" and pricing["typical_low"] < pricing["typical_high"]

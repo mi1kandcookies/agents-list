@@ -1,0 +1,21 @@
+name: Migration report quality
+threshold: 0.75
+criteria:
+  - id: rules_applied
+    description: Each migration rule is listed with its detector, baseline count and final count, and the translation was applied consistently.
+    weight: 3
+  - id: verification
+    description: The report states how the result was verified (test-run ids, detector results, OSV rescan) and what the suite does not cover.
+    weight: 2
+  - id: behavior_changes
+    description: User- or API-visible behavior changes are called out explicitly with their source; none are hidden in the patch.
+    weight: 2
+  - id: residual_risk
+    description: Every open advisory and known gap is in the residual-risk register with a justification, owner action and review date.
+    weight: 2
+  - id: rollback
+    description: A concrete rollback plan exists (what to revert, data or config considerations).
+    weight: 1
+  - id: follow_ups
+    description: Follow-ups the customer must do (CI runtime versions, deploy config, removed shims) are listed specifically.
+    weight: 1
