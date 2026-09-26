@@ -135,3 +135,8 @@ past 20 gwei. Budget roughly 10× the figures above.
 Keep `.state/names.json` (git-ignored). It holds the deployed resolver and registry
 addresses and the commit secret for an unfinished root registration. If the file is
 lost, the sidecar falls back to on-chain lookups (`getSubregistry`/`getResolver`).
+
+For a reproducible operator check, run `python scripts/setup_agent_names.py` from
+the repository root. It only reads `/health` by default. Add `--setup-root` or
+the agent record flags to request writes; a live sidecar additionally requires
+`--confirm-live`. The helper never receives or prints the operator private key.

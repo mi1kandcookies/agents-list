@@ -49,6 +49,13 @@ def main() -> int:
                           "body": first.json()}, indent=2))
         return 1
     required = first.json()
+    hire_intent = ((required.get("extensions") or {}).get("hireIntent")
+                   if isinstance(required.get("extensions"), dict) else None)
+    if not isinstance(hire_intent, dict) or not hire_intent.get("id"):
+        print(json.dumps({"stage": "requirements", "status": "invalid",
+                          "error": "resource did not issue a server-owned hire intent"},
+                         indent=2))
+        return 1
     req = PaymentRequirements.from_dict((required.get("accepts") or [None])[0])
     payer = Account.from_key(payer_key)
     gate = InterceptaPreSignGate(
@@ -74,8 +81,13 @@ def main() -> int:
 
     response = requests.post(
         args.url,
-        json={"task": args.task},
+        # The protected endpoint retrieves the task from this one server-owned
+        # intent. Re-sending task text here would permit a paid retry to bind a
+        # different task or create a second intent.
+        json={"intent_id": hire_intent["id"]},
         headers={"PAYMENT-SIGNATURE": payment_signature_header(payload),
+                 "X-HIRE-INTENT": hire_intent["id"],
+                 "X-HIRE-INTENT-HASH": hire_intent.get("hash", ""),
                  "Authorization": f"Mandate {mandate}"},
         timeout=args.timeout,
     )
