@@ -79,6 +79,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
         _trust_proxy(app)
 
     db.init_app(app)
+    _enable_sqlite_wal(app)
     migrate.init_app(app, db, directory=MIGRATIONS_DIR)
     cors.init_app(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}})
     limiter.init_app(app)
@@ -132,6 +133,52 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     _register_cli(app)
     _init_database(app)
     return app
+
+
+_sqlite_wal_listener_installed = False
+
+
+def _enable_sqlite_wal(app: Flask) -> None:
+    """WAL journal mode + a busy timeout for every new SQLite connection.
+
+    The default (rollback-journal) mode takes an exclusive lock for the
+    whole duration of a write transaction, so the dev server and any
+    concurrent script (a seed command, a batch registration job) hitting the
+    same file regularly raise "database is locked". WAL lets readers proceed
+    during a writer's transaction; the busy timeout makes a genuine writer
+    conflict retry briefly instead of failing immediately. No-op for
+    Postgres or any other backend.
+    """
+    global _sqlite_wal_listener_installed
+    if not app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite:"):
+        return
+    if _sqlite_wal_listener_installed:
+        return
+    _sqlite_wal_listener_installed = True
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        # busy_timeout first: if another connection holds the file right now
+        # (e.g. a concurrent seed/registration script), let this one wait
+        # instead of failing "database is locked" immediately.
+        cursor.execute("PRAGMA busy_timeout=15000")
+        # journal_mode is a one-time, file-level setting: once any connection
+        # successfully switches it, every later connection (including this
+        # one, most of the time) just sees "wal" already set - a cheap no-op.
+        # Switching it requires momentarily exclusive access, though, so under
+        # heavy concurrent writes this specific pragma can still raise
+        # "database is locked" even with busy_timeout set. That must never
+        # take down the connection: WAL is an optimization, not a
+        # requirement, so a failed switch here is caught and ignored - the
+        # app keeps working in whatever journal mode the file is already in.
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+        except Exception:
+            pass
+        cursor.close()
 
 
 def _trust_proxy(app: Flask) -> None:

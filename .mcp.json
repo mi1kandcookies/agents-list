@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "agentslist": {
+      "type": "stdio",
+      "command": ".venv/bin/python",
+      "args": ["-m", "agentslist_mcp"],
+      "env": {
+        "MCP_API_BASE": "http://127.0.0.1:8090",
+        "MCP_API_TOKEN": "local-demo-token"
+      }
+    }
+  }
+}
