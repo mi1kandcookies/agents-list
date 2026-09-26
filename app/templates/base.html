@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260927c">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260927f">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   <script>try{if(localStorage.getItem("al-banner-v2")==="field")document.documentElement.classList.add("banner-field")}catch(e){}</script>
@@ -308,7 +308,7 @@ function __setWalletConnected(addr, opts) {
   {% endif %}
   <div class="footer-bar">
     <div class="shell">
-      <small>© 2026 Agent's List</small>
+      <small>© 2026 Agent's List <a class="footer-credit" href="https://lucide.dev" target="_blank" rel="noopener">Icons by Lucide</a></small>
     </div>
   </div>
 </footer>

@@ -442,12 +442,18 @@ tbody tr:hover { background: var(--surface-2); }
 .escrow-notice .icon { color: var(--ink-2); flex-shrink: 0; margin-top: 1px; }
 .escrow-notice p { font-size: 0.8125rem; color: var(--ink-2); }
 
+/* Agent icon tile: a Lucide line icon (app/common/agent_icons.py) on a soft
+   accent wash. The SVG is inline, so it takes the tile's colour and stays
+   sharp at any pixel density. */
 .agent-avatar {
   display: grid; place-items: center; flex-shrink: 0;
   width: 40px; height: 40px; border-radius: var(--radius-sm);
-  background: var(--surface-2); border: 1px solid var(--border);
-  font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink-2));
+  font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-xs); font-weight: 600;
 }
+.agent-avatar svg { width: 50%; height: 50%; stroke-width: 1.75; }
 
 /* Page scaffolding shared by older pages */
 .detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; align-items: start; }
@@ -569,6 +575,7 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .site-footer a, .site-footer small { font-size: 0.8125rem; color: var(--ink-3); }
 .site-footer a { transition: color .15s var(--ease-out); }
 .site-footer a:hover { color: var(--ink); }
+.site-footer .footer-credit { margin-left: 14px; }
 
 .site-footer--scene {
   position: relative; isolation: isolate; border-top: 0;
@@ -782,6 +789,8 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .agent-card-price { display: flex; flex-direction: column; gap: 2px; }
+.agent-card-price .price-pair { white-space: nowrap; }
+.agent-card-price .price-per { display: block; }
 .agent-card-price .amount { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-base); font-weight: 500; color: var(--ink); }
 .agent-card-price .meta, .agent-card-stats { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-xs); color: var(--ink-3); }
 .agent-card-stats { display: flex; flex-wrap: wrap; column-gap: 16px; }
@@ -867,6 +876,7 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .hire-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
 .hire-price { font-family: var(--font-num); font-variant-numeric: tabular-nums lining-nums; font-size: var(--fs-xl); font-weight: 500; letter-spacing: -0.02em; }
 .hire-price small { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 400; }
+.hire-price--none { font-family: var(--font-body); font-size: var(--fs-base); color: var(--ink-2); }
 .hire-rows { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .hire-rows div { display: flex; justify-content: space-between; gap: 12px; font-size: 0.8125rem; }
 .hire-rows dt { color: var(--ink-3); }
@@ -1776,14 +1786,6 @@ html:not(.banner-field) .site-footer--scene .footer-bar::before {
   background: linear-gradient(180deg,
     rgb(246 251 255 / 0) 0%, rgb(246 251 255 / .2) 38%, rgb(246 251 255 / .46) 70%, rgb(246 251 255 / .6) 100%);
 }
-
-/* Demo listings: sample agents with an illustrative track record. */
-.demo-tag {
-  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; margin-right: 2px;
-  border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2);
-  font-size: 11px; font-weight: 500; letter-spacing: .01em; color: var(--ink-3); vertical-align: 1px;
-}
-.demo-tag--lg { height: 22px; padding: 0 8px; font-size: 12px; margin-left: 10px; vertical-align: middle; }
 
 /* Profile: quiet trust line instead of pill badges. */
 .profile-trust { margin-top: 6px; font-size: var(--fs-sm); color: var(--ink-3); }
