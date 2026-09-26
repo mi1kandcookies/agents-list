@@ -547,3 +547,92 @@ def test_quotes_in_contract_requires_recorded_hash(ws):
     path.write_text(json.dumps(doc), encoding="utf-8")
     res = c.quotes_in_contract(ws, {"issues": "deliverables/m2-issues/issues.json"})
     assert res["passed"] is False and "sha256" in res["details"]
+
+
+# --- paths and delivered views ---------------------------------------------------------------
+
+def test_resolve_keeps_the_kit_workspace_rules(ws):
+    with pytest.raises(ToolError, match="internal"):
+        t.resolve(ws, ".agentkit/ledger.json")
+    with pytest.raises(ToolError, match="read-only"):
+        t.resolve(ws, "inputs/msa.txt", write=True)
+    assert t.resolve(ws, "inputs/msa.txt") == (ws / "inputs" / "msa.txt").resolve()
+
+
+def test_contract_must_resolve_under_inputs(ws):
+    # A copy the agent wrote, reached through inputs/.., is not the client's paper
+    # (same bytes, so the recorded sha256 alone would not notice).
+    (ws / "deliverables").mkdir()
+    shutil.copy(ws / "inputs" / "msa.txt", ws / "deliverables" / "msa.txt")
+    sneaky = "inputs/../deliverables/msa.txt"
+    with pytest.raises(ToolError, match="under inputs/"):
+        t.record_issues(ws, contract=sneaky, playbook="inputs/playbook.yaml",
+                        issues=_issues(), coverage=_coverage())
+    with pytest.raises(ToolError, match="under inputs/"):
+        t.build_redline(ws, contract=sneaky, ops=OPS)
+    _record(ws)
+    path = ws / "deliverables/m2-issues/issues.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["contract"] = sneaky
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert c.quotes_in_contract(ws, {"issues": "deliverables/m2-issues/issues.json"})["passed"] is False
+
+
+def test_record_issues_never_writes_into_inputs(ws):
+    with pytest.raises(ToolError, match="read-only"):
+        t.record_issues(ws, contract="inputs/msa.txt", playbook="inputs/playbook.yaml",
+                        issues=_issues(), coverage=_coverage(), out_dir="inputs")
+    assert sorted(p.name for p in (ws / "inputs").iterdir()) == ["msa.txt", "playbook.yaml"]
+
+
+def test_issue_list_valid_requires_the_rendered_views(ws):
+    _record(ws)
+    p = {"issues": "deliverables/m2-issues/issues.json", "markdown": "deliverables/m2-issues/issues.md",
+         "csv": "deliverables/m2-issues/issues.csv"}
+    assert c.issue_list_valid(ws, p)["passed"] is True
+    md = ws / p["markdown"]
+    text = md.read_text(encoding="utf-8")
+    md.write_text("\n".join(line for line in text.splitlines() if "| I2 |" not in line) + "\n",
+                  encoding="utf-8")                             # hide the critical issue
+    res = c.issue_list_valid(ws, p)
+    assert res["passed"] is False and "issues.md" in res["details"]
+
+
+def test_redline_roundtrip_checks_the_delivered_views(ws):
+    _record(ws)
+    t.build_redline(ws, contract="inputs/msa.txt", ops=OPS, issues="deliverables/m2-issues/issues.json")
+    d = ws / "deliverables/m3-redline"
+    p = {"redline": "deliverables/m3-redline/redline.json", "proposed": "deliverables/m3-redline/proposed.txt",
+         "docx": "deliverables/m3-redline/redline.docx", "markdown": "deliverables/m3-redline/redline.md"}
+    assert c.redline_roundtrip(ws, p)["passed"] is True
+    # a redline.md that shows the attorney a different change than the ops make
+    md = (d / "redline.md").read_text(encoding="utf-8")
+    (d / "redline.md").write_text(md.replace("thirty", "sixty"), encoding="utf-8")
+    res = c.redline_roundtrip(ws, p)
+    assert res["passed"] is False and "redline.md" in res["details"]
+    (d / "redline.md").write_text(md, encoding="utf-8")
+    # same text changes, plus a margin comment no op accounts for
+    ops = [dict(op) for op in OPS]
+    ops[1]["comment"] = "We accept every other term as drafted."
+    plan, _ = t.redline_plan(t.load_paragraphs(ws / "inputs/msa.txt"), ops)
+    t.write_tracked_docx(d / "redline.docx", plan, ops, author="x", date="2026-01-01T00:00:00Z")
+    res = c.redline_roundtrip(ws, p)
+    assert res["passed"] is False and "margin comments" in res["details"]
+    # a record that points at a clean .docx elsewhere: only the pinned path catches it
+    t.build_redline(ws, contract="inputs/msa.txt", ops=OPS, out_dir="deliverables/scratch")
+    rec = json.loads((d / "redline.json").read_text(encoding="utf-8"))
+    rec["docx"] = "deliverables/scratch/redline.docx"
+    (d / "redline.json").write_text(json.dumps(rec), encoding="utf-8")
+    assert c.redline_roundtrip(ws, {"redline": p["redline"]})["passed"] is True
+    assert c.redline_roundtrip(ws, p)["passed"] is False
+
+
+def test_manifest_pins_the_delivered_paths():
+    m = _manifest()
+    checks = {a["check"]: a.get("params", {}) for ms in m["milestones"] for a in ms["acceptance"]}
+    assert checks["redline_roundtrip"]["docx"] == "deliverables/m3-redline/redline.docx"
+    assert checks["redline_roundtrip"]["proposed"] == "deliverables/m3-redline/proposed.txt"
+    assert checks["redline_roundtrip"]["markdown"] == "deliverables/m3-redline/redline.md"
+    assert checks["references_resolve"]["proposed"] == "deliverables/m3-redline/proposed.txt"
+    assert checks["issue_list_valid"]["markdown"] == "deliverables/m2-issues/issues.md"
+    assert checks["issue_list_valid"]["csv"] == "deliverables/m2-issues/issues.csv"
