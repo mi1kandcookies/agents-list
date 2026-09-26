@@ -22,7 +22,9 @@ from agentkit.llm import ModelAdapter, ModelRef, ScriptedAdapter, get_adapter
 from agentkit.loop import Limits, RunOutcome, Runner
 from agentkit.manifest import Manifest, load_manifest, operator_fields, parse_manifest, spec_hash
 from agentkit.policy import PolicyGate
+from agentkit.registry import list_specialists, load_specialist
 from agentkit.security import host_allowed, redact, wrap_untrusted
+from agentkit.specialist import RunContext, Specialist, build_adapter, resolve_model_refs
 from agentkit.tools import (CommandResult, FetchResult, Tool, ToolContext, ToolRegistry,
                             builtin_registry, tools_from_defs)
 from agentkit.types import (AcceptanceCriterion, Artifact, Brief, CheckResult, Estimate,
@@ -30,14 +32,16 @@ from agentkit.types import (AcceptanceCriterion, Artifact, Brief, CheckResult, E
                             Submission, ToolCall, ToolResult, ToolSpec, Usage)
 
 __all__ = [
-    "AcceptanceCriterion", "AgentKitError", "Artifact", "Brief", "BudgetExceeded", "CheckContext",
-    "CheckRegistry", "CheckResult", "Checkpoint", "CommandResult", "Estimate", "Event", "EventSink",
-    "FetchResult", "HumanReview", "Journal", "JsonlSink", "Ledger", "Limits", "Manifest",
-    "ManifestError", "MemorySink", "Message", "MilestoneSpec", "MissingInput", "ModelAdapter",
-    "ModelError", "ModelRef", "ModelResponse", "MultiSink", "NullSink", "PolicyGate",
-    "PolicyViolation", "RunOutcome", "Runner", "ScriptedAdapter", "Submission", "Tool", "ToolCall",
-    "ToolContext", "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage", "artifact_for",
-    "builtin_registry", "canonical_json", "default_registry", "evidence_hash", "get_adapter",
-    "host_allowed", "load_manifest", "operator_fields", "parse_manifest", "platform_evidence",
-    "redact", "run_checks", "sha256_file", "spec_hash", "tools_from_defs", "wrap_untrusted",
+    "AcceptanceCriterion", "AgentKitError", "Artifact", "Brief", "BudgetExceeded",
+    "CheckContext", "CheckRegistry", "CheckResult", "Checkpoint", "CommandResult", "Estimate",
+    "Event", "EventSink", "FetchResult", "HumanReview", "Journal", "JsonlSink", "Ledger",
+    "Limits", "Manifest", "ManifestError", "MemorySink", "Message", "MilestoneSpec",
+    "MissingInput", "ModelAdapter", "ModelError", "ModelRef", "ModelResponse", "MultiSink",
+    "NullSink", "PolicyGate", "PolicyViolation", "RunContext", "RunOutcome", "Runner",
+    "ScriptedAdapter", "Specialist", "Submission", "Tool", "ToolCall", "ToolContext",
+    "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage", "artifact_for",
+    "build_adapter", "builtin_registry", "canonical_json", "default_registry", "evidence_hash",
+    "get_adapter", "host_allowed", "list_specialists", "load_manifest", "load_specialist",
+    "operator_fields", "parse_manifest", "platform_evidence", "redact", "resolve_model_refs", "run_checks",
+    "sha256_file", "spec_hash", "tools_from_defs", "wrap_untrusted",
 ]
