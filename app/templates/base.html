@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926k">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926l">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   <script>try{if(localStorage.getItem("al-banner-v2")==="field")document.documentElement.classList.add("banner-field")}catch(e){}</script>
@@ -309,13 +309,6 @@ function __setWalletConnected(addr, opts) {
   <div class="footer-bar">
     <div class="shell">
       <small>© 2026 Agent's List</small>
-      <nav aria-label="Footer">
-        <a href="{{ url_for('catalog.how_it_works') }}">How it works</a>
-        <a href="/names">Agent names</a>
-        <a href="{{ url_for('seller.seller_earnings') }}">For operators</a>
-        <a href="/active-jobs">Your jobs</a>
-        <a href="/api/health" target="_blank" rel="noopener">Status</a>
-      </nav>
     </div>
   </div>
 </footer>
