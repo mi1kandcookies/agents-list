@@ -737,7 +737,7 @@ function makeDoughnutChart(id, labels, data, colors) {
 // ── Theme Toggle ─────────────────────────────────────────────────────────────
 (function initTheme() {
   const root  = document.documentElement;
-  const saved = localStorage.getItem('ah_theme') || 'dark';
+  const saved = localStorage.getItem('ah_theme') || 'light';
   root.setAttribute('data-theme', saved);
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -751,5 +751,4 @@ function makeDoughnutChart(id, labels, data, colors) {
     });
   });
 })();
-
 

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260420e">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926a">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   {% block head %}{% endblock %}
@@ -16,31 +16,9 @@
 
 <!-- ── Navigation ────────────────────────────────────────────────────────── -->
 <nav class="nav">
-  <a href="/" class="nav-logo" style="gap:0;" aria-label="Agent's List">
-    <svg class="logo-lockup" width="100%" viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-      <defs>
-        <radialGradient id="ahBody" cx="48%" cy="30%" r="72%"><stop offset="0%" stop-color="#303030"/><stop offset="45%" stop-color="#141414"/><stop offset="100%" stop-color="#000000"/></radialGradient>
-        <radialGradient id="ahHead" cx="50%" cy="30%" r="68%"><stop offset="0%" stop-color="#3A3A3A"/><stop offset="55%" stop-color="#141414"/><stop offset="100%" stop-color="#000000"/></radialGradient>
-        <radialGradient id="ahEye" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="#ffa0a0"/><stop offset="40%" stop-color="#e23434"/><stop offset="100%" stop-color="#8a1212"/></radialGradient>
-        <filter id="ahEyeGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-      </defs>
-      <g transform="translate(6, 4)">
-        <path d="M 10 82 C 4 108 10 142 63 170 C 116 142 122 108 116 82 C 102 72 84 68 63 68 C 42 68 24 72 10 82 Z" fill="url(#ahBody)"/>
-        <ellipse cx="63" cy="42" rx="40" ry="40" fill="url(#ahHead)"/>
-        <path d="M 22 80 C 38 74 52 70 63 70 C 74 70 88 74 104 80 C 98 86 82 90 63 90 C 44 90 28 86 22 80 Z" fill="#000000" opacity="0.7"/>
-        <ellipse cx="63" cy="22" rx="22" ry="9" fill="#ffffff" opacity="0.08"/>
-        <ellipse cx="63" cy="118" rx="16" ry="26" fill="#ffffff" opacity="0.05"/>
-        <g filter="url(#ahEyeGlow)">
-          <circle cx="46" cy="44" r="7" fill="url(#ahEye)"/>
-          <circle cx="80" cy="44" r="7" fill="url(#ahEye)"/>
-        </g>
-        <circle cx="46" cy="42" r="1.8" fill="#ffd4d4"/>
-        <circle cx="80" cy="42" r="1.8" fill="#ffd4d4"/>
-      </g>
-      <text x="160" y="118" font-family="'DM Sans','Helvetica Neue',Arial,sans-serif" font-size="60" font-weight="700" letter-spacing="3">
-        <tspan class="logo-agent" fill="#ffffff">AGENT’S</tspan><tspan fill="#CE2E2E"> LIST</tspan>
-      </text>
-    </svg>
+  <a href="/" class="nav-logo" aria-label="Agent's List">
+    <img class="logo-mark" src="{{ url_for('static', filename='img/agents-list-mark.png') }}" alt="">
+    <span class="logo-wordmark">Agent's List</span>
   </a>
 
   <ul class="nav-links">
@@ -85,13 +63,13 @@
         <span>Connect Wallet</span>
       </button>
       <!-- Wallet picker popup — rendered inline, shown on wallet-btn click when disconnected -->
-      <div id="wallet-picker" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:280px; background:#0f1115; border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.6); padding:14px; z-index:9000;">
+      <div id="wallet-picker" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:280px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); padding:14px; z-index:9000;">
         <div style="font-family:var(--font-mono); font-size:.56rem; text-transform:uppercase; letter-spacing:.12em; color:var(--text-3); margin-bottom:10px;">Connect a wallet</div>
         <div id="wp-status" style="display:none; font-size:.72rem; color:var(--text-2); background:rgba(95,227,227,.06); border:1px solid rgba(95,227,227,.18); border-radius:6px; padding:8px 10px; margin-bottom:10px; line-height:1.5;"></div>
         <div id="wp-options" style="display:flex; flex-direction:column; gap:8px;"></div>
       </div>
       <!-- Connected-state menu — shown when wallet is connected -->
-      <div id="wallet-menu" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:260px; background:#0f1115; border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.6); padding:14px; z-index:9000;">
+      <div id="wallet-menu" style="display:none; position:absolute; top:calc(100% + 8px); right:0; width:260px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); padding:14px; z-index:9000;">
         <div style="font-family:var(--font-mono); font-size:.56rem; text-transform:uppercase; letter-spacing:.12em; color:var(--text-3); margin-bottom:6px;">Connected</div>
         <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:12px;">
           <span id="wm-addr" style="font-family:var(--font-mono); font-size:.85rem; font-weight:600;">—</span>

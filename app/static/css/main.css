@@ -1,53 +1,42 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   Agent's List - product design system
-   Direction: Bloomberg precision × Swiss grid × high-end auction house
-   Agents are economic actors. The UI is professional infrastructure.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* Agent's List product design system: calm, precise, and trust-forward. */
 
 /* ── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  /* Surfaces */
-  --bg:        #0A0A0A;
-  --card:      #1E1E1E;
-  --card-2:    #141414;
-  --card-3:    #2A2A2A;
-  --border:    #3A3A3A;
-  --border-2:  #444444;
+  /* Ledger Indigo: warm white surfaces with one focused action color. */
+  --bg:        #FAFAF9;
+  --card:      #FFFFFF;
+  --card-2:    #F5F5F4;
+  --card-3:    #EEF2FF;
+  --border:    #E7E5E4;
+  --border-2:  #D6D3D1;
 
-  /* Text */
-  --text:      #FFFFFF;
-  --text-2:    #AAAAAA;
-  --text-3:    #666666;
-  --text-4:    #444444;
+  --text:      #1C1917;
+  --text-2:    #57534E;
+  --text-3:    #78716C;
+  --text-4:    #A8A29E;
 
-  /* Brand red - primary actions, CTAs, logo accent */
-  --red:           #E84142;
-  --red-dark:      #A32D2D;
-  --red-darkest:   #501313;
-  --red-dim:       rgba(232,65,66,.12);
-  --red-border:    rgba(232,65,66,.30);
+  /* Legacy --red names remain as compatibility aliases for existing views. */
+  --red:           #4F46E5;
+  --red-dark:      #3730A3;
+  --red-darkest:   #1E1B4B;
+  --red-dim:       rgba(79,70,229,.10);
+  --red-border:    rgba(79,70,229,.25);
 
-  /* Green - verified / trust / success only */
-  --green:         #22C55E;
-  --green-dim:     rgba(34,197,94,.10);
-  --green-border:  rgba(34,197,94,.22);
+  --green:         #059669;
+  --green-dim:     rgba(5,150,105,.10);
+  --green-border:  rgba(5,150,105,.22);
+  --amber:         #D97706;
+  --amber-dim:     rgba(217,119,6,.10);
+  --amber-border:  rgba(217,119,6,.22);
+  --blue:          #2563EB;
+  --blue-dim:      rgba(37,99,235,.10);
+  --blue-border:   rgba(37,99,235,.22);
 
-  /* Amber - surge / warning */
-  --amber:         #F59E0B;
-  --amber-dim:     rgba(245,158,11,.10);
-  --amber-border:  rgba(245,158,11,.22);
-
-  /* Blue - info only */
-  --blue:          #3B82F6;
-  --blue-dim:      rgba(59,130,246,.10);
-  --blue-border:   rgba(59,130,246,.22);
-
-  /* Compatibility aliases */
-  --accent:    #E84142;
-  --accent-2:  #E84142;
-  --success:   #22C55E;
-  --warning:   #F59E0B;
-  --error:     #E84142;
+  --accent:    #4F46E5;
+  --accent-2:  #6366F1;
+  --success:   #059669;
+  --warning:   #D97706;
+  --error:     #B91C1C;
 
   /* Geometry */
   --radius:    6px;
@@ -55,8 +44,8 @@
   --radius-lg: 10px;
 
   /* Elevation */
-  --shadow:    0 2px 12px rgba(0,0,0,.6);
-  --shadow-lg: 0 4px 28px rgba(0,0,0,.8);
+  --shadow:    0 2px 12px rgba(28,25,23,.08);
+  --shadow-lg: 0 12px 32px rgba(28,25,23,.12);
   --transition: 0.14s ease;
 
   /* Fonts */
@@ -67,32 +56,43 @@
   --surface-1: var(--card-2);
 }
 
-/* ── Light Mode ────────────────────────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg:        #FFFFFF;
-  --card:      #FAFAFA;
-  --card-2:    #F4F4F5;
-  --card-3:    #EBEBEC;
-  --border:    #E4E4E7;
-  --border-2:  #D4D4D8;
-
-  --text:      #09090B;
-  --text-2:    #52525B;
-  --text-3:    #A1A1AA;
-  --text-4:    #D4D4D8;
-
-  --red-dim:      rgba(232,65,66,.07);
-  --red-border:   rgba(232,65,66,.20);
-  --green-dim:    rgba(34,197,94,.07);
-  --green-border: rgba(34,197,94,.18);
-  --amber-dim:    rgba(245,158,11,.07);
-  --amber-border: rgba(245,158,11,.18);
-  --blue-dim:     rgba(59,130,246,.07);
-  --blue-border:  rgba(59,130,246,.18);
-
-  --shadow:    0 2px 12px rgba(0,0,0,.07);
-  --shadow-lg: 0 4px 28px rgba(0,0,0,.10);
+/* The toggle keeps a composed dark variant for operators who prefer it. */
+[data-theme="dark"] {
+  --bg:        #111827;
+  --card:      #1F2937;
+  --card-2:    #172033;
+  --card-3:    #273449;
+  --border:    #374151;
+  --border-2:  #4B5563;
+  --text:      #F9FAFB;
+  --text-2:    #D1D5DB;
+  --text-3:    #9CA3AF;
+  --text-4:    #6B7280;
+  --red:           #818CF8;
+  --red-dark:      #6366F1;
+  --red-darkest:   #312E81;
+  --red-dim:       rgba(129,140,248,.16);
+  --red-border:    rgba(129,140,248,.32);
+  --accent:        #818CF8;
+  --accent-2:      #A5B4FC;
+  --success:       #34D399;
+  --warning:       #FBBF24;
+  --error:         #F87171;
+  --green:         #34D399;
+  --green-dim:     rgba(52,211,153,.13);
+  --green-border:  rgba(52,211,153,.28);
+  --amber:         #FBBF24;
+  --amber-dim:     rgba(251,191,36,.13);
+  --amber-border:  rgba(251,191,36,.28);
+  --blue:          #60A5FA;
+  --blue-dim:      rgba(96,165,250,.13);
+  --blue-border:   rgba(96,165,250,.28);
+  --shadow:        0 2px 12px rgba(0,0,0,.25);
+  --shadow-lg:     0 12px 32px rgba(0,0,0,.35);
 }
+
+/* Explicit light selector keeps saved preferences predictable. */
+[data-theme="light"] { color-scheme: light; }
 
 /* ── Reset & Base ──────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -289,13 +289,29 @@ p  { color: var(--text-2); }
 
 .logo-mark-svg {
   display: block;
-  height: 32px;
+  height: 34px;
   width: auto;
   flex-shrink: 0;
 }
 
-/* keep old class name as alias so nothing else breaks */
-.logo-mark { display: block; height: 32px; width: auto; flex-shrink: 0; }
+.logo-mark {
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+}
+
+.logo-wordmark {
+  color: var(--text);
+  font-size: .98rem;
+  font-weight: 700;
+  letter-spacing: -.025em;
+  white-space: nowrap;
+}
 
 .nav-links {
   display: flex;

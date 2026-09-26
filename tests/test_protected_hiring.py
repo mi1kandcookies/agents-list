@@ -129,3 +129,12 @@ def test_protected_hiring_is_visible_in_the_browser_entry_points(client, hiring_
     assert demo.status_code == 200
     assert b"Approve exact purchase" in demo.data
     assert b"Intercepta" in demo.data
+
+    logo = client.get("/static/img/agents-list-mark.png")
+    assert logo.status_code == 200
+    assert logo.mimetype == "image/png"
+
+    css = client.get("/static/css/main.css")
+    assert css.status_code == 200
+    assert b"#FAFAF9" in css.data
+    assert b"#4F46E5" in css.data
