@@ -1048,6 +1048,14 @@ def test_approved_inputs_unchanged(ws):
 
 # --- prompts and fixtures --------------------------------------------------------------------------
 
+def test_prompts_do_not_reuse_quoted_reference_text():
+    quoted = re.findall(r'"([^"]{12,})"', (PKG / "REFERENCES.md").read_text(encoding="utf-8"))
+    prompts = [PKG / "prompts" / "system.md", *(PKG / "playbook").glob("*.md")]
+    text = " ".join(" ".join(p.read_text(encoding="utf-8").lower().split()) for p in prompts)
+    assert not [q for q in quoted if " ".join(q.lower().split()) in text]
+    assert "> disclaimer" not in (PKG / "playbook" / "redline-style.md").read_text(encoding="utf-8")
+
+
 def test_m3_eval_fixture_is_an_approved_issue_list_for_the_canonical_msa():
     ws = FIX / "m3_msa_workspace"
     msa = "inputs/northwind_saas_msa.txt"
