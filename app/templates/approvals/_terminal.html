@@ -1,0 +1,43 @@
+<div class="apr-panel apr-terminal" id="approval-terminal" data-outcome="{{ approval.state }}{% if approval.failure_code == 'REPLAYED_TOKEN' %}-replay{% endif %}">
+{% if approval.state == 'consumed' %}
+  <h2>Approved</h2>
+  <p class="apr-muted">{{ result.summary if result and result.summary else 'The action was carried out.' }}</p>
+  {% if result and result.ledger_ids %}
+  <p class="apr-muted">Ledger: {{ result.ledger_ids | join(', ') }}</p>
+  {% endif %}
+  {% if replays %}
+  <p class="apr-muted" id="approval-replay-note">Replay blocked: {{ replays }} later attempt{{ 's' if replays != 1 }} to reuse this approval {{ 'were' if replays != 1 else 'was' }} refused.</p>
+  {% endif %}
+  {% if result and result.redirect %}
+  <div class="apr-actions"><a class="btn btn-primary" href="{{ result.redirect }}">Continue</a></div>
+  {% endif %}
+{% elif approval.state == 'approved' %}
+  <h2>Approved</h2>
+  <p class="apr-muted">Approved by World ID. Waiting for the action to be carried out.</p>
+{% elif approval.state == 'denied' %}
+  <h2>Denied</h2>
+  <p class="apr-muted">The approval was declined in World ID. Nothing was done.</p>
+{% elif approval.state == 'expired' %}
+  <h2>Expired</h2>
+  <p class="apr-muted">This approval request expired before it was approved. Nothing was done.
+    Ask for a new approval to continue.</p>
+{% elif approval.state == 'cancelled' %}
+  <h2>Cancelled</h2>
+  <p class="apr-muted">This approval request was cancelled. Nothing was done.</p>
+{% elif approval.state == 'rejected' and approval.failure_code == 'REPLAYED_TOKEN' %}
+  <h2>Replay blocked</h2>
+  <p class="apr-muted">{{ failure }} Nothing was done.</p>
+{% elif approval.state == 'rejected' %}
+  <h2>Rejected</h2>
+  <p class="apr-muted">{{ failure }} Nothing was done.</p>
+  <p class="apr-muted mono">Reason: {{ approval.failure_code }}</p>
+{% elif approval.state == 'blocked' %}
+  <h2>Blocked</h2>
+  <p class="apr-muted">{{ failure }} Nothing was done.</p>
+  <p class="apr-muted mono">Reason: {{ approval.failure_code }}</p>
+{% elif approval.state == 'failed' %}
+  <h2>Failed</h2>
+  <p class="apr-muted">{{ failure }} This approval cannot be used again.</p>
+  {% if result and result.summary %}<p class="apr-muted mono">{{ result.summary }}</p>{% endif %}
+{% endif %}
+</div>
