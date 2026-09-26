@@ -56,11 +56,13 @@ def test_home_stats_count_listed_agents_and_held_funds(client, db, agent):
     assert values[:3] == ["1", "1", "12.50"]
 
 
-def test_new_suggests_matching_agents(client, agent):
+def test_new_serves_the_guided_flow(client, agent):
+    # /new is the guided flow (app/intake); agent matching happens in its
+    # estimate step. Detailed coverage lives in tests/test_intake.py.
     html = client.get("/new?q=I+need+someone+to+write+tests").get_data(as_text=True)
+    assert 'id="flow-form"' in html and "I need someone to write tests" in html
+    html = client.get(f"/new?agent={agent}").get_data(as_text=True)
     assert "Test Agent" in html
-    html = client.get("/new?q=unrelated+gardening").get_data(as_text=True)
-    assert "No listed agent matches yet" in html
 
 
 def test_unverified_agent_card_has_no_trust_badges(client, agent):

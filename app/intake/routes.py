@@ -1,11 +1,12 @@
 """Routes for the intake blueprint."""
 from __future__ import annotations
 
-from flask import abort, render_template, request
+from flask import render_template, request
 
 from app.extensions import db
 from app.intake import bp
-from app.intake.estimate import AUTO_RELEASE_DAYS, BUFFER, CATEGORIES, estimate
+from app.intake.estimate import AUTO_RELEASE_DAYS, BUFFER, CATEGORIES, category_for, estimate
+from app.services import get_agent
 
 MAX_PREFILL = 500
 
@@ -18,9 +19,16 @@ def flow_config() -> dict:
 
 @bp.route("/new")
 def new_job():
+    """The guided flow. ?q= prefills the outcome (home search box); ?agent=
+    preselects an agent (the "Get estimate" link on an agent profile)."""
     prefill = (request.args.get("q") or "").strip()[:MAX_PREFILL]
+    agent = get_agent(request.args.get("agent")) if request.args.get("agent") else None
+    preselect = None
+    if agent:
+        cat = category_for(agent["category"])
+        preselect = dict(agent, category_key=cat["key"] if cat else None)
     return render_template("intake/new.html", prefill=prefill, config=flow_config(),
-                           auto_release_days=AUTO_RELEASE_DAYS)
+                           agent=preselect, auto_release_days=AUTO_RELEASE_DAYS)
 
 
 def _criteria(acceptance: str) -> list[str]:
@@ -34,7 +42,7 @@ def engagement_estimate(engagement_id: str):
     from app.models import Engagement
     eng = db.session.get(Engagement, engagement_id)
     if eng is None:
-        abort(404)
+        return render_template("404.html", missing=f"engagement {engagement_id}"), 404
     milestones = [{"idx": m.idx, "title": m.title, "criteria": _criteria(m.acceptance),
                    "amount_cents": (m.amount_micro or 0) // 10_000} for m in eng.milestones]
     est = estimate(outcome=eng.outcome,

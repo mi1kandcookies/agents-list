@@ -239,8 +239,14 @@
     state = freshState(prefill);
   }
   if (state.step > 8) state.step = 8; // never land on the approve screen from a reload
-  // The prefill has been applied; drop ?q so a reload restores later edits.
-  if (prefill && window.history.replaceState) {
+  // ?agent= (the "Get estimate" link on an agent profile) preselects that agent.
+  var picked = JSON.parse($("#flow-agent").textContent || "null");
+  if (picked && (!state.agent || state.agent.id !== agentKey(picked))) {
+    state.agent = agentChoice(picked);
+    if (picked.category_key && state.step <= 2) { state.category = picked.category_key; state.categoryGuessed = false; }
+  }
+  // The prefill has been applied; drop the query so a reload restores later edits.
+  if ((prefill || picked) && window.history.replaceState) {
     try { window.history.replaceState(null, "", window.location.pathname); } catch (e) { /* ignore */ }
   }
   function save() { store.save(state); }
@@ -510,6 +516,7 @@
       .then(function (r) { return r.ok ? r.json() : []; }).then(agentList).catch(function () { return []; });
   }
   function agentKey(a) { return String(a.agent_id || a.public_id || a.id); }
+  function agentChoice(a) { return { id: agentKey(a), name: a.name, card: a }; }
   function priceText(a) {
     if (a.price_hint_usdc != null) return money(a.price_hint_usdc) + " USDC";
     if (a.billing === "per_token") {
@@ -545,6 +552,9 @@
         ]));
         return;
       }
+      // Keep an agent chosen from its profile visible even outside this category.
+      var chosen = state.agent && state.agent.card;
+      if (chosen && !list.some(function (a) { return agentKey(a) === state.agent.id; })) list = [chosen].concat(list).slice(0, 3);
       if (state.agent && !list.some(function (a) { return agentKey(a) === state.agent.id; })) state.agent = null;
       list.forEach(function (a) { box.appendChild(agentCard(a)); });
       renderSummary();
@@ -556,7 +566,7 @@
     var jobs = Number(a.tasks_completed) || 0;
     var input = el("input", { type: "radio", name: "agent", value: key, checked: state.agent && state.agent.id === key ? "checked" : null,
       onchange: function () {
-        state.agent = { id: key, name: a.name, price: priceText(a) };
+        state.agent = agentChoice(a);
         save(); renderSummary(); showError($("#e-7"), "");
       } });
     return el("label", { "class": "agent" }, [
