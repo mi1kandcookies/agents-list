@@ -22,6 +22,23 @@ import os
 from typing import Optional
 
 
+def _flag(name: str, default: str) -> bool:
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _database_url() -> str:
+    """DATABASE_URL, defaulting to SQLite in the instance folder.
+
+    Bare postgres:// and postgresql:// URLs are pinned to the psycopg (v3)
+    driver so the result does not depend on SQLAlchemy's default dialect.
+    """
+    url = os.environ.get("DATABASE_URL", "").strip() or "sqlite:///agents_list.db"
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            url = "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 class Config:
     """Base configuration - shared across all environments."""
 
@@ -32,9 +49,7 @@ class Config:
     ENV_NAME: str = os.environ.get("FLASK_ENV", "development")
 
     # ── Database ───────────────────────────────────────────────────────────
-    SQLALCHEMY_DATABASE_URI: str = os.environ.get(
-        "DATABASE_URL", "sqlite:///agents_list.db"
-    )
+    SQLALCHEMY_DATABASE_URI: str = _database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     SQLALCHEMY_ECHO: bool = False  # Set True to log all SQL in development
 
@@ -46,9 +61,6 @@ class Config:
     ]
 
     # ── Rate limiting ──────────────────────────────────────────────────────
-    # Demo mode runs lots of client-side polling (ticker, sim status, agent
-    # metadata); 120/min hits the wall fast. 600/min = 10/sec still protects
-    # against abuse while letting the demo breathe.
     RATELIMIT_DEFAULT: str = os.environ.get("RATELIMIT_DEFAULT", "600/minute")
     RATELIMIT_STORAGE_URI: str = "memory://"  # swap to redis:// in production
     RATELIMIT_HEADERS_ENABLED: bool = True
@@ -63,16 +75,17 @@ class Config:
     RPC_URL: str = os.environ.get("RPC_URL", "https://api.avax-test.network/ext/C/rpc")
 
     # ── Runtime behavior controls ──────────────────────────────────────────
-    # Keep development convenient while requiring explicit opt-in in production.
-    AUTO_SEED_DATA: bool = os.environ.get("AUTO_SEED_DATA", "1").strip().lower() in {"1", "true", "yes", "on"}
-    STRICT_PROD_VALIDATION: bool = os.environ.get("STRICT_PROD_VALIDATION", "1").strip().lower() in {"1", "true", "yes", "on"}
+    # AUTO_MIGRATE: run `alembic upgrade head` at boot. On by default for local
+    # development so a fresh checkout just works; production runs
+    # `flask --app wsgi db upgrade` explicitly (see docker-compose.yml).
+    AUTO_MIGRATE: bool = _flag("AUTO_MIGRATE", "1")
+    STRICT_PROD_VALIDATION: bool = _flag("STRICT_PROD_VALIDATION", "1")
 
 
 class DevelopmentConfig(Config):
     """Development - verbose, SQLite, no strict auth."""
     DEBUG = True
     SQLALCHEMY_ECHO = False  # flip to True to debug queries
-    AUTO_SEED_DATA = True
 
 
 class TestingConfig(Config):
@@ -80,13 +93,13 @@ class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     RATELIMIT_ENABLED = False
-    AUTO_SEED_DATA = True
+    AUTO_MIGRATE = False  # tests build the schema with create_all()
 
 
 class ProductionConfig(Config):
     """Production - strict, no debug, env-driven secrets."""
     DEBUG = False
-    AUTO_SEED_DATA = os.environ.get("AUTO_SEED_DATA", "0").strip().lower() in {"1", "true", "yes", "on"}
+    AUTO_MIGRATE = _flag("AUTO_MIGRATE", "0")
 
     @classmethod
     def init_app(cls, app):

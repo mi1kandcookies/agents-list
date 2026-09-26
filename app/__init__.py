@@ -21,6 +21,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 _ROOT = Path(__file__).resolve().parent.parent
+MIGRATIONS_DIR = str(Path(__file__).resolve().parent / "models" / "migrations")
 
 
 def _load_dotenv(path: Path) -> None:
@@ -40,13 +41,14 @@ def _load_dotenv(path: Path) -> None:
 _load_dotenv(_ROOT / ".env")
 
 from app.config import config as _config_map, validate_runtime_config  # noqa: E402
-from app.extensions import cors, db, limiter  # noqa: E402
+from app.extensions import cors, db, limiter, migrate  # noqa: E402
 
 log = logging.getLogger("agents_list")
 
 
-def create_app(config_name: str | None = None) -> Flask:
-    """Build and configure a Flask app instance."""
+def create_app(config_name: str | None = None, **overrides) -> Flask:
+    """Build and configure a Flask app instance. Keyword overrides are applied
+    on top of the selected config class (handy in tests)."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
@@ -57,16 +59,18 @@ def create_app(config_name: str | None = None) -> Flask:
     name = config_name or os.environ.get("FLASK_ENV", "development")
     config_cls = _config_map.get(name, _config_map["default"])
     app.config.from_object(config_cls)
+    app.config.update(overrides)
     if hasattr(config_cls, "init_app"):
         config_cls.init_app(app)
     validate_runtime_config(app)
 
     db.init_app(app)
+    migrate.init_app(app, db, directory=MIGRATIONS_DIR)
     cors.init_app(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}})
     limiter.init_app(app)
 
-    # Import models so their tables are registered on db.metadata before any
-    # create_all()/migration runs. (Upstream called create_all() before the
+    # Import models so their tables are registered on db.metadata before
+    # migrations or create_all() run. (Upstream called create_all() before the
     # models were imported, so a fresh database came up with no tables.)
     from app import models  # noqa: F401
 
@@ -123,11 +127,28 @@ def _register_cli(app: Flask) -> None:
 
 
 def _init_database(app: Flask) -> None:
-    """Create tables for local development databases."""
+    """Bring the database schema to head when AUTO_MIGRATE is on.
+
+    A database created by the pre-migration create_all() bootstrap (tables but
+    no alembic_version) is stamped at the initial revision first so upgrade
+    does not try to recreate existing tables.
+    """
+    if not app.config.get("AUTO_MIGRATE"):
+        return
+    from flask_migrate import stamp, upgrade
+    from sqlalchemy import inspect
+
     with app.app_context():
         try:
-            db.create_all()
-            from app.models import _ensure_columns
-            _ensure_columns(app)
+            tables = set(inspect(db.engine).get_table_names())
+            if "agents" in tables and "alembic_version" not in tables:
+                log.info("stamping pre-migration database at the initial revision")
+                stamp(directory=MIGRATIONS_DIR, revision=INITIAL_REVISION)
+            upgrade(directory=MIGRATIONS_DIR)
         except Exception as exc:  # never block boot on the dev DB
-            log.warning("database init skipped: %s", exc)
+            log.warning("database migration skipped: %s", exc)
+
+
+# First Alembic revision (app/models/migrations/versions); used to stamp
+# databases that predate migrations.
+INITIAL_REVISION = "0001_initial"

@@ -1,11 +1,14 @@
 .git
 .gitignore
+.venv/
+venv/
+.worktrees/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .env
 instance/
+*.db
+.pytest_cache/
 tests/
-scripts/
-agent-transcripts/

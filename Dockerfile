@@ -19,7 +19,8 @@ EXPOSE 5000
 
 # Production defaults (override via env in deployment platform)
 ENV FLASK_ENV=production
-ENV AUTO_SEED_DATA=0
 ENV STRICT_PROD_VALIDATION=1
+ENV AUTO_MIGRATE=0
 
-CMD ["gunicorn", "-w", "2", "-k", "gthread", "--threads", "4", "-b", "0.0.0.0:5000", "wsgi:app"]
+# Apply migrations, then serve.
+CMD ["sh", "-c", "flask --app wsgi db upgrade && exec gunicorn -w 2 -k gthread --threads 4 -b 0.0.0.0:5000 wsgi:app"]

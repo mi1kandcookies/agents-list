@@ -297,30 +297,3 @@ class ChainTransaction(db.Model):
             "amountUSDCDisplay": round(self.amount_usdc / 1_000_000, 4),
             "meta": json.loads(self.meta or "{}"),
         }
-
-
-# ── Schema helper ─────────────────────────────────────────────────────────────
-
-def _ensure_columns(app) -> None:
-    """Add any missing columns to the agents table (idempotent).
-
-    Flask-SQLAlchemy's create_all does not ALTER existing tables, so we run
-    targeted ALTERs for columns introduced after the first schema.
-    Stopgap until real migrations land.
-    """
-    with app.app_context():
-        if db.engine.dialect.name != "sqlite":
-            return
-        cols = {c[1] for c in db.session.execute(db.text("PRAGMA table_info(agents)")).fetchall()}
-        needed = {
-            "model_provider":      "VARCHAR(40)",
-            "model_name":          "VARCHAR(80)",
-            "deployer_wallet":     "VARCHAR(64)",
-            "input_price_per_1m":  "INTEGER NOT NULL DEFAULT 0",
-            "output_price_per_1m": "INTEGER NOT NULL DEFAULT 0",
-        }
-        for col, ddl in needed.items():
-            if cols and col not in cols:
-                app.logger.info("ALTER TABLE agents ADD COLUMN %s", col)
-                db.session.execute(db.text(f"ALTER TABLE agents ADD COLUMN {col} {ddl}"))
-        db.session.commit()

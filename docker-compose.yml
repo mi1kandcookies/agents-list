@@ -1,0 +1,45 @@
+# Local stack: Flask app (gunicorn) + Postgres.
+#
+#   docker compose up --build
+#   open http://localhost:8090
+#
+# The web container runs `flask db upgrade` before starting gunicorn.
+# Load sample listings with:
+#   docker compose exec web flask --app wsgi seed
+#
+# The roadmap adds a worker and Redis here (see docs/ARCHITECTURE.md).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agents
+      POSTGRES_PASSWORD: agents
+      POSTGRES_DB: agents_list
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agents -d agents_list"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5433:5432"   # host port 5433 avoids clashing with a local Postgres
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-development}
+      DATABASE_URL: postgresql://agents:agents@db:5432/agents_list
+      AUTO_MIGRATE: "0"
+      SECRET_KEY: ${SECRET_KEY:-local-compose-secret}
+    ports:
+      - "8090:5000"
+
+volumes:
+  pgdata:
