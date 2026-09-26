@@ -209,8 +209,9 @@ def test_map_claims_merges_and_validates(ws):
         tools.map_claims(ws, mapping={"C99": ["Q1.1"]})
     with pytest.raises(ToolError, match="lists of leaf"):
         tools.map_claims(ws, mapping={"C1": "Q1.1"})
-    with pytest.raises(ToolError, match="as_of dates"):
-        tools.map_claims(ws, as_of={"C1": "last spring"})
+    for bad in ("last spring", "2025-00", "2025-02-30", "2025-02-00", "2025\n"):
+        with pytest.raises(ToolError, match="as_of dates"):
+            tools.map_claims(ws, as_of={"C1": bad})
 
 
 def test_map_claims_requires_tree(ws):
