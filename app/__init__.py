@@ -154,6 +154,19 @@ def _register_cli(app: Flask) -> None:
         added = seed_sample_agents(db, Agent)
         print(f"Added {added} sample agents.")
 
+    @app.cli.command("seed-stamps")
+    def seed_stamps_command():
+        """DEVELOPMENT ONLY: mark the sample agents operator-stamped (simulated,
+        no World ID approval) so there are hireable listings to try."""
+        import sys
+        from app.seller.stamp import seed_sample_stamps, seed_stamps_refusal
+        refusal = seed_stamps_refusal(app)
+        if refusal:
+            print(f"Refusing: {refusal}", file=sys.stderr)
+            sys.exit(1)
+        names = seed_sample_stamps()
+        print(f"SIMULATED dev stamps written for {len(names)} sample agents: {', '.join(names) or '-'}")
+
 
 def _init_database(app: Flask) -> None:
     """Bring the database schema to head when AUTO_MIGRATE is on.
