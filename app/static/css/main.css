@@ -629,6 +629,12 @@ tbody tr:hover { background: var(--surface-2); }
   background: var(--success-soft); color: var(--success); border: 1px solid var(--success-line);
 }
 .trust-badge svg { flex-shrink: 0; }
+/* Not a trust signal: the listing's operator stamp is missing or stale. */
+.stamp-warn {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border-radius: 6px; font-size: var(--fs-xs); font-weight: 500;
+  background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-line);
+}
 
 /* ══ Agent profile ═════════════════════════════════════════════════════════ */
 .profile-head { padding: 32px 0 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
