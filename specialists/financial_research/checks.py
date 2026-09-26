@@ -9,6 +9,10 @@ report: every figure is re-derived from the cached SEC JSON
 and the data-room files themselves. The recomputation here is written
 independently of tools.py so a bug in one does not hide in the other.
 
+Paths from params (which a brief may add to) and paths the agent wrote into
+a deliverable are resolved with the kit's jail_path, which rejects escapes
+lexically before touching the filesystem; a rejected path fails the check.
+
     xbrl_tieout               every facts.csv row is a real XBRL fact
     comps_tie_to_xbrl         every sourced comps.csv figure ties to an XBRL fact
     comps_recompute           derived comps columns recompute from their inputs
@@ -28,6 +32,9 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+
+from agentkit.errors import PolicyViolation
+from agentkit.policy import jail_path
 
 SPREADS_PATH = "deliverables/m2-spreads-comps/facts.csv"
 COMPS_PATH = "deliverables/m2-spreads-comps/comps.csv"
@@ -162,10 +169,19 @@ def _num(value: Any) -> Decimal | None:
         return None
 
 
+def _ws(workspace: Path, rel: str) -> Path:
+    """A workspace path from check params; PolicyViolation if it escapes."""
+    return jail_path(Path(workspace), rel)
+
+
 def _inside(workspace: Path, rel: str) -> Path | None:
-    root = Path(workspace).resolve()
-    target = (root / rel).resolve()
-    return target if root in target.parents else None
+    """An agent-written path inside the workspace, or None (checked lexically
+    first, so a UNC or device path is never opened)."""
+    try:
+        target = jail_path(Path(workspace), rel)
+    except PolicyViolation:
+        return None
+    return target if target != Path(workspace).resolve() else None
 
 
 def _sha256(path: Path) -> str:
@@ -232,7 +248,7 @@ def xbrl_tieout(workspace: Path, params: dict, *, run=None) -> dict:
     written `note` may be unmatched, e.g. a disclosed restatement), tolerance
     (absolute, default 0.5 for rounding).
     """
-    path = Path(workspace) / params.get("path", SPREADS_PATH)
+    path = _ws(workspace, params.get("path", SPREADS_PATH))
     if not path.is_file():
         return _result(False, f"{params.get('path', SPREADS_PATH)} not found", 0.0)
     rows = _read_csv(path)
@@ -268,13 +284,12 @@ def comps_tie_to_xbrl(workspace: Path, params: dict, *, run=None) -> dict:
     that may not be blank; default revenue, operating_income, net_income,
     shares_diluted).
     """
-    comps_rel = params.get("comps", COMPS_PATH)
-    comps_path = Path(workspace) / comps_rel
-    spreads_path = Path(workspace) / params.get("spreads", SPREADS_PATH)
-    market_path = Path(workspace) / params.get("market_data", MARKET_DATA_PATH)
-    for p in (comps_path, spreads_path, market_path):
+    rels = [params.get("comps", COMPS_PATH), params.get("spreads", SPREADS_PATH),
+            params.get("market_data", MARKET_DATA_PATH)]
+    comps_path, spreads_path, market_path = (_ws(workspace, r) for r in rels)
+    for rel, p in zip(rels, (comps_path, spreads_path, market_path)):
         if not p.is_file():
-            return _result(False, f"{p.relative_to(workspace).as_posix()} not found", 0.0)
+            return _result(False, f"{rel} not found", 0.0)
     required = set(params.get("required", ["revenue", "operating_income", "net_income",
                                             "shares_diluted"]))
     spreads = {(_cik_short(r.get("cik")), r.get("fiscal_year", ""), r.get("metric", "")): r
@@ -366,7 +381,7 @@ def comps_recompute(workspace: Path, params: dict, *, run=None) -> dict:
     """Derived comps columns (EV bridge, multiples, margins, growth) recompute
     from the row's own inputs; no hardcoded outputs. params: comps, ratio_tolerance
     (default 0.0006 for 4-place rounding)."""
-    path = Path(workspace) / params.get("comps", COMPS_PATH)
+    path = _ws(workspace, params.get("comps", COMPS_PATH))
     if not path.is_file():
         return _result(False, f"{params.get('comps', COMPS_PATH)} not found", 0.0)
     rows = _read_csv(path)
@@ -477,8 +492,8 @@ def memo_figures_match(workspace: Path, params: dict, *, run=None) -> dict:
     match the comps.csv value at the precision shown. params: path (memo), comps, require_citation (default true).
     """
     memo_rel = params.get("path", MEMO_PATH)
-    memo = Path(workspace) / memo_rel
-    comps_path = Path(workspace) / params.get("comps", COMPS_PATH)
+    memo = _ws(workspace, memo_rel)
+    comps_path = _ws(workspace, params.get("comps", COMPS_PATH))
     if not memo.is_file():
         return _result(False, f"{memo_rel} not found", 0.0)
     comps = {}
@@ -516,7 +531,7 @@ def no_recommendation_language(workspace: Path, params: dict, *, run=None) -> di
     patterns = [re.compile(p, re.I) for p in RECOMMENDATION_PATTERNS]
     hits, missing = [], []
     for rel in paths:
-        path = Path(workspace) / rel
+        path = _ws(workspace, rel)
         if not path.is_file():
             missing.append(rel)
             continue
@@ -565,12 +580,12 @@ def red_flag_checklist(workspace: Path, params: dict, *, run=None) -> dict:
     a hit there must be marked found and cite one of the hit accessions.
     """
     rel = params.get("path", RED_FLAGS_PATH)
-    path = Path(workspace) / rel
+    path = _ws(workspace, rel)
     if not path.is_file():
         return _result(False, f"{rel} not found", 0.0)
     ciks = [_cik_short(c) for c in params.get("ciks") or []]
     if not ciks:
-        comps_path = Path(workspace) / params.get("comps", COMPS_PATH)
+        comps_path = _ws(workspace, params.get("comps", COMPS_PATH))
         if comps_path.is_file():
             ciks = sorted({_cik_short(r.get("cik")) for r in _read_csv(comps_path)}, key=int)
     if not ciks:
@@ -647,7 +662,7 @@ def source_inventory_resolves(workspace: Path, params: dict, *, run=None) -> dic
       web           uri is http(s) (content is verified by the claim ledger)
     """
     rel = params.get("path", SOURCES_PATH)
-    path = Path(workspace) / rel
+    path = _ws(workspace, rel)
     if not path.is_file():
         return _result(False, f"{rel} not found", 0.0)
     rows = _read_csv(path)
@@ -690,8 +705,8 @@ def source_inventory_resolves(workspace: Path, params: dict, *, run=None) -> dic
                               cik) is None:
                 failures.append(f"{sid}: {uri} was never retrieved")
         elif kind in ("dataroom", "customer"):
-            target = _inside(workspace, uri)
-            if not uri.startswith("inputs/") or target is None or not target.is_file():
+            target = _inside(workspace, uri) if uri.startswith("inputs/") else None
+            if target is None or not target.is_file():
                 failures.append(f"{sid}: {uri} is not a file under inputs/")
             elif _sha256(target) != row.get("sha256", "").lower():
                 failures.append(f"{sid}: sha256 does not match {uri}")
@@ -713,8 +728,8 @@ def dataroom_index_complete(workspace: Path, params: dict, *, run=None) -> dict:
     there, and every unreadable file (readable != yes) carries a note."""
     rel = params.get("path", DATAROOM_INDEX_PATH)
     root_rel = params.get("root", "inputs/dataroom")
-    path = Path(workspace) / rel
-    root = Path(workspace) / root_rel
+    path = _ws(workspace, rel)
+    root = _ws(workspace, root_rel)
     if not path.is_file():
         return _result(False, f"{rel} not found", 0.0)
     ws = Path(workspace).resolve()

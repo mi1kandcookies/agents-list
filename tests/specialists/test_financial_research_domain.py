@@ -126,6 +126,38 @@ def test_edgar_filing_text_strips_html_pages_and_restricts_host(tmp_path):
         T.edgar_filing_text(tmp_path, fetch=fetch, url="https://evil.example/x.htm")
 
 
+def test_edgar_filing_text_registers_the_filing_as_a_ledger_source(tmp_path):
+    from agentkit.ledger import Ledger
+    url = "https://www.sec.gov/Archives/edgar/data/9900003/000990000325000027/cdhs-20241231.htm"
+    fetch = FakeFetch({url: "<html><p>Item 9. The Audit Committee dismissed the prior auditor.</p></html>"})
+    ledger = Ledger(tmp_path)
+    out = T.edgar_filing_text(tmp_path, fetch=fetch, ledger=ledger, url=url, user_agent=UA)
+    assert out["source_id"] == "S1"
+    src = ledger.source("S1")
+    assert src.uri == url and src.kind == "tool"
+    assert ledger.add_claim("Auditor dismissed", "S1", "The Audit Committee dismissed the prior auditor").id == "C1"
+    # paging through the cached snapshot keeps the same source
+    assert T.edgar_filing_text(tmp_path, ledger=ledger, url=url, offset=10)["source_id"] == "S1"
+    assert len(ledger.sources) == 1 and len(fetch.calls) == 1
+
+
+def test_tool_paths_follow_the_kit_workspace_rules(ws):
+    market = (ws / T.MARKET_DATA_PATH).read_bytes()
+    with pytest.raises(ToolError, match="read-only"):
+        T.build_spreads(ws, ciks=[9900001], fiscal_years=[2024], output=T.MARKET_DATA_PATH)
+    with pytest.raises(ToolError, match="internal"):
+        T.index_dataroom(ws, output=".agentkit/ledger.json")
+    with pytest.raises(ToolError, match="internal"):
+        T.compute_comps(ws, fiscal_year=2024, spreads=".agentkit/edgar/facts.csv")
+    assert (ws / T.MARKET_DATA_PATH).read_bytes() == market
+    # a data-room root at the workspace itself never lists kit internals
+    (ws / ".agentkit").mkdir(exist_ok=True)
+    (ws / ".agentkit" / "ledger.json").write_text("{}", encoding="utf-8")
+    listed = T.index_dataroom(ws, root=".")
+    assert listed["files"] > 4
+    assert not any(r["path"].startswith(".agentkit/") for r in _rows(ws / T.DATAROOM_INDEX_PATH))
+
+
 def test_xbrl_facts_selects_annual_fact_from_own_10k(ws):
     out = T.xbrl_facts(ws, cik=9900003, metrics=["revenue", "cash"], fiscal_years=[2022])
     rev = next(f for f in out["facts"] if f["metric"] == "revenue")
@@ -482,6 +514,7 @@ def test_source_inventory_resolves(ws):
     (lambda r: r[1].update(cik="9900009"), "not a data.sec.gov URL"),
     (lambda r: r[2].update(sha256="0" * 64), "sha256 does not match"),
     (lambda r: r[2].update(uri="../../etc/passwd"), "not a file under inputs/"),
+    (lambda r: r[2].update(uri="inputs/../../outside.txt"), "not a file under inputs/"),
     (lambda r: r[3].update(source_id="S1"), "duplicate"),
     (lambda r: r[3].update(kind="rumor"), "unknown kind"),
 ])
@@ -511,6 +544,17 @@ def test_dataroom_index_rejects_tampering(ws):
     details = C.dataroom_index_complete(ws, {})["details"]
     assert "sha256 mismatch" in details and "without a note" in details
     assert "indexed but absent" in details
+
+
+def test_check_param_paths_stay_in_the_workspace(built):
+    from agentkit.errors import PolicyViolation
+    for fn, params in ((C.xbrl_tieout, {"path": "../facts.csv"}),
+                       (C.comps_tie_to_xbrl, {"market_data": "../market_data.csv"}),
+                       (C.memo_figures_match, {"path": "//fileserver/share/memo.md"}),
+                       (C.no_recommendation_language, {"paths": ["../../memo.md"]}),
+                       (C.dataroom_index_complete, {"root": "../"})):
+        with pytest.raises(PolicyViolation):
+            fn(built, params)
 
 
 def test_check_defs_signature(built):
