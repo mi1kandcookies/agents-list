@@ -1,0 +1,8 @@
+{
+  "entity_name": "Harbor Lane Coffee Roasters LLC",
+  "period": "2026-08",
+  "cash_account": "1000",
+  "statement_ending_balance": "36945.58",
+  "flux_threshold_abs": "1000",
+  "flux_threshold_pct": "10"
+}

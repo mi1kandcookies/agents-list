@@ -1,0 +1,29 @@
+{
+  "name": "Harbor Lane August close package",
+  "fixture": "harbor_lane",
+  "milestone": "m3-close-package",
+  "brief": {
+    "engagement_id": "eval-bk-003",
+    "specialist": "bookkeeping-close",
+    "objective": "Write the August 2026 close package with flux commentary and financial statements for the owner and the outside CPA.",
+    "intake": {
+      "entity_name": "Harbor Lane Coffee Roasters LLC",
+      "period": "2026-08",
+      "bank_statement": "inputs/bank_statement.csv",
+      "gl_export": "inputs/gl_detail.csv",
+      "chart_of_accounts": "inputs/chart_of_accounts.csv",
+      "cash_account": "1000",
+      "prior_trial_balance": "inputs/prior_trial_balance.csv",
+      "statement_ending_balance": "36945.58",
+      "prior_bank_reconciliation": "none: nothing was outstanding at 2026-07-31",
+      "prior_month_pl": "inputs/prior_month_pl.csv",
+      "accrual_schedule": "inputs/accrual_schedule.csv",
+      "categorization_rules": "inputs/categorization_rules.csv",
+      "materiality": "1000 and 10%"
+    },
+    "milestones": [],
+    "answers": {},
+    "sow_text": ""
+  },
+  "notes": "Run after m2. Flagged accounts: 1000, 1100, 1200, 2000, 2200, 4000. Net income -13850.82 (two payrolls against one month of sales); total assets 71189.18. Commentary must name the AR collection from Blue Ridge Grocers, the insurance amortization, the Cafe Imports invoice 5521 and the subscription revenue release."
+}

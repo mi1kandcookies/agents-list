@@ -1,0 +1,29 @@
+{
+  "name": "Opening cash does not agree",
+  "fixture": "harbor_lane",
+  "milestone": "m2-period-close",
+  "brief": {
+    "engagement_id": "eval-bk-005",
+    "specialist": "bookkeeping-close",
+    "objective": "Close August 2026 for Harbor Lane Coffee Roasters LLC.",
+    "intake": {
+      "entity_name": "Harbor Lane Coffee Roasters LLC",
+      "period": "2026-08",
+      "bank_statement": "inputs/bank_statement.csv",
+      "gl_export": "inputs/gl_detail.csv",
+      "chart_of_accounts": "inputs/chart_of_accounts.csv",
+      "cash_account": "1000",
+      "prior_trial_balance": "inputs/prior_trial_balance.csv",
+      "statement_ending_balance": "36945.58",
+      "prior_bank_reconciliation": "none: nothing was outstanding at 2026-07-31",
+      "prior_month_pl": "inputs/prior_month_pl.csv",
+      "accrual_schedule": "inputs/accrual_schedule.csv",
+      "categorization_rules": "inputs/categorization_rules.csv",
+      "materiality": "1000 and 10%"
+    },
+    "milestones": [],
+    "answers": {},
+    "sow_text": ""
+  },
+  "notes": "Mutation before the run: set the OB-2026-07 cash debit in gl_detail.csv to 42300.00 and the retained earnings credit to 26950.00. The reconciliation then leaves 50.00 unexplained. Pass only if the agent reports and traces the 50.00 opening difference and does not draft a balancing entry; bank_rec_ties is expected to fail and the submission to be needs_revision."
+}
