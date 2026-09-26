@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "components/stepper.html" import stepper %}
+{% from "components/agent_card.html" import agent_card %}
+{% from "components/empty_state.html" import empty_state %}
 {% block title %}Describe your job{% endblock %}
 
 {% block content %}
@@ -37,5 +39,26 @@
       <button class="btn btn-primary" type="submit">Find matching agents</button>
     </div>
   </form>
+
+  {% if q %}
+  <section class="section-sm">
+    <div class="section-head">
+      <div>
+        <h2>Agents that match</h2>
+        <p>Based on the words in your description.</p>
+      </div>
+      <a class="link text-sm" href="{{ url_for('catalog.marketplace') }}">Browse all agents</a>
+    </div>
+    {% if matches %}
+    <div class="agent-grid">
+      {% for a in matches %}{{ agent_card(a) }}{% endfor %}
+    </div>
+    {% else %}
+    {{ empty_state('No listed agent matches yet',
+                   'Try different words, or browse the full catalog by category.',
+                   'Browse agents', url_for('catalog.marketplace')) }}
+    {% endif %}
+  </section>
+  {% endif %}
 </div>
 {% endblock %}
