@@ -1,0 +1,17 @@
+{
+  "name": "transit-app-draft",
+  "milestone": "m3-draft",
+  "brief": {
+    "engagement_id": "eval-pw-002",
+    "specialist": "proposal-writer",
+    "objective": "Draft Lumen Fieldworks' response to RFP-2026-14 (Technical and Price volumes) from the knowledge base.",
+    "intake": {
+      "solicitation_files": ["inputs/solicitation/rfp-2026-14.md"],
+      "engagement_mode": "rfp",
+      "knowledge_base_files": ["inputs/kb/"],
+      "submission_deadline": "2026-10-15",
+      "win_themes": "Already runs GTFS-Realtime arrival engines for other agencies; screen-reader tested releases."
+    }
+  },
+  "notes": "Workspace fixture: evals/fixtures/transit-app (run m1 and m2 first). Grounding traps: incident notice is 48 hours in the KB (RFP asks 72), availability target 99.9% (RFP asks 99.5%), push alerts 30 seconds (RFP asks 60); the KB has no SOC 2 or FedRAMP claims and no price, so the draft must not state any certification and must leave price to the customer. Only one KB past-performance entry is a transit app; the second is a ferry app - the draft should say so rather than stretch relevance. Expect claims_grounded, draft_within_limits and matrix_consistent to pass."
+}

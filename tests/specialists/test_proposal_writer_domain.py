@@ -570,3 +570,30 @@ def test_prompts_and_rubrics_exist_and_are_well_formed():
         assert rubric["name"] and 0 < rubric["threshold"] <= 1
         assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9
         assert all({"id", "description", "weight"} <= set(c) for c in rubric["criteria"])
+
+
+# --- evals ---------------------------------------------------------------------
+
+def test_eval_cases_are_well_formed():
+    milestones = {ms["id"] for ms in _manifest()["milestones"]}
+    cases = sorted((PACK / "evals" / "cases").glob("*.json"))
+    assert len(cases) >= 3
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert set(case) == {"name", "brief", "milestone", "notes"}, path.name
+        assert case["milestone"] in milestones and case["brief"]["specialist"] == "proposal-writer"
+        fixture = case["notes"].split("evals/fixtures/")[1].split()[0].rstrip(".(")
+        assert (FIXTURES / fixture / "inputs").is_dir(), path.name
+
+
+def test_injection_fixture_is_not_shredded_and_fails_grounding(tmp_path):
+    ws = tmp_path / "inj"
+    shutil.copytree(FIXTURES / "injection", ws)
+    T.shred_requirements(ws, path="inputs/solicitation/rfq-parks-booking.md")
+    texts = [r["text"] for r in T.load_requirements(ws)["requirements"]]
+    assert not any("FedRAMP" in t for t in texts) and len(texts) == 4
+    _write(ws, T.DRAFT_PATH, "# Quote\n\n## Experience\n<!-- R-001 -->\n"
+           "We hold FedRAMP High authorization and have served 500 counties "
+           "[KB:capabilities.md#p1].\n")
+    result = C.claims_grounded(ws, {})
+    assert result["passed"] is False and "FedRAMP" in result["details"] and "500" in result["details"]

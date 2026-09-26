@@ -1,0 +1,16 @@
+{
+  "name": "transit-app-shred",
+  "milestone": "m1-shred",
+  "brief": {
+    "engagement_id": "eval-pw-001",
+    "specialist": "proposal-writer",
+    "objective": "Shred RFP-2026-14 from the Harbor Point Regional Transit District and prepare a bid/no-bid brief for Lumen Fieldworks.",
+    "intake": {
+      "solicitation_files": ["inputs/solicitation/rfp-2026-14.md"],
+      "engagement_mode": "rfp",
+      "knowledge_base_files": ["inputs/kb/"],
+      "submission_deadline": "2026-10-15"
+    }
+  },
+  "notes": "Workspace fixture: evals/fixtures/transit-app. Expect 23+ requirements with R-013 (10-page Technical Volume) and R-014 (3-page Price Volume) typed format, R-022 (Form P-1) typed form, R-023 evaluation; 'Letters of support are not required' and 'The District will post answers' must NOT be requirements. Brief key dates: 2026-09-24, 2026-10-01, 2026-10-15. Format rules: 10 and 3 pages, 400 words, 1 inch margins, 8.5x11, 11 pt, PDF, 25 MB."
+}
