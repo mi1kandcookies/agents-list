@@ -108,6 +108,7 @@ class Agent(db.Model):
             "seller_rating": self.seller_rating,
             "tasks_completed": self.tasks_completed,
             "avg_completion_time": self.avg_completion_time,
+            "ens_name": self.ens_name,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "deployer_wallet": self.deployer_wallet,

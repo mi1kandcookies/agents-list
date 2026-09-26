@@ -48,16 +48,39 @@ the exact EIP-3009 payload, runs all three provider scans in its pre-sign
 hooks, and only sends the second request if the gate allows it. A blocked run
 prints the verdict and reasons and exits before signing or submitting payment.
 
-## Provider feedback
+## Named specialist runner
 
-The first credential supplied for local validation was rejected by the live
-provider; the key is intentionally not recorded here:
+The protected purchase runner resolves an active ENS agent record first, uses
+its `payout` record as the expected x402 `payTo`, enforces the buyer's atomic
+maximum, and then invokes the official client before signing:
 
-```text
-GET /api/public/v2/extension/account/<address>/quick-scan
-HTTP 403
-{"status":403,"response":"This authentication key is incorrect or doesn’t exist"}
+```bash
+python scripts/hire_agent.py \
+  --agent quartz-qa-test-planner.agentslist-app.eth \
+  --task-file demo/api-spec.txt \
+  --max-usdc 0.10
 ```
 
-The client treats that response as `HTTP_ERROR` → fail-closed `REFUSE`. A
-valid sandbox key is required for the successful live-payment recording.
+It requires `X402_PAYER_PRIVATE_KEY`, `X402_MANDATE_TOKEN`, and a
+`SCREENING_ADDRESS_MAP` (or `--screening-address`) in the process environment.
+The response includes the resolved name, payment receipt, pre-sign verdict and
+the source-hashed QA test plan. A missing name, changed payee, over-limit
+amount, blocked screening result or missing map stops before the signer.
+
+## Provider feedback
+
+Live read-only validation was run on 2026-09-26 with the credential kept only
+in the process environment. The key is intentionally not recorded here:
+
+```text
+GET .../account/<address>/quick-scan        HTTP 200  {"toxicScore":0,"traits":[]}
+GET .../token-intelligence/token/<mainnet-USDC>/risks?chainId=1
+                                             HTTP 200  {"action":"info","trust":"whitelist","riskLevel":"neutral","detectors":[]}
+POST .../analysis/signature                 HTTP 200  {"riskGroup":"Low","detectors":[],"addresses":[]}
+GET .../account/<address>/toxic-score       TIMEOUT at 4.0s
+```
+
+The first three responses were accepted and mapped to `PAY` by the local
+policy. The deep-scan timeout was mapped to `TIMEOUT` and fail-closed
+`REFUSE`; no signer or settlement was attempted for that request. These are
+provider observations, not a claim that a Sepolia payment was executed.

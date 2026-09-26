@@ -1,0 +1,12 @@
+# Orders API
+
+The API manages orders for the signed-in buyer.
+
+GET /v1/orders
+- Returns 200 with an array of orders.
+- Requires buyer authentication.
+
+POST /v1/orders
+- Accepts `sku` and `quantity`.
+- Returns 201 with the created order.
+- Rejects missing or non-positive quantity without creating an order.

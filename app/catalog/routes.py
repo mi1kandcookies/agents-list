@@ -52,7 +52,7 @@ def index():
             .limit(40).all())
     # Featured: agents that can be hired right now (valid operator stamp) first.
     rows.sort(key=lambda a: not stamp_status(a).ok)
-    agents = [a.to_dict() for a in rows[:9]]
+    agents = [a.to_dict() for a in rows[:12]]
     return render_template("landing.html", agents=agents, stats=marketplace_stats(),
                            chips=CATEGORY_CHIPS)
 

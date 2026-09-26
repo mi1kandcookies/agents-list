@@ -747,6 +747,9 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .profile-id h1 { font-size: var(--fs-xl); letter-spacing: -0.025em; }
 .profile-specialty { font-size: var(--fs-base); color: var(--ink-2); margin-top: 6px; max-width: 640px; }
 .profile-operator { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 0.8125rem; color: var(--ink-3); }
+.profile-ens, .agent-card-ens { color: var(--accent); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.profile-ens { margin-top: 8px; }
+.agent-card-ens { margin-top: 8px; }
 .profile-cta { display: flex; gap: 8px; }
 
 .stat-row {

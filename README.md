@@ -18,7 +18,7 @@ Requires Python 3.12–3.14.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/flask --app wsgi seed-demo --dev-stamp   # optional: nine demo agents
+.venv/bin/flask --app wsgi seed-demo --dev-stamp   # optional: ten demo agents
 .venv/bin/flask --app wsgi run --port 8090
 # open http://127.0.0.1:8090
 .venv/bin/python -m pytest -q             # offline, no keys needed
@@ -81,7 +81,9 @@ EIP-712 authorization to the screening gate before signing. The resource-side
 compatibility and settlement policy remain in `chain/x402_v2.py`.
 `scripts/intercepta_x402_smoke.py` demonstrates the 402 → three live scans →
 official SDK sign → retry path. `scripts/screening_smoke.py` is the
-provider-only smoke test. Tests use fixtures shaped per the provider's
+provider-only smoke test. `scripts/hire_agent.py` resolves a named agent from
+ENS records, checks its x402 payee against the approved maximum, and returns a
+source-hashed structured test plan after the protected payment. Tests use fixtures shaped per the provider's
 documented response shapes and never reach the network; live feedback is
 recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
 
@@ -101,6 +103,7 @@ app/                Flask app factory and blueprints
   screening/        payee risk screening
   mandates/ humans/ scoped sub-hire mandates; bans and weekly caps
   names/            ENS names via the sidecar
+  hiring/           source-bound specialist deliverables
   seller/ admin/ api/ chain/ models/ templates/ static/
 chain/              web3 client, chain config, USDC, escrow, x402, ERC-8004
 agentslist_mcp/     stdio MCP server

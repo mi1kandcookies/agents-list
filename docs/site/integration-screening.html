@@ -59,10 +59,11 @@
       <section>
         <h2 id="live">Live observations</h2>
         <ul>
-          <li>During local validation, Quick Scan reached the live API and returned HTTP 403 before a verdict was produced.</li>
-          <li>The provider response was <code>{&quot;status&quot;:403,&quot;response&quot;:&quot;This authentication key is incorrect or doesn’t exist&quot;}</code>.</li>
+          <li>On 2026-09-26, live Quick Scan returned HTTP 200 with <code>toxicScore: 0</code> and an empty <code>traits</code> list.</li>
+          <li>Live Token Risks returned HTTP 200 with <code>action: info</code>, <code>trust: whitelist</code>, <code>riskLevel: neutral</code> and no detectors.</li>
+          <li>Live Scan Message returned HTTP 200 with <code>riskGroup: Low</code> and empty detector/address lists.</li>
+          <li>A live Deep Scan exceeded the four-second timeout; the client translated it to <code>TIMEOUT</code> and fail-closed <code>REFUSE</code>.</li>
           <li>The client records method, endpoint, status, latency and a bounded response body, while never logging the API key.</li>
-          <li>Because the credential was rejected, the application translated the result to <code>HTTP_ERROR</code> and fail-closed <code>REFUSE</code>; no payment was signed.</li>
         </ul>
       </section>
       <section>
@@ -70,7 +71,7 @@
         <ul>
           <li>No testnet coverage, so a mapping layer is needed for any Sepolia product.</li>
           <li>No published guidance on how to turn a toxic score into a decision.</li>
-          <li>A valid sandbox credential is still required to capture an allowed verdict and a successful paid retry.</li>
+          <li>The live credential enables risk decisions, but an on-chain paid retry still needs separately funded demo wallets and a configured mandate.</li>
         </ul>
       </section>
       <section>
