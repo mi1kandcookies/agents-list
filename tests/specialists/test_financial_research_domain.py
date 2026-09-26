@@ -158,15 +158,18 @@ def test_tool_paths_follow_the_kit_workspace_rules(ws):
     assert not any(r["path"].startswith(".agentkit/") for r in _rows(ws / T.DATAROOM_INDEX_PATH))
 
 
-def test_xbrl_facts_selects_annual_fact_from_own_10k(ws):
-    out = T.xbrl_facts(ws, cik=9900003, metrics=["revenue", "cash"], fiscal_years=[2022])
-    rev = next(f for f in out["facts"] if f["metric"] == "revenue")
-    # the FY2023 10-K restated FY2022 revenue; the original 10-K figure wins
-    assert rev["value"] == 690_400_000 and rev["accession"].endswith("-23-000011")
+def test_xbrl_facts_selects_the_latest_10k_figure_for_the_period(ws):
+    out = T.xbrl_facts(ws, cik=9900003, metrics=["revenue", "cash"], fiscal_years=[2022, 2023])
+    rev = {f["fiscal_year"]: f for f in out["facts"] if f["metric"] == "revenue"}
+    # the FY2023 10-K restated FY2022 revenue (690.4m -> 684.9m): the restated
+    # figure wins, so FY2023 growth compares two figures on the same basis
+    assert rev[2022]["value"] == 684_900_000 and rev[2022]["accession"].endswith("-24-000019")
+    assert rev[2023]["value"] == 671_800_000 and rev[2023]["accession"].endswith("-25-000027")
     cash = next(f for f in out["facts"] if f["metric"] == "cash")
     assert cash["period_end"] == "2022-12-31" and cash["period_start"] == ""
     raw = T.xbrl_facts(ws, cik=9900003, tag="Revenues", fiscal_years=[2022])
     assert sorted(r["val"] for r in raw["facts"]) == [684_900_000, 690_400_000]
+    assert {r["fiscal_year"] for r in raw["facts"]} == {2022}
     with pytest.raises(ToolError):
         T.xbrl_facts(ws, cik=9900003, metrics=["ebitda"], fiscal_years=[2022])
 
@@ -197,6 +200,127 @@ def test_compute_comps_bridge_and_multiples(built):
     assert h["ebitda"] == "238964700" and h["gross_margin"] == "0.54"
 
 
+def _companyfacts(cik: int, name: str, facts: list[tuple]) -> dict:
+    """Synthetic companyfacts JSON from (tag, unit, start, end, value, accession,
+    fy, filed) tuples, all reported on Form 10-K."""
+    gaap: dict = {}
+    for tag, unit, start, end, val, accn, fy, filed in facts:
+        rec = {"accn": accn, "end": end, "filed": filed, "form": "10-K", "fp": "FY", "fy": fy,
+               "val": val}
+        if start:
+            rec["start"] = start
+        gaap.setdefault(tag, {"units": {}})["units"].setdefault(unit, []).append(rec)
+    return {"cik": cik, "entityName": name, "facts": {"us-gaap": gaap}}
+
+
+def _save_companyfacts(ws: Path, data: dict) -> None:
+    path = ws / "inputs/edgar/companyfacts" / f"CIK{data['cik']:010d}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+# A 52/53-week filer: fiscal years end on the Saturday nearest 31 December, so
+# FY2020 ends 2021-01-02, FY2021 ends 2022-01-01 and FY2022 ends 2022-12-31.
+WEEKS = [("2019-12-29", "2021-01-02", 800), ("2021-01-03", "2022-01-01", 1000),
+         ("2022-01-02", "2022-12-31", 1100)]
+TEN_KS = {2020: ("0009900009-21-000005", "2021-03-01"), 2021: ("0009900009-22-000005", "2022-03-01"),
+          2022: ("0009900009-23-000005", "2023-03-01")}
+
+
+def _weeks_filer() -> dict:
+    facts = []
+    for fy, (accn, filed) in TEN_KS.items():
+        # each 10-K reports its own year and the prior year as a comparative
+        for start, end, val in WEEKS[max(0, fy - 2021): fy - 2019]:
+            facts.append(("Revenues", "USD", start, end, val * 1_000_000, accn, fy, filed))
+    return _companyfacts(9900009, "Weekly Provisions Inc.", facts)
+
+
+def test_fiscal_years_follow_the_10k_for_52_53_week_filers(tmp_path):
+    data = _weeks_filer()
+    ends = {2020: "2021-01-02", 2021: "2022-01-01", 2022: "2022-12-31"}
+    assert T.fiscal_year_ends(data) == ends
+    assert C._fy_ends(data) == ends                        # the check derives the same years
+    assert T.annual_fact(data, "revenue", 2021)["value"] == 1_000_000_000
+    fy22 = T.annual_fact(data, "revenue", 2022)
+    assert fy22["value"] == 1_100_000_000 and fy22["period_end"] == "2022-12-31"
+    _save_companyfacts(tmp_path, data)
+    T.build_spreads(tmp_path, ciks=[9900009], fiscal_years=[2021, 2022], metrics=["revenue"])
+    rows = _rows(tmp_path / T.SPREADS_PATH)
+    assert [(r["fiscal_year"], r["value"]) for r in rows] == [("2021", "1000000000"),
+                                                              ("2022", "1100000000")]
+    assert C.xbrl_tieout(tmp_path, {})["passed"] is True
+    # the old calendar-year label (FY2022 for the year ending 2022-01-01) is caught
+    rows[0]["fiscal_year"] = "2022"
+    rows[1]["fiscal_year"] = "2023"
+    _write_rows(tmp_path / T.SPREADS_PATH, rows)
+    res = C.xbrl_tieout(tmp_path, {})
+    assert res["passed"] is False and "is not the FY2022 year-end 2022-12-31" in res["details"]
+
+
+def test_fiscal_year_labels_for_january_year_ends_and_bad_fy():
+    retail = _companyfacts(9900010, "Retail", [
+        ("Revenues", "USD", "2024-02-04", "2025-02-01", 5, "0009900010-25-000001", 2024, "2025-03-20")])
+    assert T.fiscal_year_ends(retail) == C._fy_ends(retail) == {2024: "2025-02-01"}
+    wrong = _companyfacts(9900011, "Wrong fy", [
+        ("Revenues", "USD", "2022-01-01", "2022-12-31", 5, "0009900011-23-000001", 2019, "2023-03-01")])
+    assert T.fiscal_year_ends(wrong) == C._fy_ends(wrong) == {2022: "2022-12-31"}
+
+
+def test_fixture_fiscal_years_agree_between_tool_and_check():
+    for cik in CIKS:
+        data = json.loads((FIXTURE / f"inputs/edgar/companyfacts/CIK{cik:010d}.json").read_text("utf-8"))
+        # FY2021 appears only as a comparative in the FY2022 10-K
+        assert T.fiscal_year_ends(data) == C._fy_ends(data) == {
+            2021: "2021-12-31", 2022: "2022-12-31", 2023: "2023-12-31", 2024: "2024-12-31"}
+
+
+def test_debt_total_counts_each_borrowing_once():
+    from decimal import Decimal as D
+    # LongTermDebt already includes its 45 current portion; 200 of commercial paper sits apart
+    assert T.debt_total({"long_term_debt_total": D(543), "long_term_debt_current": D(45),
+                         "short_term_borrowings": D(200)}) == (D(743), "long_term_debt_total + "
+                                                                       "short_term_borrowings")
+    assert T.debt_total({"long_term_debt_noncurrent": D(498), "long_term_debt_current": D(45),
+                         "short_term_borrowings": D(200)})[0] == 743
+    assert T.debt_total({"long_term_debt_noncurrent": D(498), "debt_current": D(245),
+                         "long_term_debt_current": D(45), "short_term_borrowings": D(200)})[0] == 743
+    assert T.debt_total({"debt_current": D(245), "long_term_debt_current": D(45)})[0] == 245
+    assert T.debt_total({}) == (None, "no debt reported")
+
+
+def test_comps_debt_from_a_long_term_total_and_commercial_paper(tmp_path):
+    accn, fy, filed = "0009900012-25-000001", 2024, "2025-02-20"
+    year = ("2024-01-01", "2024-12-31")
+    data = _companyfacts(9900012, "Paper Mill Corp.", [
+        ("Revenues", "USD", *year, 1_000_000_000, accn, fy, filed),
+        ("OperatingIncomeLoss", "USD", *year, 150_000_000, accn, fy, filed),
+        ("DepreciationDepletionAndAmortization", "USD", *year, 50_000_000, accn, fy, filed),
+        ("NetIncomeLoss", "USD", *year, 90_000_000, accn, fy, filed),
+        ("WeightedAverageNumberOfDilutedSharesOutstanding", "shares", *year, 10_000_000, accn, fy, filed),
+        ("CashAndCashEquivalentsAtCarryingValue", "USD", None, "2024-12-31", 43_000_000, accn, fy, filed),
+        ("LongTermDebt", "USD", None, "2024-12-31", 543_000_000, accn, fy, filed),
+        ("LongTermDebtCurrent", "USD", None, "2024-12-31", 45_000_000, accn, fy, filed),
+        ("ShortTermBorrowings", "USD", None, "2024-12-31", 200_000_000, accn, fy, filed)])
+    _save_companyfacts(tmp_path, data)
+    (tmp_path / T.MARKET_DATA_PATH).write_text("cik,ticker,price,price_as_of\n9900012,PMIL,20,"
+                                               "2025-06-30\n", encoding="utf-8")
+    T.build_spreads(tmp_path, ciks=[9900012], fiscal_years=[2024])
+    out = T.compute_comps(tmp_path, fiscal_year=2024)
+    assert out["debt_basis"]["9900012"].startswith("long_term_debt_total")
+    row = _rows(tmp_path / T.COMPS_PATH)[0]
+    assert row["total_debt"] == "743000000"            # not 543m + 45m = 588m
+    assert row["enterprise_value"] == str(200_000_000 + 743_000_000 - 43_000_000)
+    for fn in (C.xbrl_tieout, C.comps_tie_to_xbrl, C.comps_recompute):
+        assert fn(tmp_path, {})["passed"] is True, fn(tmp_path, {})["details"]
+    # the double count the old tag map produced no longer recomputes
+    rows = _rows(tmp_path / T.COMPS_PATH)
+    rows[0]["total_debt"] = "588000000"
+    _write_rows(tmp_path / T.COMPS_PATH, rows)
+    res = C.comps_recompute(tmp_path, {})
+    assert res["passed"] is False and "total_debt" in res["details"]
+
+
 def test_compute_comps_needs_inputs_and_flags_gaps(ws):
     with pytest.raises(ToolError, match="build_spreads"):
         T.compute_comps(ws, fiscal_year=2024)
@@ -204,9 +328,61 @@ def test_compute_comps_needs_inputs_and_flags_gaps(ws):
     (ws / T.MARKET_DATA_PATH).write_text("cik,ticker,price,price_as_of\n9900001,HLVI,48.25,"
                                          "2025-06-30\n", encoding="utf-8")
     out = T.compute_comps(ws, fiscal_year=2024)
-    assert out["rows"] == 1 and len(out["gaps"]) == 2
-    row = _rows(ws / T.COMPS_PATH)[0]
-    assert row["revenue_growth"] == ""   # no FY2023 revenue in spreads
+    # a company without a market row keeps its operating metrics; only the
+    # valuation columns stay blank
+    assert out["rows"] == 3 and len(out["gaps"]) == 2 and "no market data row" in out["gaps"][0]
+    rows = {r["cik"]: r for r in _rows(ws / T.COMPS_PATH)}
+    assert rows["9900001"]["revenue_growth"] == ""   # no FY2023 revenue in spreads
+    assert rows["9900001"]["enterprise_value"] and rows["9900001"]["minority_interest"] == "0"
+    other = rows["9900002"]
+    assert other["price"] == other["market_cap"] == other["enterprise_value"] == other["pe"] == ""
+    assert other["minority_interest"] == "" and other["ebitda_margin"] and other["ticker"] == "BWAC"
+    assert C.comps_recompute(ws, {})["passed"] is True
+    # spreads built without FY2023 leave revenue_prior blank although the SEC reports it
+    res = C.comps_tie_to_xbrl(ws, {})
+    assert res["passed"] is False
+    assert "revenue_prior: blank but the SEC source reports revenue for FY2023" in res["details"]
+    assert "price" not in res["details"]      # blank valuation columns without a market row are fine
+
+
+def test_compute_comps_without_market_data_writes_operating_comps(built):
+    (built / T.MARKET_DATA_PATH).unlink()
+    out = T.compute_comps(built, fiscal_year=2024)
+    assert out["rows"] == 3 and out["market_data"] is False and "not found" in out["gaps"][0]
+    for row in _rows(built / T.COMPS_PATH):
+        assert row["price"] == row["enterprise_value"] == row["ev_revenue"] == ""
+        assert row["revenue"] and row["gross_margin"] and row["revenue_growth"]
+    for fn in (C.comps_tie_to_xbrl, C.comps_recompute):
+        assert fn(built, {})["passed"] is True, fn(built, {})["details"]
+    # a price with no client market data behind it fails
+    path = built / C.COMPS_PATH
+    rows = _rows(path)
+    rows[0]["price"] = "48.25"
+    _write_rows(path, rows)
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False and "without a client market data row" in res["details"]
+    res = C.comps_tie_to_xbrl(built, {"require_market_data": True})
+    assert res["passed"] is False and "market data is required" in res["details"]
+
+
+def test_compute_comps_uses_a_current_share_count_and_parses_formatted_numbers(built):
+    (built / T.MARKET_DATA_PATH).write_text(
+        "cik,ticker,price,price_as_of,shares_outstanding,minority_interest,preferred\n"
+        '9900001,HLVI,"1,048.25",2025-06-30,,0,0\n'
+        "9900002,BWAC,$61.40,2025-06-30,,0,0\n"
+        '9900003,CDHS,17.85,2025-06-30,"52,450,000","12,000,000",0\n', encoding="utf-8")
+    T.compute_comps(built, fiscal_year=2024)
+    rows = {r["cik"]: r for r in _rows(built / T.COMPS_PATH)}
+    assert rows["9900001"]["price"] == "1048.25" and rows["9900002"]["price"] == "61.4"
+    c = rows["9900003"]
+    assert c["shares_outstanding"] == "52450000"
+    assert c["market_cap"] == "936232500"          # 17.85 x 52,450,000 current shares
+    for fn in (C.comps_tie_to_xbrl, C.comps_recompute):
+        assert fn(built, {})["passed"] is True, fn(built, {})["details"]
+    (built / T.MARKET_DATA_PATH).write_text("cik,ticker,price,price_as_of\n9900001,HLVI,n/a,"
+                                            "2025-06-30\n", encoding="utf-8")
+    with pytest.raises(ToolError, match="not a number"):
+        T.compute_comps(built, fiscal_year=2024)
 
 
 def test_filing_red_flags(ws):
@@ -230,6 +406,49 @@ def test_index_dataroom(ws):
     assert pdf["pages"] == "2" and pdf["readable"] == "no" and pdf["note"]
     md = rows["inputs/dataroom/legal/credit_agreement_summary.md"]
     assert md["sha256"] == T.sha256_path(ws / md["path"])
+
+
+def test_index_dataroom_notes_every_file_the_agent_cannot_read(ws):
+    room = ws / "inputs/dataroom"
+    (room / "cim.pdf").write_bytes(b"%PDF-1.4\n1 0 obj << /Type /Page /Resources << /Font << /F1 2 0 R"
+                                   b" >> >> >> endobj\nBT /F1 12 Tf (Confidential) Tj ET\n%%EOF\n")
+    (room / "finance/model.xlsx").write_bytes(b"PK\x03\x04 synthetic workbook")
+    (room / "mgmt_deck.pptx").write_bytes(b"PK\x03\x04 synthetic deck")
+    T.index_dataroom(ws)
+    rows = {r["path"]: r for r in _rows(ws / T.DATAROOM_INDEX_PATH)}
+    pdf = rows["inputs/dataroom/cim.pdf"]
+    assert pdf["readable"] == "unknown" and "no PDF reader" in pdf["note"]
+    for rel in ("inputs/dataroom/finance/model.xlsx", "inputs/dataroom/mgmt_deck.pptx"):
+        assert rows[rel]["readable"] == "no" and "no reader" in rows[rel]["note"]
+    assert rows["inputs/dataroom/legal/credit_agreement_summary.md"]["readable"] == "yes"
+    res = C.dataroom_index_complete(ws, {})
+    assert res["passed"] is True, res["details"]
+    # claiming a spreadsheet is readable fails
+    path = ws / T.DATAROOM_INDEX_PATH
+    listed = _rows(path)
+    next(r for r in listed if r["path"].endswith(".xlsx")).update(readable="yes", note="")
+    _write_rows(path, listed)
+    res = C.dataroom_index_complete(ws, {})
+    assert res["passed"] is False and "marked readable but no reader for .xlsx" in res["details"]
+
+
+def test_sec_company_lookup_resolves_tickers_and_names(tmp_path, monkeypatch):
+    monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+    tickers = {"0": {"cik_str": 9900003, "ticker": "CDHS", "title": "Coldharbor Systems, Inc."},
+               "1": {"cik_str": 9900001, "ticker": "HLVI", "title": "Halvorsen Instruments Inc."},
+               "2": {"cik_str": 9900002, "ticker": "BWAC", "title": "Brightwater Analytics Corp."}}
+    fetch = FakeFetch({T.COMPANY_TICKERS_URL: json.dumps(tickers)})
+    with pytest.raises(ToolError, match="User-Agent"):
+        T.sec_company_lookup(tmp_path, fetch=fetch, query="CDHS")
+    out = T.sec_company_lookup(tmp_path, fetch=fetch, query="cdhs", user_agent=UA)
+    assert out["origin"] == T.COMPANY_TICKERS_URL and fetch.calls[0][1]["User-Agent"] == UA
+    assert out["matches"] == [{"cik": "9900003", "ticker": "CDHS", "name": "Coldharbor Systems, Inc."}]
+    by_name = T.sec_company_lookup(tmp_path, fetch=fetch, query="analytics")
+    assert by_name["origin"] == "cache" and [m["cik"] for m in by_name["matches"]] == ["9900002"]
+    assert len(fetch.calls) == 1
+    assert T.sec_company_lookup(tmp_path, query="Nonexistent Holdings")["matches"] == []
+    with pytest.raises(ToolError):
+        T.sec_company_lookup(tmp_path, query=" ")
 
 
 def test_index_dataroom_without_data_room_writes_empty_index(tmp_path):
@@ -347,6 +566,51 @@ def test_comps_checks_fail_when_missing(ws):
         assert fn(ws, {})["passed"] is False
 
 
+def _recomputed(rows: list[dict]) -> list[dict]:
+    """Rows with every derived column rewritten from the row's own inputs."""
+    for row in rows:
+        for col, value in C._expected_derived(row).items():
+            row[col] = "" if value is None else f"{value:.10g}"
+    return rows
+
+
+def test_comps_blanked_cash_and_debt_fail_although_they_recompute(built):
+    """Blanking cash and debt inflates EV by ~34% while the row stays
+    internally consistent; the SEC source still reports those balances."""
+    path = built / C.COMPS_PATH
+    rows = _rows(path)
+    target = next(r for r in rows if r["cik"] == "9900003")
+    for col in ("cash", "long_term_debt_noncurrent", "long_term_debt_current"):
+        target[col] = ""
+    _write_rows(path, _recomputed(rows))
+    assert target["enterprise_value"] == "950910000"
+    assert C.comps_recompute(built, {})["passed"] is True
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False
+    assert "9900003 cash: blank but facts.csv has cash FY2024" in res["details"]
+    assert "long_term_debt_current: blank" in res["details"]
+    # dropping the rows from facts.csv too does not help: the SEC source reports them
+    spreads = built / C.SPREADS_PATH
+    _write_rows(spreads, [r for r in _rows(spreads) if not (r["cik"] == "9900003" and r["metric"] in (
+        "cash", "long_term_debt_noncurrent", "long_term_debt_current"))])
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False and "blank but the SEC source reports cash for FY2024" in res["details"]
+
+
+def test_comps_must_cover_every_company_in_scope(built):
+    path = built / C.COMPS_PATH
+    rows = _rows(path)
+    _write_rows(path, [r for r in rows if r["cik"] != "9900002"])
+    res = C.comps_tie_to_xbrl(built, {})
+    assert res["passed"] is False
+    assert "9900002: no FY2024 comps row although the SEC source reports its revenue" in res["details"]
+    # the brief's companies count even when the agent dropped one everywhere
+    _write_rows(path, rows)
+    res = C.comps_tie_to_xbrl(built, {"ciks": CIKS + [9900004]})
+    assert res["passed"] is False and "9900004: no FY2024 comps row and no companyfacts" in res["details"]
+    assert C.comps_tie_to_xbrl(built, {"ciks": CIKS})["passed"] is True
+
+
 # --- checks: M3 memo ----------------------------------------------------------------
 
 MEMO = """# Coldharbor Systems diligence memo
@@ -363,11 +627,20 @@ Coldharbor reported FY2024 revenue of $702.3 million [F:9900003:2024:revenue], u
 |---|---|---|
 | Coldharbor | 2.05x [F:9900003:2024:ev_revenue] | 14.6x [F:9900003:2024:ev_ebitda] |
 
-The company changed auditors in June 2024 and has an undrawn $150 million revolver [C1]. Enterprise value is $1.44bn [F:9900003:2024:enterprise_value].
+Coldharbor changed auditors in June 2024. Halvorsen has an undrawn $150 million revolver [C1]. Enterprise value is $1.44bn [F:9900003:2024:enterprise_value].
 """
+CREDIT = "inputs/dataroom/legal/credit_agreement_summary.md"
 
 
 def _memo(ws: Path, text: str = MEMO) -> None:
+    """Write the memo; the first call also records claim C1 (the revolver)."""
+    from agentkit.ledger import Ledger
+    ledger = Ledger(ws)
+    if not ledger.claims:
+        src = ledger.add_source(f"workspace:{CREDIT}", "Credit agreement summary",
+                                (ws / CREDIT).read_text(encoding="utf-8"), kind="customer")
+        ledger.add_claim("Halvorsen's revolver is undrawn", src.id,
+                         "Revolving facility: $150 million, undrawn at 2024-12-31")
     path = ws / C.MEMO_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -388,12 +661,75 @@ def test_memo_figures_match_passes(built):
     ("[F:9900003:2024:enterprise_value]", "[F:9900003:2021:enterprise_value]", "no comps row"),
     ("4.5% [F:9900003:2024:revenue_growth]", "4.5x [F:9900003:2024:revenue_growth]",
      "percentage"),
+    # a claim citation only covers figures its verbatim quote contains
+    ("$150 million revolver [C1]", "$950 million revolver [C1]", "not in the quote of C1"),
+    ("$150 million revolver [C1]", "$150 million revolver, up 38% [C1]", "38% not in the quote"),
+    # precision the playbook asks for
+    ("$702.3 million [F:", "$1 billion [F:", "too rounded"),
+    ("4.5% [F:", "5% [F:", "too rounded"),
+    ("$1.44bn", "$1.4bn", "too rounded"),
+    # direction words set the sign: revenue grew 4.54%
+    ("up\n4.5%", "down\n4.5%", "shows -4.5"),
+    ("up\n4.5%", "declined\n4.5%", "shows -4.5"),
 ])
 def test_memo_figures_match_rejects_mismatch(built, old, new, reason):
     assert old in MEMO
     _memo(built, MEMO.replace(old, new))
     res = C.memo_figures_match(built, {})
-    assert res["passed"] is False and reason in res["details"]
+    assert res["passed"] is False and reason in res["details"], res["details"]
+
+
+@pytest.mark.parametrize("old,new", [
+    ("$702.3 million", "$702 million"),                    # three significant figures
+    ("$702.3 million", "$0.7023 billion"),
+    ("$150 million revolver [C1]", "$150,000,000 revolver [C1]"),
+    ("$150 million revolver [C1]", "$150 million revolver [C1, C2]"),
+    ("2.05x", "2.1x"),
+])
+def test_memo_figures_match_accepts_equivalent_forms(built, old, new):
+    _memo(built, MEMO.replace(old, new))
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is True, res["details"]
+
+
+def test_memo_bullets_are_checked_one_by_one(built):
+    _memo(built, MEMO + "\n- Backlog fell to $120 million\n- Customer churn hit 18%\n"
+                        "- The revolver matures in 2028 [C1]\n")
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is False and res["details"].count("uncited figure") == 2
+
+
+@pytest.mark.parametrize("sentence", [
+    "Backlog grew 25 percent to 900M.", "The deal values it at 3.1 times revenue.",
+    "Backlog was 902,300,000 at year end.", "Backlog is now 1.2B.", "Leverage is 4.5 turns.",
+    "Churn improved by 150 bps.", "The company has 12500 customers.",
+])
+def test_memo_figures_in_other_formats_need_a_citation(built, sentence):
+    _memo(built, MEMO + "\n" + sentence + "\n")
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is False and "uncited figure" in res["details"], sentence
+
+
+def test_memo_references_and_years_are_not_figures(built):
+    _memo(built, MEMO + "\nSee the FY2024 Form 10-K (accession 0009900003-25-000027, CIK 9900003) at "
+                        "https://www.sec.gov/Archives/edgar/data/9900003/000990000325000027/"
+                        "cdhs-20241231.htm and inputs/dataroom/board_deck_q4_2024.pdf, filed in "
+                        "February 2025 under Item 4.01.\n")
+    res = C.memo_figures_match(built, {})
+    assert res["passed"] is True, res["details"]
+
+
+def test_memo_negative_growth_reads_its_direction_words(built):
+    path = built / C.COMPS_PATH
+    rows = _rows(path)
+    next(r for r in rows if r["cik"] == "9900003")["revenue_growth"] = "-0.0454"
+    _write_rows(path, rows)
+    for word, passed in (("declined", True), ("fell by", True), ("down", True), ("up", False),
+                         ("grew", False)):
+        _memo(built, MEMO.replace("up\n4.5%", f"{word}\n4.5%"))
+        assert C.memo_figures_match(built, {})["passed"] is passed, word
+    _memo(built, MEMO.replace("up\n4.5%", "at\n-4.5%"))
+    assert C.memo_figures_match(built, {})["passed"] is True
 
 
 def test_memo_figure_tag_may_wrap_to_next_line(built):
@@ -405,22 +741,44 @@ def test_memo_figure_tag_may_wrap_to_next_line(built):
 
 
 def test_no_recommendation_language_allows_ordinary_prose(built):
+    from specialists.financial_research.agent import FinancialResearch
+    disclaimer = FinancialResearch().manifest.human_gate.disclaimer
     _memo(built, MEMO + "\nThe policy rate hold helped rates hold steady; the sell-side "
-                        "consensus is not a buy-side view. Its credit rating is Ba2.\n")
+                        "consensus is not a buy-side view. Its credit rating is Ba2.\n"
+                        "Interest rates held at a neutral level. Impact on margins: neutral.\n"
+                        "We note the fair value of the warrants; goodwill fair value exceeded "
+                        "its carrying amount.\nManagement's revenue target of $800 million "
+                        "assumes a 20% downside case for backlog; the downside risk to margins "
+                        "is labor.\nThe company should sell its legacy unit, management says.\n"
+                        + disclaimer + "\n")
     res = C.no_recommendation_language(built, {})
     assert res["passed"] is True, res["details"]
 
 
-def test_no_recommendation_language(built):
+@pytest.mark.parametrize("bad", [
+    "We rate the shares a Buy.", "Our 12-month price target is $25.",
+    "We recommend buying on weakness.", "We initiate coverage with Outperform.",
+    "At 2.1x revenue the stock looks a compelling buy.",
+    "We rate the shares as Overweight.", "Reiterate our Outperform rating.",
+    # phrasings the first version of the check let through
+    "We rate Coldharbor a Strong Buy.", "We rate Coldharbor a Buy.", "Rating: Buy",
+    "Rating: Neutral", "Coldharbor: Strong Buy (12-month).", "Coldharbor: Buy (12-month).",
+    "Investors should buy the shares below $30.", "Our fair value estimate is $52 per share.",
+    "We see 40% upside to $42.", "We value the shares at $30.",
+    "The shares are worth about $52 per share.",
+    # a hedge on the same line no longer exempts it
+    "We would recommend buying on weakness; this does not constitute investment advice.",
+    "Not a recommendation, but the stock is a buy.",
+])
+def test_no_recommendation_language(built, bad):
     _memo(built)
     assert C.no_recommendation_language(built, {})["passed"] is True
-    for bad in ("We rate the shares a Buy.", "Our 12-month price target is $25.",
-                "We recommend buying on weakness.", "We initiate coverage with Outperform.",
-                "At 2.1x revenue the stock looks a compelling buy.",
-                "We rate the shares as Overweight.", "Reiterate our Outperform rating."):
-        _memo(built, MEMO + "\n" + bad + "\n")
-        res = C.no_recommendation_language(built, {})
-        assert res["passed"] is False, bad
+    _memo(built, MEMO + "\n" + bad + "\n")
+    res = C.no_recommendation_language(built, {})
+    assert res["passed"] is False, bad
+
+
+def test_no_recommendation_language_needs_its_files(built):
     assert C.no_recommendation_language(built, {"paths": ["nope.md"]})["passed"] is False
 
 
@@ -476,9 +834,73 @@ def test_red_flag_checklist_allow_open_and_missing_section(built):
     assert res["passed"] is False and "no section for CIK 9900004" in res["details"]
 
 
+def test_red_flag_checklist_covers_companies_dropped_from_comps(built):
+    """A company removed from comps.csv is still in facts.csv, so it stays in scope."""
+    _checklist(built, drop="9900002:RF01")
+    comps = built / C.COMPS_PATH
+    _write_rows(comps, [r for r in _rows(comps) if r["cik"] != "9900002"])
+    res = C.red_flag_checklist(built, {})
+    assert res["passed"] is False and "CIK 9900002 RF01: missing" in res["details"]
+
+
+def test_red_flag_evidence_files_must_exist(built):
+    _checklist(built, {"9900001:RF07": ("found", "inputs/dataroom/legal/lease_side_letter.txt")})
+    res = C.red_flag_checklist(built, {})
+    assert res["passed"] is False and "no such input file" in res["details"]
+    _checklist(built, {"9900001:RF07": ("found", "inputs/../../etc/passwd")})
+    assert "no such input file" in C.red_flag_checklist(built, {})["details"]
+
+
+OLDER_PAGE = "CIK0009900001-submissions-001.json"
+
+
+def _older_index_page(ws: Path) -> dict:
+    """Halvorsen's filing index gains an older page SEC lists but nobody loaded:
+    an auditor change in December 2022 (inside a three-year window ending
+    2025-11-04) and a non-reliance notice in June 2022 (outside it)."""
+    main = json.loads((ws / "inputs/edgar/submissions/CIK0009900001.json").read_text("utf-8"))
+    main["filings"]["files"] = [{"name": OLDER_PAGE, "filingCount": 2,
+                                 "filingFrom": "2022-06-01", "filingTo": "2022-12-15"}]
+    path = ws / ".agentkit/edgar/submissions/CIK0009900001.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(main), encoding="utf-8")
+    return {"accessionNumber": ["0009900001-22-000041", "0009900001-22-000031"],
+            "filingDate": ["2022-12-15", "2022-06-01"], "reportDate": ["2022-12-12", "2022-05-27"],
+            "form": ["8-K", "8-K"], "items": ["4.01,9.01", "4.02"],
+            "primaryDocument": ["hlvi-8k-auditor.htm", "hlvi-8k-nonreliance.htm"]}
+
+
+def test_red_flag_window_must_be_covered_by_the_filing_index(built):
+    page = _older_index_page(built)
+    flags = T.filing_red_flags(built, cik=9900001)
+    assert flags["window"] == {"from": "2022-11-04", "to": "2025-11-04"}
+    assert flags["complete"] is False and OLDER_PAGE in flags["note"]
+    _checklist(built)
+    res = C.red_flag_checklist(built, {"lookback_years": 3})
+    assert res["passed"] is False and "not loaded back to 2022-11-04" in res["details"]
+    # edgar_submissions(since=...) fetches the page; the hit inside the window must be found
+    fetch = FakeFetch({T.SUBMISSIONS_PAGE_URL.format(name=OLDER_PAGE): json.dumps(page)})
+    out = T.edgar_submissions(built, fetch=fetch, cik=9900001, since="2022-11-04", user_agent=UA)
+    assert out["older_pages_not_loaded"] == [] and out["index_covers"]["from"] == "2022-06-01"
+    assert fetch.calls[0][1]["User-Agent"] == UA
+    flags = T.filing_red_flags(built, cik=9900001)
+    assert flags["complete"] is True and flags["flags"]["RF01"]["status"] == "found"
+    assert flags["flags"]["RF02"]["status"] == "not_found"          # June 2022 is outside
+    res = C.red_flag_checklist(built, {"lookback_years": 3})
+    assert res["passed"] is False and "CIK 9900001 RF01: filing index shows 0009900001-22-000041" \
+        in res["details"]
+    _checklist(built, {"9900001:RF01": ("found", "0009900001-22-000041")})
+    assert C.red_flag_checklist(built, {"lookback_years": 3})["passed"] is True
+
+
 # --- checks: M1 sources and data room --------------------------------------------------
 
+WEB_NOTE = "https://example.com/industry-note"
+
+
 def _inventory(ws: Path, mutate=None) -> None:
+    from agentkit.ledger import Ledger
+    Ledger(ws).add_source(WEB_NOTE, "Industry note", "Industry note text.", kind="web")
     filing = T.edgar_submissions(ws, cik=9900002, forms=["10-K"])["filings"][0]
     credit = "inputs/dataroom/legal/credit_agreement_summary.md"
     rows = [
@@ -492,7 +914,7 @@ def _inventory(ws: Path, mutate=None) -> None:
          "cik": "9900001", "form": "", "accession": "", "filed": "", "uri": credit,
          "sha256": T.sha256_path(ws / credit)},
         {"source_id": "S4", "kind": "web", "company": "", "cik": "", "form": "",
-         "accession": "", "filed": "", "uri": "https://example.com/industry-note", "sha256": ""},
+         "accession": "", "filed": "", "uri": WEB_NOTE, "sha256": ""},
     ]
     if mutate:
         mutate(rows)
@@ -517,6 +939,9 @@ def test_source_inventory_resolves(ws):
     (lambda r: r[2].update(uri="inputs/../../outside.txt"), "not a file under inputs/"),
     (lambda r: r[3].update(source_id="S1"), "duplicate"),
     (lambda r: r[3].update(kind="rumor"), "unknown kind"),
+    # a web page nobody fetched cannot be listed as a source
+    (lambda r: r[3].update(uri="https://example.com/invented-analyst-report"), "never retrieved"),
+    (lambda r: r[3].update(uri="ftp://example.com/x"), "without an http(s) uri"),
 ])
 def test_source_inventory_rejects_unresolvable(ws, mutate, reason):
     _inventory(ws, mutate)

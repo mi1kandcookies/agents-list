@@ -7,6 +7,7 @@ TOOL_DEFS; the kit wraps them (agentkit.tools.tools_from_defs) and agent.py
 adds the client's SEC User-Agent. The heavy lifting is deterministic here so
 the model narrates numbers instead of computing them:
 
+    sec_company_lookup   ticker or name -> SEC CIK (SEC company_tickers.json)
     edgar_submissions    SEC submissions JSON (company profile + filing index)
     edgar_companyfacts   SEC XBRL companyfacts JSON (every reported fact)
     edgar_filing_text    one filing document from www.sec.gov as plain text
@@ -22,6 +23,12 @@ snapshots under inputs/edgar/ are read as a fallback, which is also how the
 tests and evals run with no network. Network goes through the injected
 `fetch` (egress-checked by the kit); SEC fair access requires a declared
 User-Agent, taken from the `user_agent` argument or SEC_USER_AGENT.
+
+Fiscal years are anchored to 10-K filings (fiscal_year_ends), not to the
+calendar year of a period end, so 52/53-week and January year-ends keep the
+filer's own labels. Each spreads value is the latest 10-K (or 10-K/A) figure
+for that exact period, so restatements flow through and a growth rate
+compares two figures on the same basis.
 
 Paths the model supplies (outputs, spreads, market data, data-room root) go
 through the kit's `resolve_path`: jailed to the workspace, inputs/ read-only,
@@ -45,20 +52,29 @@ from typing import Any
 
 from agentkit.errors import PolicyViolation, ToolError
 from agentkit.policy import PolicyGate
+from agentkit.tools.documents import TEXT_SUFFIXES as KIT_TEXT_SUFFIXES
 
 CACHE_DIR = ".agentkit/edgar"
 INPUT_DIR = "inputs/edgar"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+SUBMISSIONS_PAGE_URL = "https://data.sec.gov/submissions/{name}"
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 FILING_HOST = "https://www.sec.gov/"
+# Older filing-index pages listed in submissions filings.files.
+PAGE_NAME_RE = re.compile(r"CIK\d{10}-submissions-\d{3}\.json")
 
 SPREADS_PATH = "deliverables/m2-spreads-comps/facts.csv"
 COMPS_PATH = "deliverables/m2-spreads-comps/comps.csv"
 DATAROOM_INDEX_PATH = "deliverables/m1-plan-sources/dataroom_index.csv"
 MARKET_DATA_PATH = "inputs/market_data.csv"
 
+# Annual reports whose facts feed the spreads.
+ANNUAL_FORMS = ("10-K", "10-K/A")
+
 # Standard metric -> candidate us-gaap tags, most preferred first. Duration
 # metrics cover a fiscal year; instant metrics are the fiscal year-end balance.
+# Debt is kept as its reported components; debt_total() combines them.
 METRICS: dict[str, dict[str, Any]] = {
     "revenue": {"kind": "duration", "unit": "USD", "tags": [
         "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax",
@@ -82,10 +98,12 @@ METRICS: dict[str, dict[str, Any]] = {
     "cash": {"kind": "instant", "unit": "USD", "tags": [
         "CashAndCashEquivalentsAtCarryingValue",
         "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"]},
-    "long_term_debt": {"kind": "instant", "unit": "USD", "tags": [
-        "LongTermDebtNoncurrent", "LongTermDebt"]},
-    "short_term_debt": {"kind": "instant", "unit": "USD", "tags": [
-        "LongTermDebtCurrent", "DebtCurrent", "ShortTermBorrowings"]},
+    "long_term_debt_noncurrent": {"kind": "instant", "unit": "USD", "tags": ["LongTermDebtNoncurrent"]},
+    "long_term_debt_current": {"kind": "instant", "unit": "USD", "tags": ["LongTermDebtCurrent"]},
+    "long_term_debt_total": {"kind": "instant", "unit": "USD", "tags": ["LongTermDebt"]},
+    "debt_current": {"kind": "instant", "unit": "USD", "tags": ["DebtCurrent"]},
+    "short_term_borrowings": {"kind": "instant", "unit": "USD", "tags": [
+        "ShortTermBorrowings", "CommercialPaper"]},
     "total_assets": {"kind": "instant", "unit": "USD", "tags": ["Assets"]},
     "total_equity": {"kind": "instant", "unit": "USD", "tags": [
         "StockholdersEquity",
@@ -96,10 +114,12 @@ SPREADS_COLUMNS = ["company", "cik", "metric", "taxonomy", "tag", "unit", "fisca
                    "period_start", "period_end", "form", "accession", "filed", "value", "note"]
 
 # Columns in comps.csv that must tie to an XBRL fact in facts.csv.
-COMPS_XBRL_COLUMNS = ["revenue", "revenue_prior", "gross_profit", "operating_income",
-                      "net_income", "d_and_a", "cash", "long_term_debt", "short_term_debt",
-                      "shares_diluted"]
-COMPS_MARKET_COLUMNS = ["price", "price_as_of", "minority_interest", "preferred"]
+DEBT_COLUMNS = ["long_term_debt_noncurrent", "long_term_debt_current", "long_term_debt_total",
+                "debt_current", "short_term_borrowings"]
+COMPS_XBRL_COLUMNS = (["revenue", "revenue_prior", "gross_profit", "operating_income",
+                       "net_income", "d_and_a", "cash"] + DEBT_COLUMNS + ["shares_diluted"])
+COMPS_MARKET_COLUMNS = ["price", "price_as_of", "shares_outstanding", "minority_interest",
+                        "preferred"]
 COMPS_DERIVED_COLUMNS = ["total_debt", "ebitda", "market_cap", "enterprise_value",
                          "ev_revenue", "ev_ebitda", "pe", "gross_margin", "operating_margin",
                          "ebitda_margin", "revenue_growth"]
@@ -117,6 +137,7 @@ AUTO_RED_FLAGS: dict[str, dict[str, Any]] = {
     "RF09": {"title": "Debt acceleration or triggering event (8-K Item 2.04)",
              "items": ["2.04"]},
 }
+DEFAULT_LOOKBACK_YEARS = 3
 
 TEXT_TYPES = {".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv",
               ".json": "application/json", ".html": "text/html", ".htm": "text/html",
@@ -124,6 +145,10 @@ TEXT_TYPES = {".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv",
 OFFICE_TYPES = {".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}
+# What the kit's read_document can turn into text (agentkit/tools/documents.py).
+READABLE_SUFFIXES = set(KIT_TEXT_SUFFIXES) | {".html", ".htm", ".json", ".docx", ""}
+UNREADABLE_KINDS = {".xlsx": "spreadsheet", ".xls": "spreadsheet", ".xlsm": "spreadsheet",
+                    ".pptx": "presentation", ".ppt": "presentation", ".doc": "legacy Word file"}
 
 
 # --- helpers ------------------------------------------------------------------
@@ -161,14 +186,19 @@ def _write_csv(path: Path, columns: list[str], rows: list[dict[str, Any]]) -> No
             writer.writerow({c: row.get(c, "") for c in columns})
 
 
+def _cached_file(workspace: Path, rel: str) -> Path | None:
+    """A cached EDGAR file: .agentkit/edgar/ first, then inputs/edgar/."""
+    for base in (CACHE_DIR, INPUT_DIR):
+        path = Path(workspace) / base / rel
+        if path.is_file():
+            return path
+    return None
+
+
 def load_cached_json(workspace: Path, kind: str, cik: Any) -> dict | None:
     """Cached EDGAR JSON for one company: .agentkit/edgar/ first, then inputs/edgar/."""
-    name = f"CIK{normalize_cik(cik)}.json"
-    for base in (CACHE_DIR, INPUT_DIR):
-        path = Path(workspace) / base / kind / name
-        if path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
-    return None
+    path = _cached_file(workspace, f"{kind}/CIK{normalize_cik(cik)}.json")
+    return json.loads(path.read_text(encoding="utf-8")) if path else None
 
 
 def _user_agent(user_agent: str | None) -> str:
@@ -181,7 +211,7 @@ def _user_agent(user_agent: str | None) -> str:
     return ua
 
 
-def _fetch_json(fetch, url: str, user_agent: str) -> dict:
+def _fetch_json(fetch, url: str, user_agent: str) -> Any:
     if fetch is None:
         raise ToolError("network fetch is not available in this run")
     res = fetch(url, headers={"User-Agent": user_agent, "Accept": "application/json"})
@@ -195,12 +225,11 @@ def _fetch_json(fetch, url: str, user_agent: str) -> dict:
         raise ToolError(f"EDGAR returned invalid JSON for {url}: {exc}") from exc
 
 
-def _cache_json(workspace: Path, kind: str, cik: str, data: dict) -> str:
-    rel = f"{CACHE_DIR}/{kind}/CIK{cik}.json"
-    path = Path(workspace) / rel
+def _cache_json(workspace: Path, rel: str, data: Any) -> str:
+    path = Path(workspace) / CACHE_DIR / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
-    return rel
+    return f"{CACHE_DIR}/{rel}"
 
 
 def _get_json(workspace: Path, kind: str, cik: str, url: str, fetch, user_agent,
@@ -210,23 +239,50 @@ def _get_json(workspace: Path, kind: str, cik: str, url: str, fetch, user_agent,
         if cached is not None:
             return cached, "cache"
     data = _fetch_json(fetch, url, _user_agent(user_agent))
-    _cache_json(workspace, kind, cik, data)
+    _cache_json(workspace, f"{kind}/CIK{cik}.json", data)
     return data, url
 
 
-def recent_filings(submissions: dict) -> list[dict[str, str]]:
-    """The column-oriented `filings.recent` block as a list of row dicts."""
-    recent = (submissions.get("filings") or {}).get("recent") or {}
-    accessions = recent.get("accessionNumber") or []
+def _block_rows(block: dict) -> list[dict[str, str]]:
+    """A column-oriented filing-index block (filings.recent, or an older
+    page) as a list of row dicts."""
+    accessions = block.get("accessionNumber") or []
     rows = []
     for i, acc in enumerate(accessions):
         def col(key: str) -> str:
-            values = recent.get(key) or []
+            values = block.get(key) or []
             return str(values[i]) if i < len(values) and values[i] is not None else ""
         rows.append({"accession": acc, "form": col("form"), "filed": col("filingDate"),
                      "report_date": col("reportDate"), "items": col("items"),
                      "primary_document": col("primaryDocument")})
     return rows
+
+
+def recent_filings(submissions: dict) -> list[dict[str, str]]:
+    """The column-oriented `filings.recent` block as a list of row dicts."""
+    return _block_rows((submissions.get("filings") or {}).get("recent") or {})
+
+
+def history_pages(submissions: dict) -> list[dict]:
+    """Older filing-index pages SEC lists beyond filings.recent (safe names only)."""
+    pages = (submissions.get("filings") or {}).get("files") or []
+    return [p for p in pages if isinstance(p, dict) and PAGE_NAME_RE.fullmatch(str(p.get("name", "")))]
+
+
+def load_filing_index(workspace: Path, cik: Any) -> tuple[dict | None, list[dict], list[dict]]:
+    """(submissions JSON, filings from filings.recent plus every cached older
+    page, older pages SEC lists that are not cached)."""
+    data = load_cached_json(workspace, "submissions", cik)
+    if data is None:
+        return None, [], []
+    rows, missing = recent_filings(data), []
+    for page in history_pages(data):
+        path = _cached_file(workspace, f"submissions/{page['name']}")
+        if path is None:
+            missing.append(page)
+        else:
+            rows += _block_rows(json.loads(path.read_text(encoding="utf-8")))
+    return data, rows, missing
 
 
 def filing_url(cik: Any, accession: str, document: str = "") -> str:
@@ -239,52 +295,125 @@ def _days(start: str, end: str) -> int:
     return (date.fromisoformat(end) - date.fromisoformat(start)).days
 
 
-def annual_fact(companyfacts: dict, metric: str, fiscal_year: int,
-                period_end: str | None = None) -> dict | None:
+def _annual_duration(rec: dict) -> bool:
+    try:
+        return "start" in rec and "end" in rec and 350 <= _days(rec["start"], rec["end"]) <= 380
+    except (TypeError, ValueError):
+        return False
+
+
+def _years_before(day: str, years: int) -> str:
+    """The date `years` before an ISO date ('' when the date is malformed)."""
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        return ""
+    try:
+        return d.replace(year=d.year - years).isoformat()
+    except ValueError:       # 29 February
+        return d.replace(year=d.year - years, day=28).isoformat()
+
+
+def fiscal_year_ends(companyfacts: dict) -> dict[int, str]:
+    """Fiscal year -> year-end date, anchored to the 10-K that reports it.
+
+    A 10-K's own year is the latest full-year period it reports. That
+    year-end takes the fiscal year the filer gave its original 10-K (`fy`,
+    DocumentFiscalYearFocus) when that is the calendar year of the end or
+    the one before (a 52/53-week year ending in early January, a retailer's
+    January year-end); otherwise the calendar year of the end. If two
+    year-ends claim one label, the one ending in that calendar year keeps it.
+    Earlier years a 10-K reports only as comparatives (each a full year
+    before the next) take the labels below its own.
+    """
+    filings: dict[str, dict] = {}
+    gaap = (companyfacts.get("facts") or {}).get("us-gaap") or {}
+    for concept in gaap.values():
+        for records in ((concept or {}).get("units") or {}).values():
+            for rec in records:
+                if rec.get("form") not in ANNUAL_FORMS or not rec.get("accn") or not _annual_duration(rec):
+                    continue
+                filing = filings.setdefault(rec["accn"], {"ends": set(), "fy": rec.get("fy"),
+                                                          "form": rec["form"],
+                                                          "filed": str(rec.get("filed", ""))})
+                filing["ends"].add(rec["end"])
+    ordered = sorted(filings.values(), key=lambda f: (f["form"] != "10-K", f["filed"]))
+    first: dict[str, dict] = {}
+    for filing in ordered:
+        first.setdefault(max(filing["ends"]), filing)
+    labels: dict[int, str] = {}
+    for end, filing in sorted(first.items()):
+        year = int(end[:4])
+        fy = filing["fy"] if isinstance(filing["fy"], int) and filing["fy"] in (year - 1, year) else year
+        held = labels.get(fy)
+        if held is None or (int(held[:4]) != fy and year == fy):
+            labels[fy] = end
+    for filing in ordered:
+        own = max(filing["ends"])
+        label = next((y for y, e in labels.items() if e == own), None)
+        if label is None:
+            continue
+        prev = own
+        for end in sorted(filing["ends"], reverse=True)[1:]:
+            if not 350 <= _days(end, prev) <= 380:
+                continue
+            label, prev = label - 1, end
+            if label not in labels and end not in labels.values():
+                labels[label] = end
+    return dict(sorted(labels.items()))
+
+
+def annual_fact(companyfacts: dict, metric: str, fiscal_year: int, *,
+                year_ends: dict[int, str] | None = None) -> dict | None:
     """The annual fact for a standard metric and fiscal year, or None.
 
-    Fiscal year = calendar year of the period end. Duration facts must span a
-    full year (350-380 days); instant facts must sit on `period_end` when one
-    is given (the fiscal year-end found from the duration facts). Among
-    candidates the value first reported in that year's own 10-K wins (fy ==
-    fiscal_year), then the most recently filed.
+    The period is the fiscal year's year-end from fiscal_year_ends. Duration
+    facts must span a full year (350-380 days) ending there; instant facts
+    must sit on it. Among 10-K and 10-K/A facts for that exact period the
+    most recently filed wins (a restated comparative replaces the original),
+    then the more preferred tag.
     """
+    ends = fiscal_year_ends(companyfacts) if year_ends is None else year_ends
+    end = ends.get(int(fiscal_year))
+    if end is None:
+        return None
     spec = METRICS[metric]
     gaap = (companyfacts.get("facts") or {}).get("us-gaap") or {}
-    for tag in spec["tags"]:
-        records = ((gaap.get(tag) or {}).get("units") or {}).get(spec["unit"]) or []
-        found = []
-        for rec in records:
-            if not str(rec.get("form", "")).startswith("10-K") or "end" not in rec:
+    best, best_key = None, None
+    for rank, tag in enumerate(spec["tags"]):
+        for rec in ((gaap.get(tag) or {}).get("units") or {}).get(spec["unit"]) or []:
+            if rec.get("form") not in ANNUAL_FORMS or rec.get("end") != end or "val" not in rec:
                 continue
-            if int(rec["end"][:4]) != int(fiscal_year):
+            if spec["kind"] == "duration" and not _annual_duration(rec):
                 continue
-            if spec["kind"] == "duration":
-                if "start" not in rec or not 350 <= _days(rec["start"], rec["end"]) <= 380:
-                    continue
-            else:
-                if "start" in rec or (period_end and rec["end"] != period_end):
-                    continue
-            found.append(rec)
-        if found:
-            found.sort(key=lambda r: (r.get("fy") == int(fiscal_year), r.get("filed", "")),
-                       reverse=True)
-            best = found[0]
-            return {"metric": metric, "taxonomy": "us-gaap", "tag": tag, "unit": spec["unit"],
-                    "fiscal_year": int(fiscal_year), "period_start": best.get("start", ""),
-                    "period_end": best["end"], "form": best.get("form", ""),
-                    "accession": best.get("accn", ""), "filed": best.get("filed", ""),
-                    "value": best["val"]}
-    return None
+            if spec["kind"] == "instant" and "start" in rec:
+                continue
+            key = (str(rec.get("filed", "")), -rank, str(rec.get("accn", "")))
+            if best_key is None or key > best_key:
+                best, best_key = (tag, rec), key
+    if best is None:
+        return None
+    tag, rec = best
+    return {"metric": metric, "taxonomy": "us-gaap", "tag": tag, "unit": spec["unit"],
+            "fiscal_year": int(fiscal_year), "period_start": rec.get("start", ""),
+            "period_end": rec["end"], "form": rec.get("form", ""),
+            "accession": rec.get("accn", ""), "filed": rec.get("filed", ""), "value": rec["val"]}
 
 
 def _dec(value: Any) -> Decimal | None:
-    if value is None or str(value).strip() == "":
+    """A number from a CSV cell ('1,234.50', '$48.25'); None when blank."""
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "").replace("$", "")
+    if text == "":
         return None
     try:
-        return Decimal(str(value).strip())
+        number = Decimal(text)
     except InvalidOperation as exc:
         raise ToolError(f"not a number: {value!r}") from exc
+    if not number.is_finite():
+        raise ToolError(f"not a number: {value!r}")
+    return number
 
 
 def _fmt(value: Decimal | None, places: int | None = None) -> str:
@@ -306,25 +435,107 @@ def _ratio(num: Decimal | None, den: Decimal | None, *, positive_only: bool = Fa
     return num / den
 
 
+def debt_total(values: dict[str, Decimal | None]) -> tuple[Decimal | None, str]:
+    """(total debt, basis) from the reported debt components, counting each
+    borrowing once:
+
+      1. long_term_debt_noncurrent + debt_current (all current debt)
+      2. long_term_debt_noncurrent + long_term_debt_current + short_term_borrowings
+      3. long_term_debt_total (already includes the current portion) + short_term_borrowings
+      4. debt_current, else long_term_debt_current + short_term_borrowings
+    """
+    noncurrent, current = values.get("long_term_debt_noncurrent"), values.get("debt_current")
+    ltd_current, borrowings = values.get("long_term_debt_current"), values.get("short_term_borrowings")
+    total = values.get("long_term_debt_total")
+    if noncurrent is not None and current is not None:
+        return noncurrent + current, "long_term_debt_noncurrent + debt_current"
+    if noncurrent is not None:
+        return (noncurrent + (ltd_current or 0) + (borrowings or 0),
+                "long_term_debt_noncurrent + long_term_debt_current + short_term_borrowings")
+    if total is not None:
+        return total + (borrowings or 0), "long_term_debt_total + short_term_borrowings"
+    if current is not None:
+        return current, "debt_current only"
+    if ltd_current is not None or borrowings is not None:
+        return (ltd_current or 0) + (borrowings or 0), "current debt only"
+    return None, "no debt reported"
+
+
 # --- EDGAR ----------------------------------------------------------------------
 
+def sec_company_lookup(workspace: Path, *, fetch=None, run=None, query: str = "",
+                       limit: int = 10, user_agent: str | None = None,
+                       refresh: bool = False) -> dict:
+    """Resolve a ticker or company name to SEC CIKs from SEC's
+    company_tickers.json (cached; inputs/edgar/company_tickers.json offline)."""
+    q = str(query).strip()
+    if not q:
+        raise ToolError("give a ticker or company name")
+    path = None if refresh else _cached_file(workspace, "company_tickers.json")
+    if path is not None:
+        data, origin = json.loads(path.read_text(encoding="utf-8")), "cache"
+    else:
+        data = _fetch_json(fetch, COMPANY_TICKERS_URL, _user_agent(user_agent))
+        _cache_json(workspace, "company_tickers.json", data)
+        origin = COMPANY_TICKERS_URL
+    entries = data.values() if isinstance(data, dict) else data
+    companies = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        try:
+            cik = str(int(normalize_cik(e.get("cik_str"))))
+        except ToolError:
+            continue
+        companies.append({"cik": cik, "ticker": str(e.get("ticker", "")), "name": str(e.get("title", ""))})
+    key = q.casefold()
+    exact = [c for c in companies if c["ticker"].casefold() == key or c["cik"] == q.lstrip("0")]
+    taken = {id(c) for c in exact}
+    by_name = [c for c in companies if id(c) not in taken and key in c["name"].casefold()]
+    return {"query": q, "origin": origin, "matches": (exact + by_name)[: max(1, int(limit))],
+            "note": "Confirm each registrant (name, fiscal year end) with edgar_submissions and "
+                    "record the name/CIK mapping in the research plan."}
+
+
 def edgar_submissions(workspace: Path, *, fetch=None, run=None, cik: Any = "",
-                      forms: list[str] | None = None, limit: int = 40,
+                      forms: list[str] | None = None, limit: int = 40, since: str = "",
                       user_agent: str | None = None, refresh: bool = False) -> dict:
-    """Company profile and recent filing index from data.sec.gov (cached)."""
+    """Company profile and filing index from data.sec.gov (cached).
+
+    filings.recent holds about the last year or 1,000 filings. With `since`
+    (YYYY-MM-DD), older index pages that reach back to that date are fetched
+    and cached too, so the red-flag scan covers the whole window.
+    """
     cik10 = normalize_cik(cik)
     data, origin = _get_json(workspace, "submissions", cik10,
                              SUBMISSIONS_URL.format(cik=cik10), fetch, user_agent, refresh)
-    rows = recent_filings(data)
+    if since:
+        try:
+            date.fromisoformat(since)
+        except ValueError:
+            raise ToolError("since must be YYYY-MM-DD") from None
+        for page in history_pages(data):
+            if str(page.get("filingTo", "")) < since:
+                continue
+            rel = f"submissions/{page['name']}"
+            if refresh or _cached_file(workspace, rel) is None:
+                _cache_json(workspace, rel, _fetch_json(
+                    fetch, SUBMISSIONS_PAGE_URL.format(name=page["name"]), _user_agent(user_agent)))
+    _, rows, missing = load_filing_index(workspace, cik10)
+    total, filed = len(rows), [r["filed"] for r in rows if r["filed"]]
     if forms:
         wanted = {f.upper() for f in forms}
         rows = [r for r in rows if r["form"].upper() in wanted]
+    if since:
+        rows = [r for r in rows if r["filed"] >= since]
     for r in rows:
         r["url"] = filing_url(cik10, r["accession"], r["primary_document"])
     return {"cik": cik10, "name": data.get("name", ""), "tickers": data.get("tickers", []),
             "sic": data.get("sic", ""), "sic_description": data.get("sicDescription", ""),
             "fiscal_year_end": data.get("fiscalYearEnd", ""), "origin": origin,
-            "total_recent": len(recent_filings(data)), "filings": rows[: max(1, int(limit))]}
+            "index_covers": {"from": min(filed, default=""), "to": max(filed, default="")},
+            "older_pages_not_loaded": [p["name"] for p in missing],
+            "total_filings": total, "filings": rows[: max(1, int(limit))]}
 
 
 def edgar_companyfacts(workspace: Path, *, fetch=None, run=None, cik: Any = "",
@@ -337,7 +548,8 @@ def edgar_companyfacts(workspace: Path, *, fetch=None, run=None, cik: Any = "",
     available = {m: next((t for t in spec["tags"] if t in gaap), None)
                  for m, spec in METRICS.items()}
     return {"cik": cik10, "entity_name": data.get("entityName", ""), "origin": origin,
-            "us_gaap_tags": len(gaap), "standard_metrics": available}
+            "us_gaap_tags": len(gaap), "standard_metrics": available,
+            "fiscal_year_ends": fiscal_year_ends(data)}
 
 
 def _html_to_text(markup: str) -> str:
@@ -392,20 +604,29 @@ def xbrl_facts(workspace: Path, *, fetch=None, run=None, cik: Any = "",
     """Annual facts from the cached companyfacts JSON.
 
     With `metrics`, uses the standard tag map; with `tag`, lists every 10-K
-    fact for that raw us-gaap tag (useful when the standard map misses).
+    fact for that us-gaap tag on a fiscal year-end (useful when the standard
+    map misses a less common tag), each labelled with its fiscal year.
     """
     data = load_cached_json(workspace, "companyfacts", cik)
     if data is None:
         raise ToolError("no companyfacts cached for this CIK; call edgar_companyfacts first")
+    ends = fiscal_year_ends(data)
+    years = [int(y) for y in (fiscal_years or [])]
     if tag:
+        label = {end: fy for fy, end in ends.items()}
         records = ((((data.get("facts") or {}).get("us-gaap") or {}).get(tag) or {})
                    .get("units") or {}).get(unit) or []
-        rows = [r for r in records if str(r.get("form", "")).startswith("10-K")]
-        if fiscal_years:
-            years = {int(y) for y in fiscal_years}
-            rows = [r for r in rows if int(r["end"][:4]) in years]
-        return {"cik": normalize_cik(cik), "tag": tag, "unit": unit, "facts": rows[:200]}
-    years = [int(y) for y in (fiscal_years or [])]
+        rows = []
+        for r in records:
+            if r.get("form") not in ANNUAL_FORMS or r.get("end") not in label:
+                continue
+            if "start" in r and not _annual_duration(r):
+                continue
+            if years and label[r["end"]] not in years:
+                continue
+            rows.append(dict(r, fiscal_year=label[r["end"]]))
+        return {"cik": normalize_cik(cik), "tag": tag, "unit": unit, "fiscal_year_ends": ends,
+                "facts": rows[:200]}
     if not years:
         raise ToolError("give fiscal_years (e.g. [2023, 2024])")
     unknown = [m for m in (metrics or []) if m not in METRICS]
@@ -413,16 +634,14 @@ def xbrl_facts(workspace: Path, *, fetch=None, run=None, cik: Any = "",
         raise ToolError(f"unknown metrics {unknown}; known: {sorted(METRICS)}")
     out, missing = [], []
     for year in years:
-        rev = annual_fact(data, "revenue", year)
-        end = rev["period_end"] if rev else None
         for metric in metrics or list(METRICS):
-            fact = annual_fact(data, metric, year, end)
+            fact = annual_fact(data, metric, year, year_ends=ends)
             if fact:
                 out.append(fact)
             else:
                 missing.append({"metric": metric, "fiscal_year": year})
     return {"cik": normalize_cik(cik), "entity_name": data.get("entityName", ""),
-            "facts": out, "missing": missing}
+            "fiscal_year_ends": {y: ends.get(y, "") for y in years}, "facts": out, "missing": missing}
 
 
 # --- spreads and comps ------------------------------------------------------------
@@ -441,24 +660,25 @@ def build_spreads(workspace: Path, *, fetch=None, run=None, resolve_path=None,
     unknown = [m for m in (metrics or []) if m not in METRICS]
     if unknown:
         raise ToolError(f"unknown metrics {unknown}; known: {sorted(METRICS)}")
-    rows, missing = [], []
+    years = sorted({int(y) for y in fiscal_years})
+    rows, missing, year_ends = [], [], {}
     for cik in ciks:
         data = load_cached_json(workspace, "companyfacts", cik)
         if data is None:
             raise ToolError(f"no companyfacts cached for CIK {cik}; call edgar_companyfacts")
-        name = data.get("entityName", "")
-        for year in sorted({int(y) for y in fiscal_years}):
-            rev = annual_fact(data, "revenue", year)
-            end = rev["period_end"] if rev else None
+        name, short = data.get("entityName", ""), str(int(normalize_cik(cik)))
+        ends = fiscal_year_ends(data)
+        year_ends[short] = {y: ends.get(y, "") for y in years}
+        for year in years:
             for metric in metrics or list(METRICS):
-                fact = annual_fact(data, metric, year, end)
+                fact = annual_fact(data, metric, year, year_ends=ends)
                 if fact is None:
                     missing.append({"cik": normalize_cik(cik), "metric": metric,
                                     "fiscal_year": year})
                     continue
-                rows.append(dict(fact, company=name, cik=str(int(normalize_cik(cik))), note=""))
+                rows.append(dict(fact, company=name, cik=short, note=""))
     _write_csv(target, SPREADS_COLUMNS, rows)
-    return {"path": output, "rows": len(rows), "missing": missing}
+    return {"path": output, "rows": len(rows), "fiscal_year_ends": year_ends, "missing": missing}
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -472,12 +692,15 @@ def compute_comps(workspace: Path, *, fetch=None, run=None, resolve_path=None,
     """Trading comps for one fiscal year from facts.csv and customer market data.
 
     Definitions (see playbook/xbrl-spreads.md):
-      total_debt       = long_term_debt + short_term_debt
+      total_debt       = debt_total() of the reported debt components
       ebitda           = operating_income + d_and_a
-      market_cap       = price x shares_diluted (weighted-average diluted, FY)
+      market_cap       = price x shares_outstanding from the client's file, else
+                         x shares_diluted (weighted-average diluted, FY)
       enterprise_value = market_cap + total_debt - cash + minority_interest + preferred
       ev_revenue, ev_ebitda (blank when EBITDA <= 0), pe = market_cap / net_income
       (blank when <= 0), margins over revenue, revenue_growth vs prior year.
+    Without a market data file (or a company's row in it) the price and
+    valuation columns stay blank and the operating metrics are still written.
     Multiples and margins are rounded to 4 places; money stays unrounded.
     """
     if not fiscal_year:
@@ -489,49 +712,56 @@ def compute_comps(workspace: Path, *, fetch=None, run=None, resolve_path=None,
     target = resolve(output, write=True)
     if not spreads_path.is_file():
         raise ToolError(f"{spreads} not found; run build_spreads first")
-    if not market_path.is_file():
-        raise ToolError(f"{market_data} not found; ask the client for market data "
-                        "(price and as-of date per ticker)")
     facts: dict[tuple[str, int, str], dict[str, str]] = {}
     names: dict[str, str] = {}
     for r in _read_csv(spreads_path):
         cik = str(int(normalize_cik(r["cik"])))
         facts[(cik, int(r["fiscal_year"]), r["metric"])] = r
         names[cik] = r.get("company", "")
-    market = {str(int(normalize_cik(r["cik"]))): r for r in _read_csv(market_path)}
+    gaps: list[str] = []
+    market: dict[str, dict[str, str]] = {}
+    if market_path.is_file():
+        market = {str(int(normalize_cik(r["cik"]))): r for r in _read_csv(market_path)}
+    else:
+        gaps.append(f"{market_data} not found: price and valuation columns are blank "
+                    "(operating metrics only)")
 
-    rows, gaps = [], []
+    rows, debt_bases = [], {}
     for cik in sorted(names, key=int):
         def val(metric: str, y: int = year) -> Decimal | None:
             r = facts.get((cik, y, metric))
             return _dec(r["value"]) if r else None
 
-        m = market.get(cik)
-        if m is None:
-            gaps.append(f"CIK {cik}: no market data row")
-            continue
         base = {"revenue": val("revenue"), "revenue_prior": val("revenue", year - 1)}
         for col in COMPS_XBRL_COLUMNS[2:]:
             base[col] = val(col)
         if base["revenue"] is None:
             gaps.append(f"CIK {cik}: no FY{year} revenue in spreads")
             continue
-        price = _dec(m.get("price"))
-        minority = _dec(m.get("minority_interest")) or Decimal(0)
-        preferred = _dec(m.get("preferred")) or Decimal(0)
-        debt = None
-        if base["long_term_debt"] is not None or base["short_term_debt"] is not None:
-            debt = (base["long_term_debt"] or 0) + (base["short_term_debt"] or 0)
+        m = market.get(cik)
+        if m is None and market:
+            gaps.append(f"CIK {cik}: no market data row; valuation columns left blank")
+        price = _dec(m.get("price")) if m else None
+        shares_out = _dec(m.get("shares_outstanding")) if m else None
+        minority = (_dec(m.get("minority_interest")) or Decimal(0)) if m else None
+        preferred = (_dec(m.get("preferred")) or Decimal(0)) if m else None
+        debt, debt_bases[cik] = debt_total(base)
         ebitda = (base["operating_income"] + base["d_and_a"]
                   if base["operating_income"] is not None and base["d_and_a"] is not None else None)
-        mcap = price * base["shares_diluted"] if price is not None and base["shares_diluted"] is not None else None
-        ev = (mcap + (debt or 0) - (base["cash"] or 0) + minority + preferred
+        shares = shares_out if shares_out is not None else base["shares_diluted"]
+        mcap = price * shares if price is not None and shares is not None else None
+        ev = (mcap + (debt or 0) - (base["cash"] or 0) + (minority or 0) + (preferred or 0)
               if mcap is not None else None)
         growth = _ratio(base["revenue"], base["revenue_prior"])
+        ticker = (m or {}).get("ticker", "")
+        if not ticker:
+            subs = load_cached_json(workspace, "submissions", cik) or {}
+            ticker = next(iter(subs.get("tickers") or []), "")
         rev_fact = facts[(cik, year, "revenue")]
-        row = {"company": names[cik], "cik": cik, "ticker": m.get("ticker", ""),
+        row = {"company": names[cik], "cik": cik, "ticker": ticker,
                "fiscal_year": year, "period_end": rev_fact.get("period_end", ""),
-               "price": _fmt(price), "price_as_of": m.get("price_as_of", ""),
+               "price": _fmt(price), "price_as_of": (m or {}).get("price_as_of", ""),
+               "shares_outstanding": _fmt(shares_out),
                "minority_interest": _fmt(minority), "preferred": _fmt(preferred),
                "total_debt": _fmt(debt), "ebitda": _fmt(ebitda), "market_cap": _fmt(mcap),
                "enterprise_value": _fmt(ev),
@@ -554,17 +784,18 @@ def compute_comps(workspace: Path, *, fetch=None, run=None, resolve_path=None,
         med = vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
         return _fmt(med, 4)
 
-    return {"path": output, "rows": len(rows), "gaps": gaps,
+    return {"path": output, "rows": len(rows), "gaps": gaps, "market_data": bool(market),
+            "debt_basis": debt_bases,
             "medians": {c: median(c) for c in ("ev_revenue", "ev_ebitda", "pe", "gross_margin",
                                                "operating_margin", "revenue_growth")}}
 
 
 # --- red flags and data room --------------------------------------------------------
 
-def scan_red_flags(submissions: dict, since: str = "") -> dict[str, list[dict[str, str]]]:
+def scan_red_flags(filings: list[dict[str, str]], since: str = "") -> dict[str, list[dict[str, str]]]:
     """Automatic red-flag hits in a filing index, keyed by checklist id."""
     hits: dict[str, list[dict[str, str]]] = {k: [] for k in AUTO_RED_FLAGS}
-    for f in recent_filings(submissions):
+    for f in filings:
         if since and f["filed"] < since:
             continue
         items = {i.strip() for i in f["items"].split(",") if i.strip()}
@@ -577,24 +808,38 @@ def scan_red_flags(submissions: dict, since: str = "") -> dict[str, list[dict[st
 
 
 def filing_red_flags(workspace: Path, *, fetch=None, run=None, cik: Any = "",
-                     since: str = "") -> dict:
+                     since: str = "", lookback_years: int = DEFAULT_LOOKBACK_YEARS) -> dict:
     """Scan the cached filing index for filing-level red flags (RF01-RF04, RF09).
 
-    Text-level items (going concern, material weakness, related parties,
-    concentration, litigation) need the filings themselves; see
-    playbook/red-flags.md.
+    The window runs from `since`, else `lookback_years` before the latest
+    filing, to the latest filing. `complete` is false when older index pages
+    SEC lists reach into the window but were not loaded (edgar_submissions
+    with since=<window start> loads them). Text-level items (going concern,
+    material weakness, related parties, concentration, litigation) need the
+    filings themselves; see playbook/red-flags.md.
     """
-    data = load_cached_json(workspace, "submissions", cik)
+    data, filings, missing = load_filing_index(workspace, cik)
     if data is None:
         raise ToolError("no submissions cached for this CIK; call edgar_submissions first")
     cik10 = normalize_cik(cik)
-    hits = scan_red_flags(data, since)
-    return {"cik": cik10, "name": data.get("name", ""), "since": since or "all recent",
-            "flags": {k: {"title": AUTO_RED_FLAGS[k]["title"],
-                          "status": "found" if v else "not_found",
-                          "filings": [dict(f, url=filing_url(cik10, f["accession"],
-                                                             f["primary_document"])) for f in v]}
-                      for k, v in hits.items()}}
+    filed = [f["filed"] for f in filings if f["filed"]]
+    latest, earliest = max(filed, default=""), min(filed, default="")
+    if not since and lookback_years and latest:
+        since = _years_before(latest, int(lookback_years))
+    uncovered = [p["name"] for p in missing if not since or str(p.get("filingTo", "")) >= since]
+    hits = scan_red_flags(filings, since)
+    out = {"cik": cik10, "name": data.get("name", ""),
+           "window": {"from": since or earliest, "to": latest}, "index_covers_from": earliest,
+           "complete": not uncovered,
+           "flags": {k: {"title": AUTO_RED_FLAGS[k]["title"],
+                         "status": "found" if v else "not_found",
+                         "filings": [dict(f, url=filing_url(cik10, f["accession"],
+                                                            f["primary_document"])) for f in v]}
+                     for k, v in hits.items()}}
+    if uncovered:
+        out["note"] = (f"older filing-index pages {', '.join(uncovered)} were not loaded; call "
+                       f"edgar_submissions with since={since or earliest} and scan again")
+    return out
 
 
 def sha256_path(path: Path) -> str:
@@ -605,20 +850,22 @@ def sha256_path(path: Path) -> str:
     return h.hexdigest()
 
 
-def _pdf_pages(path: Path) -> tuple[str, str]:
-    """(page count or '', readable yes|no|unknown) from a light scan of a PDF."""
+def _pdf_pages(path: Path) -> tuple[str, bool]:
+    """(page count or '', whether a text layer seems present) from a light scan."""
     raw = path.read_bytes()
     pages = len(re.findall(rb"/Type\s*/Page(?!s)", raw))
     has_text = bool(re.search(rb"\bBT\b.*?\bET\b", raw, re.S)) or b"/Font" in raw
-    return (str(pages) if pages else ""), ("unknown" if has_text else "no")
+    return (str(pages) if pages else ""), has_text
 
 
 def index_dataroom(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                    root: str = "inputs/dataroom", output: str = DATAROOM_INDEX_PATH) -> dict:
     """Index every data-room file: path, sha256, bytes, media type, readability.
 
-    Files without extractable text (scans, images) are listed with
-    readable=no and a note, never silently dropped.
+    readable=yes only for types the kit's read_document can turn into text.
+    Everything else (PDFs, spreadsheets, presentations, images) is listed as
+    no or unknown with a note saying what the client can send instead,
+    never silently dropped.
     """
     resolve = _resolver(workspace, resolve_path)
     base = resolve(root)
@@ -637,12 +884,16 @@ def index_dataroom(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                or ("application/pdf" if ext == ".pdf" else "application/octet-stream"),
                "pages": "", "readable": "yes", "note": ""}
         if ext == ".pdf":
-            row["pages"], row["readable"] = _pdf_pages(path)
-            if row["readable"] == "no":
-                row["note"] = "no text layer found; needs OCR or a text export from the client"
-        elif ext not in TEXT_TYPES and ext not in OFFICE_TYPES:
+            row["pages"], text_layer = _pdf_pages(path)
+            row["readable"] = "unknown" if text_layer else "no"
+            row["note"] = ("PDF with a text layer, but this run has no PDF reader; ask the client "
+                           "for a text or Word export" if text_layer else
+                           "no text layer found; needs OCR or a text export from the client")
+        elif ext not in READABLE_SUFFIXES:
+            kind = UNREADABLE_KINDS.get(ext)
             row["readable"] = "no"
-            row["note"] = "unsupported file type"
+            row["note"] = (f"{kind}: no reader for {ext} in this run; ask the client for a CSV, "
+                           "text or Word export" if kind else f"unsupported file type {ext}")
         rows.append(row)
     columns = ["path", "sha256", "bytes", "media_type", "pages", "readable", "note"]
     _write_csv(target, columns, rows)
@@ -656,18 +907,27 @@ _CIK = {"type": ["string", "integer"], "description": "SEC CIK, with or without 
 _UA = {"type": "string", "description": "SEC User-Agent: organization name and contact email"}
 
 TOOL_DEFS: list[dict[str, Any]] = [
+    {"name": "sec_company_lookup", "risk": "network", "function": sec_company_lookup,
+     "description": "Resolve a ticker or company name to SEC CIK numbers using SEC's "
+                    "company_tickers.json (cached). Confirm the match with edgar_submissions.",
+     "input_schema": {"type": "object", "required": ["query"], "properties": {
+         "query": {"type": "string", "description": "ticker (exact) or part of the company name"},
+         "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+         "user_agent": _UA, "refresh": {"type": "boolean"}}}},
     {"name": "edgar_submissions", "risk": "network", "function": edgar_submissions,
-     "description": "Company profile and recent SEC filing index (form, accession, filing "
-                    "date, 8-K items, document URL) from data.sec.gov. Cached per CIK.",
+     "description": "Company profile and SEC filing index (form, accession, filing date, 8-K "
+                    "items, document URL) from data.sec.gov. Cached per CIK. With since, also "
+                    "loads older index pages back to that date.",
      "input_schema": {"type": "object", "required": ["cik"], "properties": {
          "cik": _CIK, "forms": {"type": "array", "items": {"type": "string"},
                                 "description": "keep only these forms, e.g. ['10-K','8-K']"},
          "limit": {"type": "integer", "minimum": 1, "maximum": 400},
+         "since": {"type": "string", "description": "YYYY-MM-DD: load and list filings from here"},
          "user_agent": _UA, "refresh": {"type": "boolean"}}}},
     {"name": "edgar_companyfacts", "risk": "network", "function": edgar_companyfacts,
      "description": "Download a company's XBRL facts (all reported values with tag, period, "
                     "form and accession) from data.sec.gov and cache them. Returns which "
-                    "standard metrics are available and under which tag.",
+                    "standard metrics are available, under which tag, and the fiscal year-ends.",
      "input_schema": {"type": "object", "required": ["cik"], "properties": {
          "cik": _CIK, "user_agent": _UA, "refresh": {"type": "boolean"}}}},
     {"name": "edgar_filing_text", "risk": "network", "function": edgar_filing_text,
@@ -679,8 +939,8 @@ TOOL_DEFS: list[dict[str, Any]] = [
          "offset": {"type": "integer", "minimum": 0}}}},
     {"name": "xbrl_facts", "risk": "read", "function": xbrl_facts,
      "description": "Annual XBRL facts for one company from the cache: standard metrics "
-                    f"({', '.join(METRICS)}) by fiscal year, or every 10-K fact for a raw "
-                    "us-gaap tag.",
+                    f"({', '.join(METRICS)}) by fiscal year, or every 10-K fact for a less "
+                    "common us-gaap tag.",
      "input_schema": {"type": "object", "required": ["cik"], "properties": {
          "cik": _CIK, "metrics": {"type": "array", "items": {"type": "string"}},
          "fiscal_years": {"type": "array", "items": {"type": "integer"}},
@@ -696,20 +956,23 @@ TOOL_DEFS: list[dict[str, Any]] = [
          "output": {"type": "string"}}}},
     {"name": "compute_comps", "risk": "write", "function": compute_comps,
      "description": "Compute the trading comps table for one fiscal year from the spreads file "
-                    "and the client's market data (price, as-of date, minority interest, "
-                    "preferred). Writes comps.csv and returns peer medians.",
+                    "and the client's market data (price, as-of date, optional current shares "
+                    "outstanding, minority interest, preferred). Without market data the "
+                    "valuation columns stay blank. Writes comps.csv and returns peer medians.",
      "input_schema": {"type": "object", "required": ["fiscal_year"], "properties": {
          "fiscal_year": {"type": "integer"}, "spreads": {"type": "string"},
          "market_data": {"type": "string"}, "output": {"type": "string"}}}},
     {"name": "filing_red_flags", "risk": "read", "function": filing_red_flags,
      "description": "Scan a company's cached filing index for filing-level red flags: auditor "
                     "change (8-K 4.01), non-reliance (4.02), amended reports, late-filing "
-                    "notices, debt triggering events (2.04).",
+                    "notices, debt triggering events (2.04). Reports the window scanned and "
+                    "whether the index covers it.",
      "input_schema": {"type": "object", "required": ["cik"], "properties": {
-         "cik": _CIK, "since": {"type": "string", "description": "YYYY-MM-DD lower bound"}}}},
+         "cik": _CIK, "since": {"type": "string", "description": "YYYY-MM-DD lower bound"},
+         "lookback_years": {"type": "integer", "minimum": 0, "maximum": 30}}}},
     {"name": "index_dataroom", "risk": "write", "function": index_dataroom,
      "description": "Index every file in the data room (path, sha256, bytes, media type, page "
-                    "count, readable yes/no/unknown) into the M1 data-room index CSV.",
+                    "count, readable yes/no/unknown with a note) into the M1 data-room index CSV.",
      "input_schema": {"type": "object", "properties": {
          "root": {"type": "string"}, "output": {"type": "string"}}}},
 ]
