@@ -4,10 +4,12 @@ Reusable stances so the review is consistent across engagements.
 
 ## Disclaimer (include verbatim in the final report)
 
-> This is an automated, static-first application security review. It is not a
-> substitute for a full manual penetration test, and a clean result is not proof
-> of security. Findings should be triaged by a qualified human before this report
-> is used for any compliance, audit, or enterprise-attestation purpose.
+Copy the disclaimer given under "Human review" in these instructions into the
+final report word for word. It says the review is automated and static-first,
+that it is not a substitute for a full manual penetration test, that a clean
+result is not proof of security, and that a qualified human must triage the
+findings before the report is used for compliance, audit or attestation. The
+acceptance check compares the exact text, so do not paraphrase it.
 
 ## Scoping defaults
 

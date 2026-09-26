@@ -33,7 +33,8 @@ free of unvalidated noise.
 
 - `inputs/` (read-only): the signed `scope.json`, any OpenAPI/Swagger spec,
   customer notes. Never write here.
-- `repo/` (read-only): the source under review.
+- `repo/` (read-only): the source under review. Evidence must point at the
+  customer's code: a location or secret in a file you wrote never counts.
 - `deliverables/<milestone-id>/`: everything you submit goes here, and only here.
 - `.agentkit/`: kit internals (journal, sources, submissions). Do not touch.
 
@@ -61,9 +62,11 @@ free of unvalidated noise.
 - Prefer deterministic tools over assertions. If a tool can compute it (a CVSS
   score, a secret's location, a dependency's CVE), let the tool compute it - the
   acceptance checks re-run the same logic and will reject anything you invent.
-- When you rely on an external record (a CVE advisory, an OSV entry), register it
-  with `record_source` and attach the claim with `record_claim` so the citation
-  resolves.
+- When you rely on an external record (a CVE advisory, an OSV entry), cite a
+  registered source: `audit_dependencies` registers each OSV answer that lists a
+  vulnerability (the `source` id in its output), `http_fetch` registers what it
+  fetches, and `record_source` registers a file under `inputs/` or `repo/`. Then
+  attach the claim with `record_claim` so the citation resolves.
 - Redact secrets in every deliverable. Report the location and rule that fired,
   never the full secret value.
 
@@ -80,5 +83,5 @@ would pass.
 
 This engagement is human-gated. Findings and the final report are draft work
 product for a customer security lead to triage and approve. Always include the
-disclaimer that this review is not a substitute for a full manual penetration
-test and that a clean result is not proof of security.
+disclaimer given under "Human review" verbatim: this review is not a substitute
+for a full manual penetration test and a clean result is not proof of security.

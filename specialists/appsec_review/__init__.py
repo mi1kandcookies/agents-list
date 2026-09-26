@@ -9,8 +9,8 @@ scenario and a fix per finding. It never performs active/live exploitation and
 never tests outside the signed allow-list; a customer security lead triages the
 findings before the report is used for compliance or attestation.
 
-This package ships the domain pack only (manifest, prompts, playbook, rubrics,
-domain tools and acceptance checks). The agentkit Specialist wrapper (agent.py)
-is added when the kit lands; nothing here imports from agentkit beyond
-agentkit.types / agentkit.errors.
+The package is the manifest (agent.yaml), prompts, playbook, rubrics, domain
+tools (tools.py) and acceptance checks (checks.py); agent.py holds the agentkit
+Specialist subclass, which refuses to start until the customer's intake
+confirms authorization.
 """

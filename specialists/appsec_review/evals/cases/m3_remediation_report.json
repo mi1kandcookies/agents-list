@@ -13,5 +13,11 @@
       "environment": "staging only"
     }
   },
+  "fixtures": {
+    "inputs/scope.json": "scope.json",
+    "inputs/openapi.json": "openapi.json",
+    "repo/requirements.txt": "requirements.txt",
+    "repo/transactions.py": "source/transactions.py"
+  },
   "notes": "Report has an executive summary, methodology, scope statement, per-finding remediation mapped to file/line, and a clear coverage-limits disclaimer. The report is NOT an attestation until the customer security lead triages the findings (human gate)."
 }

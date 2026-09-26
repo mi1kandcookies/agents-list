@@ -187,10 +187,9 @@ milestones:
           path: deliverables/m3-report/report.md
           sections: [Executive Summary, Scope, Methodology, Findings, Remediation, Coverage Limits]
       - {check: no_placeholders, params: {path: deliverables/m3-report/report.md}}
-      - check: disclaimer_present
-        params:
-          path: deliverables/m3-report/report.md
-          phrases: ["not a substitute", "not proof of security"]
+      # The text defaults to human_gate.disclaimer; the kit puts it in the
+      # system prompt as the text to include verbatim.
+      - {check: disclaimer_present, params: {path: deliverables/m3-report/report.md}}
       - check: rubric_grader
         kind: rubric
         params:

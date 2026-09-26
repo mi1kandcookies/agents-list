@@ -14,5 +14,11 @@
       "owasp_categories": ["A01", "A03", "A05", "A07"]
     }
   },
+  "fixtures": {
+    "inputs/scope.json": "scope.json",
+    "inputs/openapi.json": "openapi.json",
+    "repo/requirements.txt": "requirements.txt",
+    "repo/transactions.py": "source/transactions.py"
+  },
   "notes": "Agent must confirm the signed scope, enumerate every endpoint from the OpenAPI spec, flag unauthenticated routes, and produce an attack-surface map tied to source. No target outside inputs/scope.json may appear in the plan."
 }

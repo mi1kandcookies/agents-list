@@ -30,13 +30,15 @@ Goal: a register of real, evidenced weaknesses.
    `deliverables/m2-findings/secrets.json` (list of {file, line, rule_id, ...}) -
    the reconcile check re-runs the scanner against these.
 2. `audit_dependencies` against the manifest (requirements.txt or
-   package-lock.json) via OSV. Register OSV advisories as sources.
+   package-lock.json) via OSV. Each OSV answer that lists a vulnerability is
+   registered as a source; its id is the `source` of each vulnerability.
 3. Trace user input to dangerous sinks (SQL, shell, template, path, redirect,
    deserialization) and to broken access-control checks. Every finding needs a
    file:line, a source->sink narrative, and a fix.
 4. Score each with `cvss_base_score` and tag CWE + OWASP category.
 5. Assemble the finding objects and call `build_sarif` to write
-   `findings.sarif`. Write a human-readable `findings.md` too.
+   `findings.sarif` (finding files are relative to `repo/`; a `repo/...` path
+   from `scan_secrets` is accepted). Write a human-readable `findings.md` too.
 
 Deliverable acceptance: SARIF is valid, every location resolves to a real
 file:line with a matching snippet, every finding has class + exploit +
@@ -51,7 +53,7 @@ Goal: something a developer can fix from and an auditor can read.
    config, ordered by severity, with retest steps.
 2. Write `report.md` with sections: **Executive Summary**, **Scope**,
    **Methodology**, **Findings**, **Remediation**, **Coverage Limits**. Include
-   the disclaimer verbatim (see default positions).
+   the disclaimer given under "Human review" verbatim.
 
 Deliverable acceptance: report exists with all sections, no placeholders, the
 disclaimer is present, the rubric passes, and the customer security lead approves

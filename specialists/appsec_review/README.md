@@ -35,6 +35,11 @@ and never touches anything outside the signed allow-list.
 - `environment` (optional) - staging by default; production needs written approval.
 - `owasp_categories` (optional) - categories to prioritise.
 
+Run it with the agentkit CLI, e.g. `python -m agentkit milestones appsec-review`
+or `python -m agentkit validate-intake appsec-review --intake intake.json`
+(`authorized` and `repo_provided` must be `true`; a run refuses to start
+without `authorized: true` in the brief's intake).
+
 ## Human gate
 
 Human-gated (reviewer role: **customer security lead**). Findings and the final
@@ -57,6 +62,7 @@ never signs off and never performs active exploitation.
 
 ```
 agent.yaml            manifest (milestones, tools, checks, human gate, limits)
+agent.py              Specialist subclass (authorization gate on intake/run)
 prompts/system.md     persona and method
 playbook/*.md         review method, OWASP checklist, CVSS guidance, defaults
 rubrics/*.yaml        grader rubrics (threat model, report)

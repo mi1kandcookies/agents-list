@@ -13,5 +13,11 @@
       "environment": "staging only"
     }
   },
+  "fixtures": {
+    "inputs/scope.json": "scope.json",
+    "inputs/openapi.json": "openapi.json",
+    "repo/requirements.txt": "requirements.txt",
+    "repo/transactions.py": "source/transactions.py"
+  },
   "notes": "Each finding needs CWE/OWASP class, a CVSS score, a source->sink exploit scenario and a code-level fix. SARIF must validate, every location must resolve to a real file:line with a matching snippet, and every claimed secret must reproduce from a fresh scan. Static evidence only; no live exploitation."
 }
