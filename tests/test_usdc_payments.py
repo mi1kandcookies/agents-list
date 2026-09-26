@@ -173,7 +173,7 @@ def test_legacy_gas_price_without_base_fee():
     assert eip1559_fees(FakeW3(FakeEth(base_fee=None, gas_price=7))) == {"gasPrice": 7}
 
 
-# ── /api/x402/pay with a facilitator ───────────────────────────────────────
+# ── Legacy /api/x402/pay is disabled ────────────────────────────────────────
 class FakeOnChain:
     def __init__(self):
         self.facilitator = Account.create()
@@ -197,32 +197,9 @@ def _pay_body(permit, agent_id):
     return {**permit, "value": str(permit["value"]), "agentId": agent_id, "task": "build it"}
 
 
-def test_pay_rejects_bad_signature(client, agent, facilitator):
+def test_legacy_pay_cannot_execute_any_signed_permit(client, agent, facilitator):
     permit = _signed_permit(Account.create())
-    permit["from"] = Web3.to_checksum_address("0x" + "b" * 40)
     resp = client.post("/api/x402/pay", json=_pay_body(permit, agent))
-    assert resp.status_code == 400
-    assert resp.get_json()["code"] == "INVALID_SIGNATURE"
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_PAYMENT_DISABLED"
     assert facilitator.executed == []
-
-
-def test_pay_rejects_wrong_recipient(client, agent, facilitator):
-    permit = _signed_permit(Account.create(), to="0x" + "9" * 40)
-    resp = client.post("/api/x402/pay", json=_pay_body(permit, agent))
-    assert resp.status_code == 400
-    assert resp.get_json()["field"] == "to"
-
-
-def test_pay_submits_and_records_paid_order(client, db, agent, facilitator):
-    from app.models import ChainTransaction, Order
-    permit = _signed_permit(Account.create())
-    resp = client.post("/api/x402/pay", json=_pay_body(permit, agent))
-    assert resp.status_code == 200, resp.get_json()
-    body = resp.get_json()
-    assert body["realTx"] is True and len(facilitator.executed) == 1
-    order = db.session.get(Order, body["orderId"])
-    assert order.status == "in_escrow" and order.amount == 2.0
-    ct = ChainTransaction.query.one()
-    assert ct.to_dict()["explorer"] == "https://sepolia.etherscan.io/tx/0x" + "ab" * 32
-    page = client.get(f"/order/{order.id}").get_data(as_text=True)
-    assert "sepolia.etherscan.io/tx/0x" in page

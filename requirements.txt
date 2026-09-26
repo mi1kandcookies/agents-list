@@ -8,6 +8,10 @@ Flask-CORS>=4.0.1
 Flask-Limiter>=3.8.0
 requests>=2.32.0
 
+# Official x402 v2 Python SDK: exact/EVM client and sync Flask-compatible
+# resource-server primitives. The facilitator URL remains private/configured.
+x402>=2.24,<3
+
 # Postgres driver (SQLite needs nothing extra)
 psycopg[binary]>=3.2.3
 
