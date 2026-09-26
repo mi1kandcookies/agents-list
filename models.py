@@ -3,18 +3,14 @@ models.py: SQLAlchemy ORM models for Agent's List.
 
 Tables
 ------
-agents              : Registered AI agents (mirrors AGENTS list)
-orders              : Buyer orders / escrow sessions (mirrors ORDERS)
-verification_entries: Verification queue entries (mirrors VERIFICATION_QUEUE)
+agents              : Listed agents
+orders              : Buyer orders (becomes Engagement in Phase 2)
+verification_entries: Verification queue entries
 payouts             : Seller payouts tracked by the admin panel
 moderation_reports  : User-filed reports reviewed by admins
 reviews             : Buyer ratings and feedback per agent
 
-Seed
-----
-Call seed_db(app) once at startup to populate the DB from the in-memory
-mock data if the tables are empty. This gives instant persistence without
-a manual migration step.
+Sample data for local development is loaded explicitly with `flask seed`.
 """
 from __future__ import annotations
 import json
@@ -328,90 +324,3 @@ def _ensure_columns(app) -> None:
                 app.logger.info("ALTER TABLE agents ADD COLUMN %s", col)
                 db.session.execute(db.text(f"ALTER TABLE agents ADD COLUMN {col} {ddl}"))
         db.session.commit()
-
-
-# ── Seed helper ───────────────────────────────────────────────────────────────
-
-def seed_db(app) -> None:
-    """
-    Populate the database from in-memory mock data on first run.
-    Safe to call every startup: no-ops if tables already have rows.
-    """
-    with app.app_context():
-        db.create_all()
-
-        # Import mock data from app module to avoid circular imports at module level
-        from app import (
-            AGENTS as _AGENTS,
-            ORDERS as _ORDERS,
-            VERIFICATION_QUEUE as _VQ,
-            PAYOUTS_SEED as _PAY,
-            MODERATION_SEED as _MOD,
-            REVIEWS_SEED as _REV,
-        )
-
-        if Agent.query.count() == 0:
-            for a in _AGENTS:
-                row = Agent(
-                    id=a["id"], name=a["name"], description=a["description"],
-                    long_description=a.get("long_description", a["description"]),
-                    category=a["category"], use_case=a.get("use_case", ""),
-                    verified=a["verified"], verification_tier=a.get("verification_tier", "none"),
-                    featured=a["featured"], rating=a["rating"], reviews=a["reviews"],
-                    billing=a["billing"], min_price=a["min_price"], max_price=a["max_price"],
-                    current_price=a["current_price"], seller=a["seller"],
-                    seller_rating=a["seller_rating"], tasks_completed=a["tasks_completed"],
-                    avg_completion_time=a.get("avg_completion_time", " - "),
-                )
-                row.tags = a.get("tags", [])
-                row.capabilities = a.get("capabilities", [])
-                db.session.add(row)
-            db.session.commit()
-
-        if Order.query.count() == 0:
-            for o in _ORDERS:
-                db.session.add(Order(
-                    id=o["id"], agent_id=o["agent_id"], buyer=o["buyer"],
-                    amount=o["amount"], status=o["status"],
-                    task=o.get("task", ""), date=o.get("date", ""),
-                ))
-            db.session.commit()
-
-        if VerificationEntry.query.count() == 0:
-            for v in _VQ:
-                db.session.add(VerificationEntry(
-                    id=v["id"], agent_id=v.get("agent_id"),
-                    agent_name=v["agent"], seller=v["seller"],
-                    tier=v["tier"], status=v["status"], submitted=v["submitted"],
-                    safety_score=v.get("safety_score"),
-                    performance_score=v.get("performance_score"),
-                    reliability_score=v.get("reliability_score"),
-                ))
-            db.session.commit()
-
-        if Payout.query.count() == 0:
-            for p in _PAY:
-                db.session.add(Payout(
-                    id=p["id"], seller=p["seller"], agent=p["agent"],
-                    amount=p["amount"], status=p["status"],
-                    date=p["date"], order_id=p.get("order_id"),
-                ))
-            db.session.commit()
-
-        if ModerationReport.query.count() == 0:
-            for r in _MOD:
-                db.session.add(ModerationReport(
-                    id=r["id"], agent=r["agent"], agent_id=r.get("agent_id"),
-                    reporter=r["reporter"], reason=r["reason"],
-                    status=r["status"], date=r["date"],
-                ))
-            db.session.commit()
-
-        if Review.query.count() == 0:
-            for rv in _REV:
-                db.session.add(Review(
-                    agent_id=rv["agent_id"], user=rv["user"],
-                    rating=rv["rating"], comment=rv["comment"],
-                    date=rv["date"],
-                ))
-            db.session.commit()
