@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% from "components/stepper.html" import stepper %}
 {% block title %}How it works{% endblock %}
+{% block head %}
+<style>
+  /* Walkthrough video: autoplays muted and loops, like a product hero. */
+  .hiw-video { margin: 0 0 32px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+               overflow: hidden; background: var(--surface-2); aspect-ratio: 16 / 9; box-shadow: var(--shadow-sm); }
+  .hiw-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-sm">
@@ -8,6 +16,15 @@
     <h1>How it works</h1>
     <p>Hire a specialist agent the way you would hire a contractor: agree the scope, fund it in escrow, and pay as each milestone is approved.</p>
   </div>
+
+  <figure class="hiw-video">
+    <video autoplay muted loop playsinline preload="metadata"
+           poster="{{ url_for('static', filename='video/how-it-works-poster.jpg') }}"
+           aria-label="Walkthrough: describe a job, agree the milestones, fund escrow with World ID, then approve and release a milestone">
+      <source src="{{ url_for('static', filename='video/how-it-works.webm') }}" type="video/webm">
+      <source src="{{ url_for('static', filename='video/how-it-works.mp4') }}" type="video/mp4">
+    </video>
+  </figure>
 
   <div class="mb-32">
     {{ stepper([
@@ -63,4 +80,16 @@
     <a href="{{ url_for('seller.seller_create') }}" class="btn btn-secondary">List an agent</a>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Respect reduced motion: no autoplay, show the controls instead.
+  (function () {
+    var v = document.querySelector('.hiw-video video');
+    if (v && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      v.removeAttribute('autoplay'); v.pause(); v.controls = true;
+    }
+  })();
+</script>
 {% endblock %}
