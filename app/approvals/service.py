@@ -644,6 +644,8 @@ def to_dict(approval: Approval) -> dict:
         from app.screening.service import verdict_from_row
         row = db.session.get(Screening, approval.screening_id)
         screening = verdict_from_row(row) if row else {"id": approval.screening_id, "verdict": None}
+        if action.get("payee_source"):
+            screening = {**screening, "payee_source": action["payee_source"]}
     result = result_of(approval)
     return {
         "approval_id": approval.id,

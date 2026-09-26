@@ -1,0 +1,213 @@
+"""Agent-to-agent paid tasks over x402 v2.
+
+    POST /api/agents/<AGT>/tasks            {"task": "..."}
+      no payment header        → 402, x402 v2 PaymentRequired (body and PAYMENT-REQUIRED header)
+      X-PAYMENT + Authorization: Mandate <jwt>
+                               → 200 task receipt (PAYMENT-RESPONSE header)
+
+A paying agent spends under the mandate it was granted (§5), so every
+payment still traces back to one human approval. In order: the payment is
+verified against this server's requirements and the token's EIP-712 domain;
+the mandate chain is re-verified and the payer's wallet must belong to the
+mandate's grantee; the payment policy caps the amount (per-transaction cap,
+remaining budget, X402_MAX_PAYMENT_USDC) and the payees; the payee is
+screened (hop ``subhire.hop``, fail closed); the nonce is burned; the
+mandate is charged; then the authorization is settled through the escrow
+service's facilitator path (simulated without keys) and recorded in the
+root engagement's ledger. The callee must be hireable (operator-stamped
+manifest, ``assert_hireable``); its price is the stamped ``price_min_micro``.
+The payee comes from ``resolve_payee`` (ENS or profile; a mismatch refuses).
+"""
+from __future__ import annotations
+
+import hashlib
+import logging
+
+from flask import current_app, jsonify, request
+from sqlalchemy import update
+
+from app.api.routes import bp
+from app.extensions import db, limiter
+from app.services import api_error
+from chain import x402_v2
+from chain.payment_policy import NonceRegistry, PaymentPolicy, PolicyError
+from chain.x402_v2 import X402Error
+
+log = logging.getLogger(__name__)
+
+HOP = "subhire.hop"
+MAX_TASK_CHARS = 4000
+
+
+def _nonces() -> NonceRegistry:
+    return current_app.extensions.setdefault("agents_list.x402_nonces", NonceRegistry())
+
+
+def _usdc_setting(name: str) -> int:
+    from app.engagements.sow import parse_usdc
+    return parse_usdc(current_app.config.get(name), name)
+
+
+def _price_micro(agent) -> int:
+    """The operator-stamped manifest's ``price_min_micro`` (the caller has
+    already checked the stamp covers the current manifest), else
+    AGENT_TASK_PRICE_USDC."""
+    from app.seller.stamp import current_manifest
+    price = (current_manifest(agent) or {}).get("price_min_micro")
+    if isinstance(price, int) and not isinstance(price, bool) and price > 0:
+        return price
+    return _usdc_setting("AGENT_TASK_PRICE_USDC")
+
+
+def _payment_required(req, *, error: str, code: str | None = None):
+    body = x402_v2.payment_required(req, resource_url=request.path, error=error,
+                                    description="Run one task with this agent")
+    if code:
+        body["code"] = code
+    resp = jsonify(body)
+    resp.status_code = 402
+    resp.headers[x402_v2.REQUIRED_HEADER] = x402_v2.encode_header(body)
+    return resp
+
+
+def _payment_header() -> str | None:
+    for name in x402_v2.PAYMENT_HEADERS:
+        value = request.headers.get(name)
+        if value:
+            return value
+    return None
+
+
+def _mandate_token() -> str | None:
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    return token.strip() if scheme == "Mandate" and token.strip() else None
+
+
+def _unspend(mandate_id: str, amount: int) -> None:
+    """Give back a charge whose settlement failed before anything moved."""
+    from app.models import Mandate
+    db.session.execute(update(Mandate).where(Mandate.id == mandate_id)
+                       .values(spent_micro=Mandate.spent_micro - amount))
+
+
+@bp.route("/agents/<agent_ref>/tasks", methods=["POST"])
+@limiter.limit("30/minute")
+def api_agent_task(agent_ref):
+    from app.engagements import ledger
+    from app.engagements import service as eng_svc
+    from app.engagements.service import EngagementError
+    from app.mandates import service as mandates
+    from app.mandates.tokens import MandateError
+    from app.models import Agent, Engagement, Mandate
+    from app.screening import policy as screening_policy
+
+    from app.seller.stamp import assert_hireable
+
+    try:
+        agent = eng_svc.resolve_agent(agent_ref)
+        assert_hireable(agent)      # stamped manifest, operator not banned, payee not refused
+        payee = eng_svc.resolve_payee(agent)
+    except EngagementError as exc:
+        return api_error(exc.message, exc.status, code=exc.code, field=exc.field)
+    if payee.address is None:
+        return api_error("agent has no payout address", 409, code="PAYEE_ADDRESS_MISSING")
+    body = request.get_json(silent=True)
+    task = str(body.get("task") or "").strip() if isinstance(body, dict) else ""
+    if not task or len(task) > MAX_TASK_CHARS:
+        return api_error(f"task is required (at most {MAX_TASK_CHARS} characters)", field="task")
+    try:
+        amount = _price_micro(agent)
+        req = x402_v2.build_requirements(pay_to=payee.address, amount_micro=amount)
+    except X402Error as exc:
+        return api_error(exc.message, 503, code=exc.code)
+
+    header = _payment_header()
+    if not header:
+        return _payment_required(req, error="X-PAYMENT header is required")
+    token = _mandate_token()
+    if token is None:
+        return api_error("a mandate is required: Authorization: Mandate <token>", 401,
+                         code="MANDATE_INVALID")
+    try:
+        verified = x402_v2.verify_payment(x402_v2.decode_header(header), req)
+    except X402Error as exc:
+        return _payment_required(req, error=exc.message, code=exc.code)
+
+    try:
+        claims = mandates.verify_chain(token)
+    except MandateError as exc:
+        return api_error(exc.message, 403, code=exc.code)
+    payer_agent = Agent.query.filter_by(public_id=claims["sub"]).first()
+    if payer_agent is None or payer_agent.id == agent.id:
+        return api_error("the mandate's agent cannot pay this task", 403, code="MANDATE_INVALID")
+    wallets = {w.lower() for w in (payer_agent.payout_address, payer_agent.deployer_wallet) if w}
+    if verified.payer not in wallets:
+        return api_error("the payment is not signed by the mandate's agent", 403,
+                         code="PAYER_NOT_MANDATED")
+    row = db.session.get(Mandate, claims["jti"])
+    cap = claims.get("cap") or {}
+    try:
+        PaymentPolicy(
+            min(_usdc_setting("X402_MAX_PAYMENT_USDC"), int(cap.get("per_tx_max_micro") or 0),
+                mandates.remaining_micro(row)),
+            cap.get("payees"),
+        ).check(amount_micro=verified.amount_micro, pay_to=verified.pay_to)
+    except PolicyError as exc:
+        return api_error(exc.message, 403, code=exc.code)
+
+    engagement = db.session.get(Engagement, row.engagement_id)
+    verdict = eng_svc.screen(HOP, chain_address=verified.pay_to, amount_micro=amount,
+                             engagement=engagement, agent=agent)
+    try:
+        screening_policy.enforce_verdict(verdict, amount)
+    except screening_policy.ScreeningBlocked as exc:
+        db.session.commit()
+        return jsonify({"error": f"payment refused by risk screening ({exc.code})",
+                        "code": "SCREENING_REFUSED",
+                        "screening": eng_svc.screening_json(verdict)}), 403
+
+    nonces = _nonces()
+    try:
+        nonces.claim(verified.nonce)
+    except PolicyError as exc:
+        db.session.rollback()
+        return api_error(exc.message, 409, code=exc.code)
+    try:
+        mandates.spend(row.id, amount, category=agent.category)
+    except MandateError as exc:
+        nonces.release(verified.nonce)
+        return api_error(exc.message, 403, code=exc.code)
+
+    try:
+        tx = x402_v2.settle(verified, escrow=eng_svc.get_escrow(), ref=f"x402:{verified.nonce}")
+    except Exception as exc:
+        log.warning("x402 settlement failed for %s: %s", agent.public_id, str(exc)[:200])
+        _unspend(row.id, amount)
+        ledger.record(engagement, kind="subhire_alloc", amount_micro=amount, status="failed",
+                      from_addr=verified.payer, to_addr=verified.pay_to,
+                      approval_id=claims.get("apr"), screening_id=verdict["id"])
+        db.session.commit()
+        return api_error("payment settlement failed", 502, code="PAYMENT_FAILED")
+    entry = ledger.record(engagement, kind="subhire_alloc", amount_micro=amount, tx=tx,
+                          from_addr=verified.payer, to_addr=verified.pay_to,
+                          approval_id=claims.get("apr"), screening_id=verdict["id"])
+    db.session.commit()
+
+    settle = x402_v2.settle_response(verified, tx)
+    resp = jsonify({
+        "receipt_id": entry.id,
+        "status": "accepted",
+        "agent_id": agent.public_id,
+        "payer_agent_id": payer_agent.public_id,
+        "task_hash": "0x" + hashlib.sha256(task.encode("utf-8")).hexdigest(),
+        "mandate_id": row.id,
+        "engagement_id": engagement.id,
+        "payment": {**ledger.entry_json(entry), "network": verified.network,
+                    "payer": verified.payer, "pay_to": verified.pay_to,
+                    "payee_source": payee.source, "nonce": verified.nonce},
+        "screening": eng_svc.screening_json(verdict),
+    })
+    encoded = x402_v2.encode_header(settle)
+    for name in x402_v2.RESPONSE_HEADERS:
+        resp.headers[name] = encoded
+    return resp

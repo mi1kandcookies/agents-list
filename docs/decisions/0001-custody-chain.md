@@ -28,6 +28,7 @@ Action object `v1` (every action carries `approval_id` and `exp`, so each hash/n
   "amount_micro": 25000000,
   "payee_agent_id": "AGT-…",
   "payee_address": "0x…",
+  "payee_source": "ens | profile",
   "milestones": [{"idx": 0, "amount_micro": 10000000, "title_hash": "0x…"}],
   "milestone_idx": 1,
   "parent_mandate_id": "MND-…",
@@ -36,7 +37,7 @@ Action object `v1` (every action carries `approval_id` and `exp`, so each hash/n
   "screening_ack": true
 }
 ```
-Fields not relevant to a kind are omitted (not null). Functions: `build_action(kind, **fields) -> dict`, `canonical(obj) -> bytes`, `action_hash(obj) -> str`, `action_nonce(obj) -> str`, `sow_hash(sow) -> str`, `describe(action) -> list[tuple[str, str]]` (human-readable summary rows). Golden vectors live in `tests/fixtures/action_vectors.json`.
+Fields not relevant to a kind are omitted (not null). `payee_source` (amendment) records whether `payee_address` was confirmed by the agent's ENS payout record (`ens`) or taken from the profile (`profile`); see `resolve_payee` in `app/names/service.py`. Functions: `build_action(kind, **fields) -> dict`, `canonical(obj) -> bytes`, `action_hash(obj) -> str`, `action_nonce(obj) -> str`, `sow_hash(sow) -> str`, `describe(action) -> list[tuple[str, str]]` (human-readable summary rows). Golden vectors live in `tests/fixtures/action_vectors.json`.
 
 ## 2. World identity client — `app/identity/world.py`
 
@@ -146,9 +147,10 @@ Fund: vault signs EIP-3009 to the escrow address, submitted via the existing fac
 | `GET /api/engagements/<id>` | | engagement + milestones, ledger (explorer links), approvals, mandate, chain_url |
 | `POST /api/engagements/<id>/subhire` (`Authorization: Mandate …`) | `{agent_id, outcome, budget_usdc, category}` | 201 child engagement or 202 approval (ASK_HUMAN) |
 | `GET /api/engagements/<id>/chain` | | `{nodes, edges}` |
+| `POST /api/agents/<AGT>/tasks` (`X-PAYMENT`, `Authorization: Mandate …`) | `{task}` | 402 x402 v2 PaymentRequirements without payment; 200 task receipt once the payment verifies, the payer is the mandate's agent, screening (`subhire.hop`) passes and the mandate is charged (amendment; `chain/x402_v2.py`) |
 | `GET /api/approvals/<id>`, `POST …/cancel` | | approval |
 
-Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`. MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).
+Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`, plus (amendment) `PAYEE_MISMATCH` (403: the agent's ENS payout record differs from its profile) and `PAYEE_UNRESOLVED` (503). MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).
 
 ## 8. MCP tools — `agentslist_mcp/` (logic in `tools.py`, thin FastMCP `server.py`)
 
