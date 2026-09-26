@@ -395,7 +395,7 @@ def test_receipt_poll_pending_then_confirmed(app, client, approvals, screener, a
     [fund] = client.get(f"/api/engagements/{eid}").get_json()["ledger"]
     assert fund["status"] == "confirmed"          # FakeEscrow confirms by default
     assert fund["explorer"].endswith(fund["tx_hash"])
-    assert escrow.calls[0][1]["ref"] == f"{eid}:fund"
+    assert escrow.calls[0][1]["ref"] == f"{eid}:fund#0"
 
     eid2 = _funded(client, approvals, agent_public_id)
     tx_hash = _ledger(eid2)[0].tx_hash
@@ -434,8 +434,11 @@ def test_failed_release_receipt_rolls_back_release_and_hold(app, client, approva
         "fund": "confirmed", "release": "failed", "hold": "failed"}
     m = body["milestones"][0]
     assert (m["status"], m["released_micro"], m["released_ledger_id"]) == ("submitted", 0, None)
-    # it can be released again with a new approval
-    assert client.post(f"/api/engagements/{eid}/milestones/0/release", json={}).status_code == 202
+    # it can be released again with a new approval, under a new escrow ref
+    b = client.post(f"/api/engagements/{eid}/milestones/0/release", json={}).get_json()
+    assert approvals.approve_and_consume(b["approval_id"], "milestone.release").ok
+    refs = [kw["ref"] for name, kw in escrow.calls if name == "release"]
+    assert refs == [f"{eid}:m0:release@0#0", f"{eid}:m0:release@0#1"]
 
 
 # ── mandate hook ──────────────────────────────────────────────────────────
