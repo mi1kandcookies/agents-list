@@ -12,5 +12,19 @@
       "target_modules": ["brambleway/fares.py"]
     }
   },
-  "notes": "Expect fares.py ranked first (23 commits, 31% line coverage). The census must name tests.test_zones::test_zone_a as flaky (fails in run 3 of 5) and the report should trace it to the module-level _CACHE leaking between tests, not to network or time."
+  "notes": "Expect fares.py ranked first (23 commits, 31% line coverage). The census must name tests.test_zones::test_zone_a as flaky (fails in run 3 of 5) and the report should trace it to the module-level _CACHE leaking between tests, not to network or time.",
+  "fixtures": {
+    "repo/brambleway/__init__.py": "brambleway-freight/repo/brambleway/__init__.py",
+    "repo/brambleway/fares.py": "brambleway-freight/repo/brambleway/fares.py",
+    "repo/brambleway/zones.py": "brambleway-freight/repo/brambleway/zones.py",
+    "repo/tests/test_zones.py": "brambleway-freight/repo/tests/test_zones.py",
+    "inputs/brief-notes.md": "brambleway-freight/inputs/brief-notes.md",
+    "inputs/ci/coverage.xml": "brambleway-freight/coverage-baseline.xml",
+    "inputs/ci/churn.csv": "brambleway-freight/churn.csv",
+    "inputs/ci/runs/run-01.xml": "brambleway-freight/runs/run-01.xml",
+    "inputs/ci/runs/run-02.xml": "brambleway-freight/runs/run-02.xml",
+    "inputs/ci/runs/run-03.xml": "brambleway-freight/runs/run-03.xml",
+    "inputs/ci/runs/run-04.xml": "brambleway-freight/runs/run-04.xml",
+    "inputs/ci/runs/run-05.xml": "brambleway-freight/runs/run-05.xml"
+  }
 }

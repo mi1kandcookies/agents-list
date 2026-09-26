@@ -6,6 +6,8 @@ import pytest
 import yaml
 
 from agentkit.errors import PolicyViolation, ToolError
+from agentkit.evals import load_cases, prepare_workspace
+from agentkit.registry import load_specialist
 from specialists.test_coverage import checks as C
 from specialists.test_coverage import tools as T
 
@@ -566,6 +568,21 @@ def test_eval_cases_target_manifest_milestones():
         case = json.loads(path.read_text(encoding="utf-8"))
         assert {"name", "brief", "milestone", "notes"} <= set(case)
         assert case["milestone"] in ids and case["brief"]["specialist"] == "test-coverage"
+
+
+def test_eval_cases_seed_the_repo_and_ci_reports(tmp_path):
+    spec = load_specialist("test-coverage")
+    cases = {c.name: c for c in load_cases(spec)}
+    assert set(cases) == {"baseline-brambleway", "characterization-fares", "uplift-fares"}
+    for name, case in cases.items():
+        ws = tmp_path / name
+        prepare_workspace(spec, case, ws)
+        for rel in ("brambleway/__init__.py", "brambleway/fares.py", "brambleway/zones.py", "tests/test_zones.py"):
+            assert (ws / "repo" / rel).read_bytes() == (FIXTURE / "repo" / rel).read_bytes()
+        assert (ws / "inputs/brief-notes.md").is_file() and (ws / "inputs/ci/coverage.xml").is_file()
+        assert not list(ws.rglob("*.patch"))  # the reference patches stay with the graders
+    assert len(list((tmp_path / "baseline-brambleway/inputs/ci/runs").glob("run-*.xml"))) == 5
+    assert (tmp_path / "uplift-fares/inputs/ci/mutation.json").is_file()
 
 
 def test_patch_parser_cannot_be_fooled_by_headers_inside_hunks(tmp_path):

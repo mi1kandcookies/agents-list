@@ -15,5 +15,14 @@
       "runtime_budget_pct": 15
     }
   },
-  "notes": "good.patch is a reference shape (test-only, asserting, cache isolated). The surviving mutants in mutation.json (boundary of weight_kg > 30 and parcels >= 10) should become explicit boundary tests at 30 and 10."
+  "notes": "good.patch is a reference shape (test-only, asserting, cache isolated). The surviving mutants in mutation.json (boundary of weight_kg > 30 and parcels >= 10) should become explicit boundary tests at 30 and 10.",
+  "fixtures": {
+    "repo/brambleway/__init__.py": "brambleway-freight/repo/brambleway/__init__.py",
+    "repo/brambleway/fares.py": "brambleway-freight/repo/brambleway/fares.py",
+    "repo/brambleway/zones.py": "brambleway-freight/repo/brambleway/zones.py",
+    "repo/tests/test_zones.py": "brambleway-freight/repo/tests/test_zones.py",
+    "inputs/brief-notes.md": "brambleway-freight/inputs/brief-notes.md",
+    "inputs/ci/coverage.xml": "brambleway-freight/coverage-baseline.xml",
+    "inputs/ci/mutation.json": "brambleway-freight/mutation.json"
+  }
 }
