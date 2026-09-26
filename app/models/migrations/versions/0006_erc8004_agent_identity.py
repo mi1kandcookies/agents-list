@@ -1,13 +1,13 @@
 """store the ERC-8004 identity token for each marketplace agent
 
-Revision ID: 0005_erc8004_agent_identity
-Revises: 0004_agent_track_record
+Revision ID: 0006_erc8004_agent_identity
+Revises: 0005_agent_icon
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0005_erc8004_agent_identity"
-down_revision = "0004_agent_track_record"
+revision = "0006_erc8004_agent_identity"
+down_revision = "0005_agent_icon"
 branch_labels = None
 depends_on = None
 
