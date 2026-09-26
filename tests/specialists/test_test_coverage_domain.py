@@ -87,7 +87,7 @@ PATCH_TESTS_ONLY = """diff --git a/tests/test_rates.py b/tests/test_rates.py
 new file mode 100644
 --- /dev/null
 +++ b/tests/test_rates.py
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,7 @@
 +from ledgerly.rates import convert
 +
 +def test_convert_rounds_half_even():
@@ -544,3 +544,35 @@ def test_eval_cases_target_manifest_milestones():
         case = json.loads(path.read_text(encoding="utf-8"))
         assert {"name", "brief", "milestone", "notes"} <= set(case)
         assert case["milestone"] in ids and case["brief"]["specialist"] == "test-coverage"
+
+
+def test_patch_parser_cannot_be_fooled_by_headers_inside_hunks(tmp_path):
+    # Plain multi-file diff (no "diff --git" lines): the second file must be seen.
+    plain = ("--- a/tests/test_a.py\n+++ b/tests/test_a.py\n@@ -1,1 +1,2 @@\n x = 1\n+assert x\n"
+             "--- a/ledgerly/rates.py\n+++ b/ledgerly/rates.py\n@@ -1 +1 @@\n-a = 1\n+a = 2\n")
+    write(tmp_path, "plain.patch", plain)
+    assert C.diff_test_paths_only(tmp_path, {"patch": "plain.patch"})["passed"] is False
+    # A removed SQL comment line ("-- x" -> "--- x") inside a hunk is a removal, not a header.
+    sql = ("diff --git a/tests/data.sql b/tests/data.sql\n--- a/tests/data.sql\n+++ b/tests/data.sql\n"
+           "@@ -1,2 +1,1 @@\n--- a/ledgerly/rates.py\n keep\n")
+    files = T.parse_patch(sql)
+    assert len(files) == 1 and files[0]["removed"] == 1
+    # Dot-dot paths never count as test paths.
+    sneaky = PATCH_TESTS_ONLY.replace("tests/test_rates.py", "tests/../ledgerly/rates.py")
+    write(tmp_path, "sneaky.patch", sneaky)
+    assert C.diff_test_paths_only(tmp_path, {"patch": "sneaky.patch"})["passed"] is False
+    write(tmp_path, "badhunk.patch", "--- a/x\n+++ b/x\n@@ nonsense @@\n")
+    assert C.diff_test_paths_only(tmp_path, {"patch": "badhunk.patch"})["passed"] is False
+
+
+def test_run_matrix_clears_stale_runs_and_bad_globs_fail(tmp_path):
+    (tmp_path / "repo").mkdir()
+    write(tmp_path, "r/run-07.xml", junit([("old", "failed")]))
+
+    def fake_run(argv, *, cwd=None, timeout=None):
+        Path(argv[1]).write_text(junit([("a", "passed")]))
+        return {"exit_code": 0}
+
+    out = T.run_test_matrix(tmp_path, run=fake_run, runs=2, runs_dir="r", argv=["pytest", "{junit}"])
+    assert out["runs"] == 2 and out["all_green"] and not (tmp_path / "r/run-07.xml").exists()
+    assert C.tests_stable(tmp_path, {"runs": "/abs/*.xml", "min_runs": 1})["passed"] is False

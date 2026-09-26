@@ -433,7 +433,11 @@ def census_from_runs(runs: list[dict[str, str]]) -> dict[str, Any]:
 def _glob_files(workspace: Path, pattern: str) -> list[Path]:
     root = Path(workspace).resolve()
     _ws_path(workspace, pattern.split("*")[0] or ".")  # refuse ../ in the fixed part
-    return sorted(p for p in root.glob(pattern) if p.is_file() and root in p.resolve().parents)
+    try:
+        found = list(root.glob(pattern))
+    except (NotImplementedError, ValueError) as exc:
+        raise ToolError(f"invalid glob {pattern!r}: {exc}") from exc
+    return sorted(p for p in found if p.is_file() and root in p.resolve().parents)
 
 
 def parse_test_results(workspace: Path, *, fetch=None, run=None, paths: str,
@@ -467,6 +471,9 @@ def run_test_matrix(workspace: Path, *, fetch=None, run: Callable | None = None,
     out_dir = _ws_path(workspace, runs_dir, write=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     work = _ws_path(workspace, cwd)
+    # Start clean: stale files from an earlier matrix must not count as runs.
+    for old in out_dir.glob("run-*.xml"):
+        old.unlink()
     log, results = [], []
     for i in range(1, int(runs) + 1):
         junit = out_dir / f"run-{i:02d}.xml"
@@ -495,25 +502,45 @@ def _sub_all(arg: str, subs: dict[str, str]) -> str:
 # --- diffs -------------------------------------------------------------------
 
 def parse_patch(text: str) -> list[dict[str, Any]]:
-    """Files in a unified (git) diff with added/removed counts and added lines."""
+    """Files in a unified (git) diff with added/removed counts and added lines.
+
+    Hunks are consumed by the line counts in their "@@ -a,b +c,d @@" header,
+    so a "--- "/"+++ " pair inside a hunk can never pose as a new file and a
+    header after a hunk always starts one (plain multi-file diffs included).
+    """
     files: list[dict[str, Any]] = []
     cur: dict[str, Any] | None = None
-    in_hunk = False
+    old_left = new_left = 0
+
+    def start(old: str = "", new: str = "") -> dict[str, Any]:
+        entry = {"old": old, "new": new, "added": 0, "removed": 0, "added_lines": [],
+                 "binary": False, "hunks": 0}
+        files.append(entry)
+        return entry
+
     for line in text.splitlines():
+        if old_left > 0 or new_left > 0:
+            if line.startswith("+"):
+                cur["added"] += 1
+                cur["added_lines"].append(line[1:])
+                new_left -= 1
+            elif line.startswith("-"):
+                cur["removed"] += 1
+                old_left -= 1
+            elif line.startswith("\\"):
+                pass  # "\ No newline at end of file"
+            else:  # context line (a blank line is context with its space stripped)
+                old_left -= 1
+                new_left -= 1
+            continue
         if line.startswith("diff --git "):
             m = re.match(r"diff --git a/(.+?) b/(.+)$", line)
-            cur = {"old": m.group(1) if m else "", "new": m.group(2) if m else "",
-                   "added": 0, "removed": 0, "added_lines": [], "binary": False}
-            files.append(cur)
-            in_hunk = False
-        elif cur is None and line.startswith("--- "):
-            # plain diff without "diff --git" headers
-            cur = {"old": "", "new": "", "added": 0, "removed": 0, "added_lines": [], "binary": False}
-            files.append(cur)
+            cur = start(m.group(1) if m else "", m.group(2) if m else "")
+        elif line.startswith("--- "):
+            if cur is None or cur["hunks"]:
+                cur = start()
             cur["old"] = _strip_prefix(line[4:])
-        elif cur is not None and line.startswith("--- ") and not in_hunk:
-            cur["old"] = _strip_prefix(line[4:])
-        elif cur is not None and line.startswith("+++ ") and not in_hunk:
+        elif cur is not None and line.startswith("+++ "):
             cur["new"] = _strip_prefix(line[4:])
         elif cur is not None and line.startswith("rename from "):
             cur["old"] = line[len("rename from "):]
@@ -521,16 +548,13 @@ def parse_patch(text: str) -> list[dict[str, Any]]:
             cur["new"] = line[len("rename to "):]
         elif cur is not None and (line.startswith("Binary files") or line == "GIT binary patch"):
             cur["binary"] = True
-        elif line.startswith("@@"):
-            in_hunk = True
-        elif cur is not None and in_hunk:
-            if line.startswith("+"):
-                cur["added"] += 1
-                cur["added_lines"].append(line[1:])
-            elif line.startswith("-"):
-                cur["removed"] += 1
-            elif line.startswith("diff ") or line.startswith("--- "):
-                in_hunk = False
+        elif cur is not None and line.startswith("@@"):
+            m = re.match(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@", line)
+            if not m:
+                raise ToolError(f"malformed hunk header: {line[:80]}")
+            old_left = int(m.group(1)) if m.group(1) is not None else 1
+            new_left = int(m.group(2)) if m.group(2) is not None else 1
+            cur["hunks"] += 1
     for f in files:
         f["old"], f["new"] = _norm(f["old"]), _norm(f["new"])
         f["path"] = f["new"] if f["new"] != "/dev/null" else f["old"]
@@ -556,7 +580,10 @@ def scope_report(files: list[dict[str, Any]], test_globs: list[str] | None = Non
         # A rename out of a production path also changes production code.
         touched = {f["path"]} | ({f["old"]} if f["old"] not in ("", "/dev/null") else set())
         for p in touched:
-            if not (path_matches(p, globs) or path_matches(p, allow)):
+            # ".." segments or absolute paths could dress a production file
+            # up as a test path; they are always out of scope.
+            unsafe = p.startswith("/") or ".." in p.split("/") or re.match(r"^[A-Za-z]:", p)
+            if unsafe or not (path_matches(p, globs) or path_matches(p, allow)):
                 outside.append(p)
     return {
         "files": [{"path": f["path"], "status": f["status"], "added": f["added"],
