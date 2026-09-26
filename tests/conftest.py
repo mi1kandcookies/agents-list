@@ -55,3 +55,32 @@ def agent(db):
     db.session.add(row)
     db.session.commit()
     return row.id
+
+
+@pytest.fixture()
+def human(db):
+    """One verified human (no ban, default cap)."""
+    from app.models import Human
+    row = Human(world_sub="0x" + "5" * 64)
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+@pytest.fixture()
+def world_idp(monkeypatch):
+    """Fake World ID provider; requests.get/post to its issuer are intercepted."""
+    from tests.fakes.world_idp import FakeWorldIdP
+    return FakeWorldIdP().install(monkeypatch)
+
+
+@pytest.fixture()
+def fake_screener():
+    from tests.fakes.screener import FakeScreener
+    return FakeScreener()
+
+
+@pytest.fixture()
+def fake_escrow():
+    from tests.fakes.escrow import FakeEscrow
+    return FakeEscrow()
