@@ -563,7 +563,8 @@ def test_m2_cannot_thin_out_the_approved_playbook(spec, ws):
 
 def test_m2_run_cannot_approve_its_own_playbook_edit(spec, ws):
     _seed_playbook(ws)                                   # approved outside the harness: no m1 submission
-    edit = ("edit_file", {"path": PLAYBOOK, "old_text": "title: Indemnification", "new_text": "title: Indemnity"})
+    edit = ("edit_file", {"path": PLAYBOOK, "old_text": "title: Indemnification",
+                          "new_text": "title: Indemnity"})
     sub, _, _ = _run(spec, ws, "m2-issues", [edit, *_m2_plan()])
     assert _results(sub)["approved_inputs_unchanged"].passed is False
     again, _, _ = _run(spec, ws, "m2-issues", _m2_plan())          # a fresh run keeps the first baseline
@@ -620,7 +621,8 @@ def test_m3_redlines_only_the_issue_lists_contract(spec, ws):
     plan[0] = ("build_redline", {"contract": NDA, "ops": [op], "issues": ISSUES})
     sub, _, events = _run(spec, ws, "m3-redline", plan)
     refused = _tool_results(events, "build_redline")[0]
-    assert refused["is_error"] and "the issue list reviews inputs/northwind_saas_msa.txt" in refused["content"]
+    assert refused["is_error"]
+    assert "the issue list reviews inputs/northwind_saas_msa.txt" in refused["content"]
     assert _results(sub)["redline_roundtrip"].passed is False and sub.status != "ready_for_review"
 
 

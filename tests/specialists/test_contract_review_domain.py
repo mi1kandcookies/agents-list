@@ -951,7 +951,8 @@ def test_cross_section_edits_need_a_comment_and_are_listed(ws):
     out = t.build_redline(ws, contract="inputs/msa.txt", ops=[op])
     assert out["cross_section_edits"] == ["ops[0]"]
     md = (ws / "deliverables/m3-redline/redline.md").read_text(encoding="utf-8")
-    assert "## Cross-section edits" in md and "- ops[0] (I4) changes \u00a711.1; the issue quotes \u00a73.2." in md
+    assert "## Cross-section edits" in md
+    assert "- ops[0] (I4) changes \u00a711.1; the issue quotes \u00a73.2." in md
     p = {"redline": "deliverables/m3-redline/redline.json"}
     assert c.redline_roundtrip(ws, p)["passed"] is True
     rec_path = ws / p["redline"]
