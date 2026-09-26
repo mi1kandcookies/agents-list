@@ -1,0 +1,17 @@
+{
+  "toxicScore": 95,
+  "traits": [
+    {
+      "risk": 100,
+      "name": "known_scammer",
+      "txsCount": 14,
+      "description": "The address is a known scammer"
+    },
+    {
+      "risk": 80,
+      "name": "fake_phishing_transfer",
+      "txsCount": 6,
+      "description": "The address sent fake phishing transfers"
+    }
+  ]
+}
