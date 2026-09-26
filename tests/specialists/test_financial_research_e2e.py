@@ -641,6 +641,208 @@ def test_validate_intake_flags_a_user_agent_without_contact(spec):
     assert [(m.field, m.blocking) for m in missing] == [("sec_user_agent", True)]
 
 
+# --- M4: a stock pitch from tickers alone --------------------------------------------
+
+PITCH_MD = f"deliverables/{M4}/pitch.md"
+SNAPSHOT = f"deliverables/{M4}/market_snapshot.json"
+IMPLIED = f"deliverables/{M4}/market_implied.json"
+VALUATION = f"deliverables/{M4}/valuation.csv"
+VIEW = f"deliverables/{M4}/variant_view.json"
+HLVI_10K = T.filing_url("9900001", TEN_K["9900001"][0], TEN_K["9900001"][2])
+HLVI_10K_HTML = (
+    "<html><head><title>Halvorsen Instruments 10-K</title></head><body>"
+    "<p>Halvorsen Instruments Inc. Annual Report on Form 10-K for the fiscal year ended "
+    "December 31, 2024.</p><p>Item 7. Management's Discussion and Analysis.</p>"
+    "<p>Revenue increased 11.8% to $1,121.9 million, driven by a 19% increase in process "
+    "analyzer shipments.</p><p>Backlog at December 31, 2024 was $612.0 million, up 24% from a "
+    "year earlier.</p><p>For 2025 we expect revenue growth in the low double digits.</p></body></html>")
+EVIDENCE = ["Revenue increased 11.8% to $1,121.9 million",
+            "Backlog at December 31, 2024 was $612.0 million, up 24% from a year earlier",
+            "For 2025 we expect revenue growth in the low double digits"]
+QUOTE_URL = T.QUOTE_SOURCES[0][1].format(ticker="HLVI")
+PRICE = 41.37
+QUOTE_JSON = json.dumps({"chart": {"result": [{"meta": {
+    "currency": "USD", "symbol": "HLVI", "exchangeName": "NMS", "regularMarketTime": 1759262400,
+    "regularMarketPrice": PRICE, "chartPreviousClose": 40.95}, "timestamp": [1759176000, 1759262400],
+    "indicators": {"quote": [{"close": [40.95, PRICE]}]}}], "error": None}}, separators=(",", ":"))
+TICKERS_JSON = json.dumps({str(i): {"cik_str": int(cik), "ticker": t, "title": NAMES[cik]}
+                           for i, (cik, t) in enumerate(zip(CIKS, ("HLVI", "BWAC", "CDHS")))})
+ASSUMPTIONS = {"operating_margin": 0.17, "tax_rate": 0.21, "reinvestment_rate": 0.35,
+               "discount_rate": 0.09, "terminal_growth": 0.025, "years": 10}
+SCENARIOS = [{"name": "bear", "revenue_cagr": 0.05, "operating_margin": 0.15},
+             {"name": "base", "revenue_cagr": 0.12},
+             {"name": "bull", "revenue_cagr": 0.16, "operating_margin": 0.19}]
+# Halvorsen FY2024 in the fixture XBRL: revenue, net debt (360m - 214.6m cash), diluted shares
+HLVI = {"base_revenue": 1_121_900_000.0, "net_debt": 145_400_000.0, "shares": 60_400_000.0}
+IMPLIED_CAGR = T.solve_implied_cagr(PRICE, **HLVI, **ASSUMPTIONS)[0]
+BASE_VALUE = T.dcf_value_per_share(revenue_cagr=0.12, **HLVI, **ASSUMPTIONS)
+
+
+class FakeMarket(FakeSEC):
+    """FakeSEC plus SEC's ticker map, Halvorsen's FY2024 10-K and a Yahoo chart quote."""
+
+    PAGES = {T.COMPANY_TICKERS_URL: ("application/json", TICKERS_JSON),
+             HLVI_10K: ("text/html; charset=utf-8", HLVI_10K_HTML),
+             QUOTE_URL: ("application/json", QUOTE_JSON)}
+
+    def __call__(self, method, url, headers, body, timeout):
+        if url not in self.PAGES:
+            return super().__call__(method, url, headers, body, timeout)
+        self.calls.append((url, dict(headers)))
+        ctype, text = self.PAGES[url]
+        return 200, {"Content-Type": ctype}, text.encode()
+
+
+def _pitch_brief() -> Brief:
+    """What a client without uploads gives: tickers, a question and an SEC contact."""
+    return Brief(engagement_id="eng-fr-pitch", specialist="financial-research",
+                 objective="A stock pitch with a variant view on Halvorsen Instruments.",
+                 intake={"companies": ["HLVI", "BWAC", "CDHS"],
+                         "research_question": "What revenue growth does Halvorsen's price imply, "
+                                              "and do its filings support more or less?",
+                         "pitch_focus": "HLVI; the direction should follow from the analysis",
+                         "sec_user_agent": UA})
+
+
+def variant_view(**changes) -> dict:
+    view = {"ticker": "HLVI", "metric": "revenue_cagr", "horizon_years": 10,
+            "market_implied": round(IMPLIED_CAGR, 4), "our_view": 0.12,
+            "delta": round(0.12 - IMPLIED_CAGR, 4), "direction": "long",
+            "thesis": "The price pays for growth below Halvorsen's own record and backlog.",
+            "evidence": [{"point": "FY2024 revenue grew 11.8% on analyzer shipments", "claims": ["C1"]},
+                         "Backlog rose 24% to $612.0 million, ahead of revenue [C2]",
+                         {"point": "Management expects low double-digit growth in 2025", "claims": ["C3"]}],
+            "falsifiers": ["Backlog below $500 million at any 2025 quarter-end",
+                           "FY2025 revenue growth under 8% with stable pricing"],
+            "catalysts": [{"event": "Q3 2025 results and backlog", "date": "2025-11-04"},
+                          {"event": "FY2025 10-K with the 2026 outlook", "date": "2026-02"}]}
+    return view | changes
+
+
+def pitch_text(spec, direction: str = "long") -> str:
+    implied = f"{IMPLIED_CAGR * 100:.1f}%"
+    return f"""# Halvorsen Instruments (HLVI): the backlog outruns what the price pays for
+
+{_disclaimer(spec)}
+
+Direction: {direction}
+
+## Summary
+At $41.37 [C4] the price implies revenue growth of {implied} a year for ten years. The FY2024
+10-K shows 11.8% growth [C1], a backlog up 24% [C2] and an outlook for low double-digit growth
+[C3]. Our base case of 12% a year is worth $50.02 per share, 20.9% above the price
+(valuation.csv). The key catalyst is the Q3 2025 backlog; the main risk is a slowdown in
+analyzer orders.
+
+## Thesis
+1. Growth is running above what is priced in: revenue rose 11.8% in FY2024 [C1].
+2. Backlog of $612.0 million, up 24% [C2], covers more than half a year of revenue.
+
+## What the market is pricing in
+Halvorsen last traded at $41.37 (Yahoo Finance, delayed, 2025-09-30) [C4]. With FY2024 revenue,
+diluted shares and net debt from the 10-K (accession {TEN_K["9900001"][0]}), a 17.0% operating
+margin, 21% tax, 35% reinvestment, a 9.0% discount rate and 2.5% terminal growth, the price
+implies revenue growth of {implied} a year for ten years (market_implied.json).
+
+## Variant view
+We expect 12.0% a year: management guides to low double-digit growth [C3] and the backlog grew
+twice as fast as revenue [C2].
+
+## Catalysts
+- 2025-11-04: Q3 2025 results and backlog.
+- February 2026: the FY2025 10-K and the 2026 outlook.
+
+## Valuation
+Bear, base and bull values come from valuation.csv; they are outputs of the stated assumptions,
+not a price target.
+
+## Risks and what would change our mind
+- Backlog below $500 million at any 2025 quarter-end.
+- FY2025 revenue growth under 8% with stable pricing.
+
+## Sources
+- Halvorsen FY2024 Form 10-K, accession {TEN_K["9900001"][0]} [C1] [C2] [C3]
+- Yahoo Finance chart quote, 2025-09-30 [C4]
+"""
+
+
+def m4_plan(spec, *, view: dict | None = None, pitch: str | None = None,
+            after_valuation: list | None = None) -> list:
+    return [
+        ("sec_company_lookup", {"query": "HLVI"}),
+        [("edgar_submissions", {"cik": "9900001", "forms": ["10-K", "10-Q"]}),
+         ("edgar_companyfacts", {"cik": "9900001"})],
+        ("xbrl_facts", {"cik": "9900001", "metrics": ["revenue", "operating_income"],
+                        "fiscal_years": [2022, 2023, 2024]}),
+        ("edgar_filing_text", {"url": HLVI_10K}),                              # S1
+        ("market_quote", {"ticker": "HLVI"}),                                   # S2
+        [*(("record_claim", {"text": quote, "source": "S1", "quote": quote}) for quote in EVIDENCE),
+         ("record_claim", {"text": "Halvorsen's delayed last price", "source": "S2",
+                           "quote": f'"regularMarketPrice":{PRICE}'})],
+        ("reverse_dcf", {"cik": "9900001", **ASSUMPTIONS}),
+        ("scenario_valuation", {"scenarios": SCENARIOS}),
+        *(after_valuation or []),
+        ("write_file", {"path": VIEW, "content": json.dumps(view or variant_view(), indent=2)}),
+        ("write_file", {"path": PITCH_MD, "content": pitch or pitch_text(spec)}),
+        ("post_progress", {"message": "Stock pitch drafted: long, base case 20.9% above the price."}),
+        ("submit_milestone", {"summary": "Stock pitch with a variant view on Halvorsen Instruments.",
+                              "artifacts": [PITCH_MD, SNAPSHOT, IMPLIED, VALUATION, VIEW]}),
+    ]
+
+
+def test_m4_stock_pitch_runs_from_tickers_alone(spec, tmp_path):
+    ws, transport = tmp_path / "ws", FakeMarket()
+    sub, events = _run(spec, ws, m4_plan(spec), M4, brief=_pitch_brief(), transport=transport)
+    _assert_ready(spec, ws, sub, events, [PITCH_MD, SNAPSHOT, IMPLIED, VALUATION, VIEW])
+    results = _results(sub)
+    for name in ("pitch_valuation_recompute", "variant_view_grounded", "ledger_verified",
+                 "citations_resolve", "disclaimer_present", "markdown_sections", "no_placeholders"):
+        assert results[name].passed is True, (name, results[name].details)
+    assert "no_recommendation_language" not in results
+    assert results["human_signoff"].kind == "human" and results["human_signoff"].passed is None
+    assert sub.milestone_idx == 3 and not (ws / "inputs").exists()     # nothing was uploaded
+    # SEC saw the client's contact; the quote host saw a browser-like agent instead
+    assert [url for url, _ in transport.calls][-1] == QUOTE_URL and len(events.of_type("egress")) == 5
+    assert all(h["User-Agent"] == UA for url, h in transport.calls if "sec.gov" in url)
+    assert transport.calls[-1][1]["User-Agent"].startswith("Mozilla/5.0")
+    snapshot = json.loads((ws / SNAPSHOT).read_text(encoding="utf-8"))
+    assert (snapshot["source"], snapshot["price"], snapshot["source_id"]) == ("yahoo", PRICE, "S2")
+    implied = json.loads((ws / IMPLIED).read_text(encoding="utf-8"))
+    assert implied["implied_revenue_cagr"] == IMPLIED_CAGR and implied["fiscal_year"] == 2024
+    base = next(r for r in csv.DictReader(io.StringIO((ws / VALUATION).read_text(encoding="utf-8")))
+                if r["scenario"] == "base")
+    assert base["value_per_share"] == f"{BASE_VALUE:.2f}" and float(base["upside_pct"]) > 10
+    ledger = json.loads((ws / ".agentkit/ledger.json").read_text(encoding="utf-8"))
+    assert [(s["uri"], s["kind"]) for s in ledger["sources"]] == [(HLVI_10K, "tool"), (QUOTE_URL, "tool")]
+    assert {PITCH_MD, SNAPSHOT, IMPLIED, VALUATION, VIEW} <= set(ledger["authored"])
+    # the rules the model is held to are in its prompt, with the disclaimer for pitch.md
+    system = spec.system_prompt(_pitch_brief(), spec.manifest.milestone(M4))
+    assert "# Stock pitch with a variant view (M4)" in system
+    assert f"verbatim in {PITCH_MD}:\n{_disclaimer(spec)}" in system
+
+
+@pytest.mark.parametrize("variant,check", [
+    ("no_variant_view", "variant_view_grounded"),         # the view is what the price already says
+    ("typed_over_value", "pitch_valuation_recompute"),    # a base case edited after the tool ran
+    ("uncited_evidence", "variant_view_grounded"),
+])
+def test_m4_forged_pitch_needs_revision(spec, tmp_path, variant, check):
+    view, after = None, None
+    if variant == "no_variant_view":
+        view = variant_view(our_view=round(IMPLIED_CAGR, 4), delta=0.0)
+    elif variant == "typed_over_value":
+        after = [("edit_file", {"path": VALUATION, "old_text": f",{BASE_VALUE:.2f},",
+                                "new_text": f",{BASE_VALUE + 15:.2f},"})]
+    elif variant == "uncited_evidence":
+        view = variant_view(evidence=variant_view()["evidence"][:2] + ["Pricing power is intact [C9]"])
+    sub, events = _run(spec, tmp_path / "ws", m4_plan(spec, view=view, after_valuation=after), M4,
+                       brief=_pitch_brief(), transport=FakeMarket())
+    assert not [r for r in _tool_results(events) if r["is_error"]]
+    failed = [r for r in sub.check_results if r.kind == "automated" and r.passed is not True]
+    assert [r.check for r in failed] == [check], [(r.check, r.details) for r in failed]
+    assert sub.status == "needs_revision" and sub.evidence_hash.startswith("0x")
+
+
 # --- CLI and evals -------------------------------------------------------------------
 
 def _cli(*args):
