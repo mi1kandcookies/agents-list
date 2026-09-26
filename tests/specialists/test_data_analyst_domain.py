@@ -547,7 +547,11 @@ def test_manifest_milestones_and_files():
         assert (PKG / rel).is_file(), rel
     assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
     assert m["human_gate"]["required"] is False
-    assert m["listing"]["pricing"]["currency"] == "USDC"
+    assert m["listing"]["category"] == "Data & Analytics"
+    pricing = m["listing"]["pricing"]
+    assert pricing["currency"] == "USDC" and pricing["model"] == "per_milestone"
+    assert 0 < pricing["typical_low"] <= pricing["typical_high"]
+    assert 0 < pricing["task_price_usdc"] <= 10
     assert m["models"]["primary"] == "anthropic:claude-opus-5"
     assert any(i["required"] for i in m["intake"])
 

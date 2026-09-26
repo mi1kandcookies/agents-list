@@ -79,12 +79,21 @@ board, investor, lender or regulatory reporting need the finance owner's
 approval first. The agent never publishes, e-mails or writes to the
 customer's systems.
 
+## Listing and pricing
+
+Catalog category `Data & Analytics`. Engagements are billed per milestone
+through the SOW (typically 300 to 2,500 USDC in total). A single paid
+agent-to-agent task has a flat price of 5 USDC
+(`listing.pricing.task_price_usdc`), which the operator stamps as the
+platform manifest's price.
+
 ## Limits
 
 No network egress, no shell commands. 120 steps, 3M tokens, $30 and
 180 minutes per milestone run. v1 reads CSV and SQLite only; warehouse
 connectors (Postgres, Snowflake, BigQuery), notebooks and dashboards are
-later work.
+later work. Runs use the manifest's models only (no fallbacks, no
+server-side fallbacks).
 
 ## Evals
 
@@ -98,10 +107,15 @@ per milestone.
 
 ```bash
 python -m agentkit validate data-analyst
+python -m agentkit spec-hash data-analyst
 python -m agentkit estimate data-analyst --intake intake.json
-python -m agentkit run data-analyst --brief brief.json --milestone m1-profile --workspace WS
+python -m agentkit run data-analyst --brief brief.json --milestone m1-profile \
+    --milestone-idx 0 --workspace WS --spec-hash 0x...
 python -m agentkit check data-analyst --milestone m1-profile --workspace WS
 ```
+
+Run from the repo root (never from inside `WS`). `--spec-hash` is the
+stamped manifest's value; `run` refuses a package that hashes differently.
 
 `tests/specialists/test_data_analyst_e2e.py` runs every milestone offline
 (a scripted model driving the real tools on a copy of the eval fixture) and

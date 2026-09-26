@@ -23,7 +23,7 @@ listing:
     - Metric definitions (grain, filters, owner, SQL) reconciled to your reference totals
     - Written analysis where every number is reproducible from a saved query
     - Read-only SQL over CSV and SQLite exports
-  pricing: {model: per_milestone, currency: USDC, typical_low: 300, typical_high: 2500}
+  pricing: {model: per_milestone, currency: USDC, typical_low: 300, typical_high: 2500, task_price_usdc: 5.0}
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: data
 prompts:
