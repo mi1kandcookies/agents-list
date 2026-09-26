@@ -13,7 +13,8 @@ of a security, privacy or vendor-risk questionnaire).
 - **m2-outline:** `build_evidence_map` over the knowledge base; gaps become
   expert questions in `gaps.md`. The outline groups questions by category
   with the owner for each group.
-- **m3-draft:** `init_answer_sheet`, then one `set_answer` per question.
+- **m3-draft:** `init_answer_sheet`, then one `set_answer` per question;
+  `update_compliance_matrix` reads the answer sheet by default.
   The sheet is `deliverables/m3-draft/questionnaire_answers.csv`; include it
   in the submitted artifacts. `proposal.md` is a short cover response
   (scope, answered vs needs-review counts, what the customer must confirm)
@@ -21,9 +22,12 @@ of a security, privacy or vendor-risk questionnaire).
 
 ## Grounded or abstain
 
-- `answered` requires at least one KB citation, and every number and
-  certification in the answer must appear in the cited passage.
-  `set_answer` refuses anything else.
+- `answered` requires at least one KB citation that shares a word with the
+  question; every number and certification in the answer must appear in
+  the cited passage, and so must every certification or standard the
+  question names (a bare "Yes." to "Do you hold a SOC 2 Type II report?"
+  needs a passage that says SOC 2 Type II). `set_answer` refuses anything
+  else.
 - When the knowledge base does not establish the fact, the answer is
   `needs_review` with the open question: "NEEDS REVIEW: no SOC 2 report in
   the knowledge base; confirm current attestation status."
