@@ -1,0 +1,49 @@
+entry_id,date,account,description,debit,credit
+OB-2026-07,2026-07-31,1000,Opening balance per FY2026 closing TB,42350.00,
+OB-2026-07,2026-07-31,1100,Opening balance per FY2026 closing TB,8200.00,
+OB-2026-07,2026-07-31,1200,Opening balance per FY2026 closing TB,6000.00,
+OB-2026-07,2026-07-31,1500,Opening balance per FY2026 closing TB,36000.00,
+OB-2026-07,2026-07-31,1510,Opening balance per FY2026 closing TB,,6000.00
+OB-2026-07,2026-07-31,2000,Opening balance per FY2026 closing TB,,4150.00
+OB-2026-07,2026-07-31,2100,Opening balance per FY2026 closing TB,,2400.00
+OB-2026-07,2026-07-31,2200,Opening balance per FY2026 closing TB,,3000.00
+OB-2026-07,2026-07-31,3000,Opening balance per FY2026 closing TB,,50000.00
+OB-2026-07,2026-07-31,3900,Opening balance per FY2026 closing TB,,27000.00
+GJ-0001,2026-08-01,1000,Square deposit 0801,3412.50,
+GJ-0001,2026-08-01,4000,Square deposit 0801,,3412.50
+GJ-0002,2026-08-01,6000,Harbor Properties - August rent,4500.00,
+GJ-0002,2026-08-01,1000,Harbor Properties - August rent,,4500.00
+GJ-0003,2026-08-02,2000,Check 1041 - Cafe Imports inv 5390,4150.00,
+GJ-0003,2026-08-02,1000,Check 1041 - Cafe Imports inv 5390,,4150.00
+GJ-0004,2026-08-04,1000,Square deposit 0804,2987.25,
+GJ-0004,2026-08-04,4000,Square deposit 0804,,2987.25
+GJ-0005,2026-08-07,5000,Cafe Imports - green coffee wire,6280.00,
+GJ-0005,2026-08-07,1000,Cafe Imports - green coffee wire,,6280.00
+GJ-0006,2026-08-08,1000,Square deposit 0808,3105.75,
+GJ-0006,2026-08-08,4000,Square deposit 0808,,3105.75
+GJ-0007,2026-08-10,1000,Blue Ridge Grocers - payment inv 2207,8200.00,
+GJ-0007,2026-08-10,1100,Blue Ridge Grocers - payment inv 2207,,8200.00
+GJ-0008,2026-08-12,6100,City of Harbor utilities - July service,612.40,
+GJ-0008,2026-08-12,1000,City of Harbor utilities - July service,,612.40
+GJ-0009,2026-08-14,6200,Gusto payroll 8/14,9845.60,
+GJ-0009,2026-08-14,1000,Gusto payroll 8/14,,9845.60
+GJ-0010,2026-08-15,1000,Square deposit 0815,3290.00,
+GJ-0010,2026-08-15,4000,Square deposit 0815,,3290.00
+GJ-0011,2026-08-18,6300,Roastware software subscription,149.00,
+GJ-0011,2026-08-18,1000,Roastware software subscription,,149.00
+GJ-0012,2026-08-20,6999,Venmo J Marsh - unknown,300.00,
+GJ-0012,2026-08-20,1000,Venmo J Marsh - unknown,,300.00
+GJ-0013,2026-08-20,5000,Cafe Imports inv 5521 - green coffee,3100.00,
+GJ-0013,2026-08-20,2000,Cafe Imports inv 5521 - green coffee,,3100.00
+GJ-0014,2026-08-22,1000,Square deposit 0822,3560.40,
+GJ-0014,2026-08-22,4000,Square deposit 0822,,3560.40
+GJ-0015,2026-08-26,1000,Pine St Market - wholesale order 118,2400.00,
+GJ-0015,2026-08-26,4100,Pine St Market - wholesale order 118,,2400.00
+GJ-0016,2026-08-28,6200,Gusto payroll 8/28,9845.60,
+GJ-0016,2026-08-28,1000,Gusto payroll 8/28,,9845.60
+GJ-0017,2026-08-29,1000,Square deposit 0829,3344.10,
+GJ-0017,2026-08-29,4000,Square deposit 0829,,3344.10
+GJ-0018,2026-08-30,5000,Check 1052 - Coastal Packaging,1275.00,
+GJ-0018,2026-08-30,1000,Check 1052 - Coastal Packaging,,1275.00
+GJ-0019,2026-08-31,1000,Square deposit 0831,1118.60,
+GJ-0019,2026-08-31,4000,Square deposit 0831,,1118.60

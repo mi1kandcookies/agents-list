@@ -1,0 +1,30 @@
+name: Books diagnostic and close setup
+criteria:
+  - id: findings_grounded
+    description: >-
+      Every finding in the diagnostic points to a specific account, file and
+      row or entry id, and no figure appears that is not in the account map,
+      tie-out or input files.
+    weight: 0.3
+  - id: opening_balances
+    description: >-
+      Opening-balance differences are stated with amounts and an
+      evidence-based explanation, or clearly listed as open questions for the client.
+    weight: 0.2
+  - id: rulebook_quality
+    description: >-
+      The categorization rules cover the recurring payees, use conservative
+      confidence for ambiguous payees (checks, transfers, peer-to-peer apps)
+      and never route items to suspense as a default.
+    weight: 0.2
+  - id: checklist_actionable
+    description: >-
+      The close checklist lists steps in dependency order with an owner and a
+      due day, and puts reviewer approval before any posting.
+    weight: 0.15
+  - id: gate_and_scope
+    description: >-
+      The memo states that nothing is posted, names what the accountant or
+      CPA must approve, and does not present the work as an audit, review or tax advice.
+    weight: 0.15
+threshold: 0.75

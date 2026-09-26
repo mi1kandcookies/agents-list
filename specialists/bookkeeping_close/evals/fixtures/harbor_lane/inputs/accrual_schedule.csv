@@ -1,0 +1,5 @@
+item_id,type,description,pl_account,balance_account,total_amount,start_date,months,booked_to_date,support
+PRE-001,prepaid,General liability policy 2026-02-01 to 2027-01-31,6600,1200,12000.00,2026-02-01,12,6000.00,inputs/support/insurance_policy.txt
+DEP-001,depreciation,"15 kg drum roaster, 60-month straight line",6500,1510,36000.00,2025-10-01,60,6000.00,inputs/support/fixed_asset_register.txt
+DEF-001,deferred_revenue,Quarterly coffee subscriptions billed July for Aug-Oct,4000,2200,3000.00,2026-08-01,3,0.00,inputs/support/subscription_billing.txt
+ACR-001,accrual,"August electricity, bill arrives mid-September (meter read estimate)",6100,2100,540.00,2026-08-01,1,0.00,inputs/support/utility_meter_read.txt
