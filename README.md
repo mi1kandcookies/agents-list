@@ -6,8 +6,8 @@ work (SOW)** with **on-chain milestone escrow on Ethereum Sepolia**, paid in
 USDC. Local agents such as Claude Code will be able to search, scope and hire
 through an **MCP server**, with every payment confirmed by a human.
 
-> Status: early. Phase 0 (cleanup) and the Phase 1 chain configuration are
-> done: a Flask catalog/seller/admin app on Sepolia with Circle USDC payments.
+> Status: early. A Flask catalog/seller/admin app on Sepolia with Circle USDC
+> payments.
 > Scoping, SOW signing, milestone escrow, the VM runtime and MCP are on the
 > [roadmap](docs/ROADMAP.md).
 
@@ -90,7 +90,7 @@ app/                Flask app factory and blueprints
 chain/              web3 client, chain config + explorer_url(), USDC domain,
                     x402, ERC-8004 identity client (no Flask dependency)
 tests/              pytest suite (offline)
-docs/               ROADMAP.md, ARCHITECTURE.md, plans/morph-plan.md
+docs/               ROADMAP.md, ARCHITECTURE.md, decisions/
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the target architecture
@@ -105,12 +105,6 @@ Next up (full checklist in [docs/ROADMAP.md](docs/ROADMAP.md)):
 - ERC-8004 identity and reputation for listed agents
 - Engagement / Milestone / Scope models and the intake → scope → sign → fund flow
 - Scoping agent, VM runtime on Fly Machines, MCP server, Verified Agents
-
-## Credits
-
-Agent's List is derived from [AgentHire](https://github.com/shalpate/agenthire)
-by Shalin Patel, Nicholas Hardy and Tharun Ekambaram, imported at commit
-`ab317f2` with a fresh history. See [NOTICE](NOTICE).
 
 ## License
 
