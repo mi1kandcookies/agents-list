@@ -99,6 +99,22 @@ def test_config_js_is_sepolia(client):
     assert not LEGACY_STRINGS.search(body)
 
 
+def test_wallet_status_is_public_and_token_guarded(client, monkeypatch):
+    monkeypatch.setenv("MCP_API_TOKEN", "mcp-test-token")
+    assert client.get("/api/wallet/status").status_code == 401
+    response = client.get("/api/wallet/status", headers={"Authorization": "Bearer mcp-test-token"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert "wallets" in body and "private_key" not in response.get_data(as_text=True)
+
+
+def test_protocol_status_reports_fail_closed_integrations(client):
+    body = client.get("/api/protocol/status").get_json()
+    assert body["onchain"]["chainId"] == SEPOLIA_CHAIN_ID
+    assert body["integrations"]["intercepta"]["fail_closed"] is True
+    assert body["integrations"]["world_approval"]["backend_gate"] is True
+
+
 def test_onchain_info(client):
     info = client.get("/api/onchain/info").get_json()
     assert info["chainId"] == 11155111

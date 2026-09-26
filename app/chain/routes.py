@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import hmac
 import logging
+import os
+from decimal import Decimal
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -21,6 +24,103 @@ def _chain_unavailable(exc: Exception):
     if isinstance(exc, ContractNotConfigured):
         return api_error(str(exc), 503, code="NOT_DEPLOYED")
     return api_error(f"chain call failed: {str(exc)[:200]}", 502, code="CHAIN_ERROR")
+
+
+def _mcp_read_guard():
+    """Protect machine-readable wallet data without exposing private keys.
+
+    Local development remains convenient when MCP_API_TOKEN is unset.  Once a
+    token is configured, terminal clients must present it; browser cookies and
+    frontend headers are not accepted for this machine-facing endpoint.
+    """
+    token = (os.environ.get("MCP_API_TOKEN") or "").strip()
+    if token:
+        provided = request.headers.get("Authorization", "")
+        if not hmac.compare_digest(provided.encode(), f"Bearer {token}".encode()):
+            return jsonify({"error": "missing or invalid bearer token", "code": "UNAUTHORIZED"}), 401
+    return None
+
+
+_WALLET_ROLES = {
+    "ens_operator": "ENS_OPERATOR_PRIVATE_KEY",
+    "facilitator": "FACILITATOR_PRIVATE_KEY",
+    "escrow": "ESCROW_PRIVATE_KEY",
+    "buyer_vault": "BUYER_VAULT_PRIVATE_KEY",
+    "x402_payer": "X402_PAYER_PRIVATE_KEY",
+    "mock_deployer": "MOCK_USDC_DEPLOYER_PRIVATE_KEY",
+}
+
+
+def _wallet_snapshot() -> dict:
+    """Read public balances for locally configured operator roles.
+
+    This function derives addresses in-process and never serializes a key.
+    Missing keys are represented as unconfigured roles so the terminal can
+    explain what still needs funding before an on-chain rehearsal.
+    """
+    from chain.config import get_address, get_chain_config
+
+    cfg = get_chain_config()
+    token = get_address("USDC")
+    rows = []
+    try:
+        from eth_account import Account
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 4}))
+        connected = bool(w3.is_connected())
+    except Exception as exc:
+        w3, connected = None, False
+        rpc_error = f"RPC unavailable: {exc.__class__.__name__}"
+
+    token_contract = None
+    if w3 is not None and connected and token:
+        try:
+            token_contract = w3.eth.contract(
+                address=Web3.to_checksum_address(token),
+                abi=[{"type": "function", "name": "balanceOf", "stateMutability": "view",
+                      "inputs": [{"name": "account", "type": "address"}],
+                      "outputs": [{"type": "uint256"}]}],
+            )
+        except Exception:
+            token_contract = None
+
+    for role, env_name in _WALLET_ROLES.items():
+        key = (os.environ.get(env_name) or "").strip()
+        row = {"role": role, "env_var": env_name, "configured": bool(key),
+               "address": None, "eth_balance_wei": None, "eth_balance": None,
+               "token_balance_atomic": None, "token_balance_usdc": None, "error": None}
+        if not key:
+            rows.append(row)
+            continue
+        try:
+            account = Account.from_key(key)
+            row["address"] = account.address
+            if not connected:
+                row["error"] = rpc_error if "rpc_error" in locals() else "RPC unavailable"
+            else:
+                wei = int(w3.eth.get_balance(account.address))
+                row["eth_balance_wei"] = wei
+                row["eth_balance"] = str(Decimal(wei) / Decimal(10 ** 18))
+                if token_contract is not None:
+                    atomic = int(token_contract.functions.balanceOf(account.address).call())
+                    row["token_balance_atomic"] = atomic
+                    row["token_balance_usdc"] = str(Decimal(atomic) / Decimal(10 ** 6))
+                elif token:
+                    row["error"] = "payment token balance unavailable"
+        except Exception as exc:
+            # Keep the public address when it was derived, but make RPC/key
+            # failures explicit instead of manufacturing a zero balance.
+            row["error"] = str(exc)[:160]
+        rows.append(row)
+
+    return {
+        "chain": {"chainId": cfg.chain_id, "name": cfg.name, "caip2": cfg.caip2,
+                  "rpcUrl": cfg.rpc_url, "explorer": cfg.explorer},
+        "token": {"address": token, "symbol": "USDC", "decimals": 6},
+        "rpc_connected": connected,
+        "wallets": rows,
+        "configured_wallets": sum(1 for row in rows if row["configured"]),
+    }
 
 
 @bp.route("/config.js")
@@ -46,6 +146,38 @@ def config_js():
 def api_onchain_info():
     from chain.config import get_deployment
     return jsonify(get_deployment())
+
+
+@bp.route("/api/wallet/status")
+def api_wallet_status():
+    denied = _mcp_read_guard()
+    if denied:
+        return denied
+    return jsonify(_wallet_snapshot())
+
+
+@bp.route("/api/protocol/status")
+def api_protocol_status():
+    denied = _mcp_read_guard()
+    if denied:
+        return denied
+    from chain.config import get_deployment
+    from app.names import service as names
+    tree = names.tree()
+    try:
+        name_count = len(tree.get("children") or [])
+    except AttributeError:
+        name_count = 0
+    return jsonify({
+        "onchain": get_deployment(),
+        "wallets": _wallet_snapshot(),
+        "integrations": {
+            "ens": {"configured": True, "local_name_records": name_count},
+            "intercepta": {"configured": bool((os.environ.get("INTERCEPTA_API_KEY") or "").strip()),
+                           "fail_closed": True},
+            "world_approval": {"backend_gate": True},
+        },
+    })
 
 
 @bp.route("/api/x402/domain")
