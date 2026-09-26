@@ -9,15 +9,44 @@ It uses plain [viem](https://viem.sh). Its only dependency is `viem`.
 
 ```
 agentslist-app.eth                         platform-owned root
-└─ helper.agentslist-app.eth               agent: agent-context, agent-endpoint[mcp], x402-payto,
+└─ helper.agentslist-app.eth               agent: agent-context, agent-endpoint[mcp|a2a|web],
+   │                                       x402-payto + ETH address record, manifest-hash,
    │                                       agent-registration[<ERC-7930 registry>][<agentId>]
    └─ eng-xxxx.helper.agentslist-app.eth   job: sow-hash, escrow, mandate, status, deliverable
       └─ eng-yyyy.eng-xxxx.helper…         sub-job: wildcard records on the job's resolver
 ```
 
 - **Agents** get their own PermissionedResolver (records are written in its
-  initializer) and their own UserRegistry, which holds their jobs. The platform owns
-  the name, and the agent gets no roles on it.
+  initializer) and their own UserRegistry, which holds their jobs and is linked back
+  to the root registry (`setParent`), so tools that walk the tree upward find it. The
+  platform owns the name. The payout is written twice: as `x402-payto` and as the ETH
+  address record, so the name resolves to the payee in any ENS client. The app
+  drops the payee once payee screening refuses it (pausing or unlisting an agent
+  keeps it, so work under way can still be paid) and sends the manifest hash only
+  while the operator stamp is valid. The `grantee` is the payee the name advertises:
+  it gets `setText` rights on the agent's own resolver for `agent-endpoint[mcp]` and
+  `agent-endpoint[a2a]` **only**, the endpoints it runs. Payout, `manifest-hash`, the
+  ERC-8004 link and the listing page (`agent-endpoint[web]`) stay platform-only. A new
+  grantee takes the grants over and `grantee: null` revokes them; either way the
+  endpoint records the old grantee could write are reset, in the same transaction as
+  the record update. A request without `grantee` leaves the grants as they are.
+- **Updating** an agent name writes only what changed, in one `multicall`. Records
+  the platform no longer sends are cleared (an empty payout also clears the address
+  record). An endpoint record the agent may edit is cleared only while it still
+  holds the platform's own value; once the agent replaced it, it is the agent's.
+- **Adoption.** A name this operator already holds on-chain but that is missing from
+  the state file (issued from another host, or the file was lost), or whose register
+  receipt never arrived, is adopted: the sidecar reuses its resolver and registry
+  instead of deploying again (the CREATE2 salts are taken) and keeps what it deployed
+  itself. For an agent name on a resolver it didn't deploy, it first reads the
+  platform-owned records, the ETH address record and the payee's endpoint grants, so
+  it writes only what differs and can clear and revoke what is there; a job name gets
+  its missing records. Everything is read before anything changes, so a failed read
+  leaves the name for the next try. Agent names saved by builds that tracked neither
+  the address record nor grants are reconciled with the chain the same way, once. A name held by another account is refused with 409
+  `NAME_TAKEN`; an agent name registered without a resolver with 409
+  `PARENT_NOT_READY`. An agent name that has **expired** can't be re-issued from a
+  lost state file (its original CREATE2 salts are taken); agent names last a year.
 - **Jobs** are registered with `expiry` = the SOW deadline. The owner is the platform
   with `roleBitmap = 0`, so the name can't be transferred, and only the platform can
   unregister it. Each job has **its own PermissionedResolver**. On that resolver, the
@@ -30,18 +59,20 @@ agentslist-app.eth                         platform-owned root
   the job resolver would also cover the parent job's keys.
 - **Revoke** (at settlement) revokes the key grants and unregisters the name. For a
   sub-job it clears the records. The name also stops resolving by itself once `expiry`
-  passes.
+  passes; revoking an expired name still revokes its grants but skips `unregister`,
+  which the registry refuses for expired names.
 - Record key syntax (ENSIP-25/26, both Draft) lives only in `lib/constants.mjs`
-  (`RECORD_KEYS`). Callers send logical names: `context`, `mcp`, `payout`,
-  `erc8004_agent_id`, `sow_hash`, `escrow`, `mandate`, `status` and `deliverable`.
+  (`RECORD_KEYS`). Callers send logical names: `context`, `mcp`, `a2a`, `web`,
+  `payout`, `manifest_hash`, `erc8004_agent_id`, `sow_hash`, `escrow`, `mandate`,
+  `status` and `deliverable`. Endpoints must be `https://` or `ipfs://` URLs.
 
 ## Endpoints
 
 | Method & path | Body | Notes |
 |---|---|---|
 | `GET /health` | | mode, operator address, root status, address-check result |
-| `POST /names/root/setup` | `{duration_days?}` (default 365, min 28) | one-off, **takes about 70 s** (see below) |
-| `POST /names/agent` | `{agent_public_id, label, records}` | |
+| `POST /names/root/setup` | `{duration_days?, adopt_only?}` (default 365, min 28) | one-off, **takes about 70 s** (see below); adopts a root the operator already holds. `adopt_only` refuses (409 `ROOT_NOT_REGISTERED`) instead of registering a new one |
+| `POST /names/agent` | `{agent_public_id, label, records, grantee?}` | `grantee` = the agent's own address (endpoint-record grants); `null` revokes them |
 | `POST /names/job` | `{parent, label, expiry, records, grantee?}` | `expiry` is in unix seconds; `grantee` = the hired agent's address |
 | `POST /names/subjob` | `{parent, label, expiry, records}` | expiry is capped at the job's |
 | `POST /names/revoke` | `{name, grantee?}` | `grantee` is only needed if the state file was lost |
@@ -62,7 +93,7 @@ retry after a failure resumes from the failed step and does not deploy again.
 | `ENS_OPERATOR_PRIVATE_KEY` | — | platform hot wallet (live only). Use a fresh key and never a personal wallet |
 | `SEPOLIA_RPC_URL` | — | Sepolia JSON-RPC endpoint (live only) |
 | `ENS_SIDECAR_PORT` | `8787` | |
-| `ENS_STATE_FILE` | `.state/names.json` (live), none (dry run) | deployed addresses and progress; git-ignored |
+| `ENS_STATE_FILE` | `ens/.state/names.json` (live), none (dry run) | deployed addresses and progress; git-ignored |
 
 The Flask side reads `ENS_SIDECAR_URL`, `ENS_SIDECAR_TOKEN` and `ENS_ROOT_NAME`
 (`agentslist-app.eth`).
@@ -75,6 +106,9 @@ npm test                                           # DRY_RUN, no network, CI-saf
 DRY_RUN=1 ENS_SIDECAR_TOKEN=dev npm start          # local dry-run sidecar
 curl -s -H 'X-Sidecar-Token: dev' localhost:8787/health
 ```
+
+Both work on Windows too (in PowerShell, set the variables with `$env:NAME = '…'`
+first).
 
 `npm test` uses `node:test` and runs entirely in DRY_RUN mode. It needs no key, RPC
 or network, so it is safe to add to CI next to `pytest`. The current CI workflow does
@@ -98,7 +132,8 @@ update `lib/constants.mjs` from the docs table.
 | Operation | Gas | at ~1–2 gwei |
 |---|---|---|
 | Root setup (mint, 2 deploys, approve, commit, register, wire-up) | ~1.0–1.2 M | ~0.002 ETH |
-| Agent (resolver with records + registry + register) | ~0.9 M | ~0.001–0.002 ETH |
+| Agent (resolver with records + registry + register + parent link + grants) | ~1.1 M | ~0.001–0.002 ETH |
+| Adopt an existing agent name (parent link ~81 k + records and grants multicall ~343 k, measured) | ~0.42 M | < 0.001 ETH |
 | Job (resolver with records + register + 2 grants) | ~0.8 M | ~0.001–0.002 ETH |
 | Sub-job (one multicall) | ~0.1 M | < 0.0005 ETH |
 | Revoke a job (2 role revokes + unregister) | ~0.15 M | < 0.0005 ETH |
@@ -129,12 +164,24 @@ past 20 gwei. Budget roughly 10× the figures above.
 5. Point the app at the sidecar: set `ENS_SIDECAR_URL`, `ENS_SIDECAR_TOKEN` and
    `ENS_ROOT_NAME=<label>.eth`. Names left `pending` or `failed` can be retried with
    `POST /api/names/<name>/retry`.
-6. Verify one name with any ENS client that uses the canonical Universal Resolver,
+6. Name every hireable agent, or bring existing names up to date:
+   ```bash
+   flask --app wsgi names publish-agents --plan           # what would be sent
+   flask --app wsgi names publish-agents --confirm-live   # sends it; safe to re-run
+   ```
+   It adopts the root first when the sidecar has none in its state; it registers a new
+   root only with `--setup-root`. New names go to hireable agents only (listed, valid
+   operator stamp, payout); the others are skipped and listed. Agents that already
+   have a name are kept in sync whether hireable or not. Run it on every host whose
+   database should know the names: names already on-chain are adopted (with the
+   records and payee grants they hold), so a second host only sends what differs.
+7. Verify one name with any ENS client that uses the canonical Universal Resolver,
    for example `GET /names/tree?live=1`.
 
-Keep `.state/names.json` (git-ignored). It holds the deployed resolver and registry
+Keep `ens/.state/names.json` (git-ignored). It holds the deployed resolver and registry
 addresses and the commit secret for an unfinished root registration. If the file is
-lost, the sidecar falls back to on-chain lookups (`getSubregistry`/`getResolver`).
+lost, the sidecar adopts the root and agent names it finds on-chain, and falls back
+to on-chain lookups (`getSubregistry`/`getResolver`) for parents.
 
 For a reproducible operator check, run `python scripts/setup_agent_names.py` from
 the repository root. It only reads `/health` by default. Add `--setup-root` or

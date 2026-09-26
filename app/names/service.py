@@ -208,9 +208,10 @@ def _commit() -> None:
 # ── Hooks ─────────────────────────────────────────────────────────────────────
 
 def on_agent_published(agent: Agent) -> EnsName | None:
+    """Issue the agent's name, or update an active one whose records changed."""
     try:
-        row = _agent_row(agent, refresh_records=True)
-        _push(row)
+        row = _agent_row(agent)
+        _refresh(row, agent)
         return row
     except Exception:
         log.exception("names: on_agent_published failed for agent %s", getattr(agent, "id", None))
@@ -223,7 +224,7 @@ def on_engagement_funded(engagement: Engagement) -> EnsName | None:
     try:
         agent_row = _agent_row(engagement.agent)
         if agent_row.status != "active":
-            _push(agent_row)
+            _refresh(agent_row, engagement.agent)
         row = _get_or_create(f"{engagement.id.lower()}.{agent_row.name}", kind="job",
                              parent_name=agent_row.name)
         row.engagement_id = engagement.id
@@ -289,18 +290,60 @@ def on_settled(engagement: Engagement) -> EnsName | None:
         _commit()
 
 
-def retry(name: str) -> EnsName | None:
-    """Re-push a pending/failed name (and its not-yet-active parent). Active
-    and revoked names are left as they are."""
-    row = db.session.get(EnsName, name)
-    if row is None:
-        return None
+def publish_agent(agent: Agent) -> tuple[EnsName, str | None, int]:
+    """Issue ``agent``'s name now, or re-send an active one so the sidecar
+    brings its records, grants and parent link up to date (bulk publish).
+    Returns the row, why the push failed (or None), and the new tx count."""
     try:
-        if row.status in ("pending", "failed"):
-            _push(row, with_parent=True)
+        row = _agent_row(agent)
+        before = len(row.tx_hashes or [])
+        error = _refresh(row, agent, force=True)
+        return row, error, len(row.tx_hashes or []) - before
     finally:
         _commit()
-    return row
+
+
+def plan_agent(agent: Agent) -> tuple[str, str, dict]:
+    """The name ``publish_agent`` would use, its status and the records it
+    would send. Persists nothing."""
+    try:
+        row = _agent_row(agent)
+        return row.name, row.status, _agent_records(agent)
+    finally:
+        db.session.rollback()
+
+
+def retry(name: str) -> tuple[EnsName | None, str | None]:
+    """Re-push a pending/failed name (and its not-yet-active parent), or
+    re-send an active agent name so a failed record update lands. Revoked
+    names are left as they are. Returns the row and why the push failed."""
+    row = db.session.get(EnsName, name)
+    if row is None:
+        return None, None
+    error = None
+    try:
+        if row.kind == "agent" and row.status in ("pending", "failed", "active"):
+            error = _push_agent(row)
+        elif row.status in ("pending", "failed"):
+            error = _push(row, with_parent=True)
+    finally:
+        _commit()
+    return row, error
+
+
+def unhireable_reason(agent: Agent) -> str | None:
+    """Why the app would not hire ``agent`` right now (UNLISTED, a stamp
+    status code, or NO_PAYOUT), or None. publish-agents issues new names to
+    hireable agents only."""
+    from app.engagements.service import payee_address
+    from app.seller.stamp import stamp_status
+    from app.services import is_listed
+    if not is_listed(agent):
+        return "UNLISTED"
+    stamp = stamp_status(agent)
+    if not stamp.ok:
+        return stamp.code
+    return None if payee_address(agent) else "NO_PAYOUT"
 
 
 # ── Payee resolution ──────────────────────────────────────────────────────────
@@ -404,26 +447,65 @@ def _manifest(agent: Agent) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _agent_row(agent: Agent, *, refresh_records: bool = False) -> EnsName:
-    existing = agent_name_row(agent)
-    root = _root_row()
-    label = agent_label(agent)
+def _listing_url(agent: Agent) -> str | None:
+    """The agent's public listing page (ENSIP-26 ``web`` endpoint), when the
+    app knows its public https origin."""
+    base = (current_app.config.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    return f"{base}/agent/{agent.id}" if base.startswith("https://") else None
+
+
+def _advertised_payee(agent: Agent) -> str | None:
+    """The payee an agent's name advertises: its payout address, unless payee
+    screening refused that address. Pausing or unlisting the agent doesn't
+    remove it, so work already under way can still be paid."""
+    from app.engagements.service import payee_address
+    from app.seller.stamp import onboarding_screening
+    payee = payee_address(agent)
+    screening = onboarding_screening(agent, payee) if payee else None
+    return None if screening is not None and screening.verdict == "REFUSE" else payee
+
+
+def _agent_records(agent: Agent) -> dict:
+    """What the agent's name publishes. The payee unless screening refused
+    it, and the stamped manifest hash only while the operator stamp is valid."""
+    from app.seller.stamp import stamp_status
     manifest = _manifest(agent)
     endpoints = manifest.get("endpoints") if isinstance(manifest.get("endpoints"), dict) else {}
-    payout = agent.payout_address or agent.deployer_wallet
-    records = _clean({
+    stamp = stamp_status(agent)
+    return _clean({
         "context": (agent.description or "")[:1000],
         "mcp": manifest.get("mcp_endpoint") or endpoints.get("mcp"),
-        "payout": payout,
+        "a2a": endpoints.get("a2a"),
+        "web": _listing_url(agent),
+        "payout": _advertised_payee(agent),
+        "manifest_hash": stamp.stamped_hash if stamp.ok else None,
         "erc8004_agent_id": manifest.get("erc8004_agent_id"),
     })
+
+
+def _push_agent(row: EnsName) -> str | None:
+    """Re-send an agent name with records recomputed now, never stale ones."""
+    agent = db.session.get(Agent, row.agent_id)
+    return _refresh(row, agent, force=True) if agent is not None else "NOT_FOUND: the agent is gone"
+
+
+def _refresh(row: EnsName, agent: Agent, *, force: bool = False) -> str | None:
+    """Push the agent's current records. If updating an active name fails,
+    the row keeps the records that are on-chain, so the next publish retries."""
+    previous, records = row.records, _agent_records(agent)
+    row.records = records
+    error = _push(row, update=force or previous != records)
+    if error and row.status == "active":
+        row.records = previous
+    return error
+
+
+def _agent_row(agent: Agent) -> EnsName:
+    existing = agent_name_row(agent)
     if existing is not None:
-        if refresh_records and existing.records != records:
-            existing.records = records
-            # Re-push an active agent name so newly-added authorization
-            # records such as x402-payto reach its existing resolver.
-            existing.status = "pending"
         return existing
+    root = _root_row()
+    label = agent_label(agent)
     name = f"{label}.{root.name}"
     taken = db.session.get(EnsName, name)
     if taken is not None and taken.agent_id != agent.id:
@@ -432,45 +514,61 @@ def _agent_row(agent: Agent, *, refresh_records: bool = False) -> EnsName:
     if row.status == "revoked":
         row.status = "pending"       # re-issue; the sidecar deploys fresh proxies
     row.agent_id = agent.id
-    row.records = records
+    row.records = _agent_records(agent)
     return row
 
 
 def _grantee(row: EnsName) -> str | None:
-    if row.kind != "job" or not row.engagement_id:
+    """Who may write the row's agent-editable records: the hired agent on a
+    job; on an agent's own name, the payee it advertises (endpoint records
+    only). None on an agent name revokes its grants."""
+    from app.engagements.service import payee_address
+    if row.kind == "agent":
+        return (row.records or {}).get("payout")
+    if row.kind == "job" and row.engagement_id:
+        engagement = db.session.get(Engagement, row.engagement_id)
+        agent = engagement.agent if engagement else None
+    else:
         return None
-    engagement = db.session.get(Engagement, row.engagement_id)
-    agent = engagement.agent if engagement else None
-    return (agent.payout_address or agent.deployer_wallet) if agent else None
+    return payee_address(agent) if agent else None
 
 
-def _push(row: EnsName, *, with_parent: bool = False) -> None:
+def _push(row: EnsName, *, with_parent: bool = False, update: bool = False) -> str | None:
     """Send the row's intended state to the sidecar and record the outcome.
-    ``with_parent`` (retry only) first re-pushes a pending/failed parent."""
+    ``with_parent`` (retry only) first re-pushes a pending/failed parent.
+    ``update`` re-sends an active agent name (changed records, grants); it
+    stays active if that fails, since the name itself still resolves.
+    Returns why the name could not be pushed, or None."""
     client = get_client()
     label = row.name.split(".", 1)[0]
     settling = (row.records or {}).get("status") == SETTLED
-    if row.status == "revoked" or (row.status == "active" and not settling):
-        return
+    updating = update and row.status == "active" and row.kind == "agent" and not settling
+    if row.status == "revoked" or (row.status == "active" and not settling and not updating):
+        return None
     if settling and not row.tx_hashes:
         row.status = "revoked"      # never reached the chain; nothing to undo
-        return
+        return None
     if not client.configured:
-        row.status = "pending"
-        return
+        if not updating:
+            row.status = "pending"
+        return "NOT_CONFIGURED: the names sidecar is not configured"
     parent = db.session.get(EnsName, row.parent_name) if row.parent_name else None
     if not settling and row.kind in ("job", "subjob"):
         if with_parent and parent is not None and parent.status in ("pending", "failed"):
-            _push(parent, with_parent=True)
+            if parent.kind == "agent":
+                _push_agent(parent)
+            else:
+                _push(parent, with_parent=True)
         if parent is None or parent.status != "active":
             row.status = "pending"
-            return
+            return f"PARENT_NOT_ACTIVE: {row.parent_name} is not active yet"
     try:
         if settling:
             result = client.revoke(row.name, grantee=_grantee(row))
         elif row.kind == "agent":
             agent = db.session.get(Agent, row.agent_id)
-            result = client.create_agent(agent_public_id=agent.public_id, label=label, records=row.records)
+            result = client.create_agent(agent_public_id=agent.public_id, label=label, records=row.records,
+                                         grantee=_grantee(row))
         elif row.kind == "job":
             result = client.create_job(parent=row.parent_name, label=label, expiry=row.expiry,
                                        records=row.records, grantee=_grantee(row))
@@ -478,11 +576,13 @@ def _push(row: EnsName, *, with_parent: bool = False) -> None:
             result = client.create_subjob(parent=row.parent_name, label=label, expiry=row.expiry,
                                           records=row.records)
         else:
-            return          # the root is set up by an operator on the sidecar
+            return None     # the root is set up by an operator on the sidecar
     except SidecarError as exc:
-        row.status = "failed"
-        log.warning("names: %s %s failed: %s (%s)", "revoke" if settling else "issue", row.name, exc, exc.code)
-        return
+        if not updating:
+            row.status = "failed"
+        log.warning("names: %s %s failed: %s (%s)", "revoke" if settling else "update" if updating else "issue",
+                    row.name, exc, exc.code)
+        return f"{exc.code}: {exc}"
     hashes = [t.get("hash") for t in result.get("txs", []) if isinstance(t, dict) and t.get("hash")]
     row.tx_hashes = list(dict.fromkeys([*(row.tx_hashes or []), *hashes]))
     row.owner = result.get("owner") or row.owner
@@ -492,7 +592,7 @@ def _push(row: EnsName, *, with_parent: bool = False) -> None:
         row.status = "revoked"
         for child in EnsName.query.filter_by(parent_name=row.name).all():
             child.status = "revoked"
-        return
+        return None
     row.status = "active"
     if row.kind == "agent":
         _root_row().status = "active"   # the sidecar only issues agents under a live root
@@ -503,6 +603,7 @@ def _push(row: EnsName, *, with_parent: bool = False) -> None:
         engagement = db.session.get(Engagement, row.engagement_id) if row.engagement_id else None
         if engagement is not None:
             engagement.ens_name = row.name
+    return None
 
 
 def tree(root: str | None = None) -> dict:

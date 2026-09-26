@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "DRY_RUN=1 node --test test/*.test.mjs"
+    "test": "node --test"
   },
   "dependencies": {
     "viem": "^2.35.0"

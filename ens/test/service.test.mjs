@@ -6,7 +6,7 @@ import { decodeFunctionData, getAddress, zeroAddress } from 'viem';
 import { resolverAbi } from '../lib/abis.mjs';
 import { ADDRESSES, COMMIT_WAIT_SECONDS, RESOLVER_ROLES } from '../lib/constants.mjs';
 import { DryRunExecutor } from '../lib/executor.mjs';
-import { keyResource, tokenId } from '../lib/names.mjs';
+import { dnsEncode, keyResource, tokenId } from '../lib/names.mjs';
 import { NamesService } from '../lib/service.mjs';
 
 const NOW = 1_800_000_000;
@@ -224,4 +224,317 @@ test('a revoked name can be issued again with fresh proxies', async () => {
   const second = await service.createAgent({ agent_public_id: 'AGT-0000-0001-X', label: 'a1' });
   assert.equal(second.version, 1);
   assert.notEqual(second.resolver, first.resolver);
+});
+
+const HASH = '0x' + 'ab'.repeat(32);
+const decodeAll = (mc) => mc.args[0].map((data) => decodeFunctionData({ abi: resolverAbi, data }));
+
+test('an agent name resolves to its payout and is linked under the root', async () => {
+  const { exec, service } = await makeService();
+  const root = await service.setupRoot();
+  const agent = await service.createAgent({
+    agent_public_id: 'AGT-SH8W-D5VP-*', label: 'keelhaul-audit',
+    records: { context: 'Audits', payout: HIRED, manifest_hash: HASH, web: 'https://app.example/agents/1' },
+  });
+  // The initializer writes the text records and the ETH address record.
+  const deploy = calls(exec, 'deployProxy').filter((c) => c.args[0] === ADDRESSES.permissionedResolverImpl)[1];
+  const init = decodeFunctionData({ abi: resolverAbi, data: deploy.args[2] });
+  const inner = init.args[1].map((data) => decodeFunctionData({ abi: resolverAbi, data }));
+  assert.deepEqual(inner.find((c) => c.functionName === 'setAddress').args.slice(1), [60n, HIRED]);
+  assert.equal(agent.text['manifest-hash'], HASH);
+  assert.equal(agent.text['agent-endpoint[web]'], 'https://app.example/agents/1');
+  // Its registry points back at the root registry, so the tree is canonical.
+  const link = calls(exec, 'setParent').find((c) => c.address === agent.registry);
+  assert.deepEqual(link.args, [root.registry, 'keelhaul-audit']);
+});
+
+test('an agent may edit only its own endpoint records', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { payout: HIRED }, grantee: HIRED };
+  const agent = await service.createAgent(body);
+  const [mc] = calls(exec, 'multicall');
+  assert.equal(mc.address, agent.resolver);
+  const granted = decodeAll(mc).map((c) => [c.functionName, c.args[1],
+    decodeFunctionData({ abi: resolverAbi, data: c.args[0] }).args[1]]);
+  assert.deepEqual(granted, [
+    ['grantSetterRoles', getAddress(HIRED), 'agent-endpoint[mcp]'],
+    ['grantSetterRoles', getAddress(HIRED), 'agent-endpoint[a2a]'],
+  ]);
+  // Publishing again changes nothing on-chain.
+  await service.createAgent(body);
+  assert.equal(calls(exec, 'multicall').length, 1);
+  // A new address takes over the grants; the old one loses them in the same
+  // call, and the endpoint records it could write are reset.
+  const next = '0x00000000000000000000000000000000000b0b00';
+  await service.createAgent({ ...body, records: { payout: next }, grantee: next });
+  assert.deepEqual(decodeAll(calls(exec, 'multicall')[1]).map((c) => [c.functionName, c.args[1]]), [
+    ['setText', 'x402-payto'], ['setText', 'agent-endpoint[mcp]'], ['setText', 'agent-endpoint[a2a]'],
+    ['setAddress', 60n], ['revokeRoles', RESOLVER_ROLES.SET_TEXT], ['revokeRoles', RESOLVER_ROLES.SET_TEXT],
+    ['grantSetterRoles', getAddress(next)], ['grantSetterRoles', getAddress(next)],
+  ]);
+  // Revoking the agent revokes the live grants, then unregisters.
+  await service.revoke({ name: agent.name });
+  assert.deepEqual(calls(exec, 'revokeRoles').map((c) => [c.args[0], c.args[2]]), [
+    [keyResource('agent-endpoint[mcp]'), getAddress(next)], [keyResource('agent-endpoint[a2a]'), getAddress(next)],
+  ]);
+  assert.equal(calls(exec, 'unregister').length, 1);
+});
+
+test('records the platform stops sending are cleared', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  await service.createAgent({
+    agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x', payout: HIRED, manifest_hash: HASH },
+  });
+  const after = await service.createAgent({ agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x' } });
+  assert.deepEqual(decodeAll(calls(exec, 'multicall')[0]).map((c) => [c.functionName, c.args.slice(1)]), [
+    ['setText', ['x402-payto', '']], ['setText', ['manifest-hash', '']], ['setAddress', [60n, '0x']],
+  ]);
+  assert.deepEqual(after.text, { 'agent-context': 'x' });
+});
+
+test('names issued from another host are adopted, not redeployed', async () => {
+  const { exec, service } = await makeService();
+  const root = await service.setupRoot();
+  const agent = await service.createAgent({
+    agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'Audits', payout: HIRED },
+  });
+  // Same chain, empty state file.
+  const other = new NamesService({ exec, rootLabel: 'agentslist-app', now: () => NOW });
+  await other.init();
+  const before = exec.calls.length;
+  const adoptedRoot = await other.setupRoot();
+  assert.equal(exec.calls.length, before); // nothing to send
+  assert.equal(adoptedRoot.registry, root.registry);
+  const adopted = await other.createAgent({
+    agent_public_id: 'AGT-9999-0001-Z', label: 'a1', records: { context: 'Audits v2', payout: HIRED }, grantee: HIRED,
+  });
+  const sent = exec.calls.slice(before);
+  assert.deepEqual(sent.map((c) => c.functionName), ['multicall']); // no deploy, no register, parent already set
+  assert.equal(adopted.adopted, true);
+  assert.equal(adopted.resolver, agent.resolver);
+  // What is already on-chain (the payout and its address record) is not rewritten.
+  assert.deepEqual(decodeAll(sent[0]).map((c) => [c.functionName, c.args[1]]), [
+    ['setText', 'agent-context'],
+    ['grantSetterRoles', getAddress(HIRED)], ['grantSetterRoles', getAddress(HIRED)],
+  ]);
+  assert.equal(adopted.text['agent-context'], 'Audits v2');
+});
+
+test('adoption finds the payee grants and a missing address record', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x', payout: HIRED } };
+  const agent = await service.createAgent({ ...body, grantee: HIRED });
+  exec.addrs.clear(); // as if issued before names carried the ETH address record
+  const other = new NamesService({ exec, rootLabel: 'agentslist-app', now: () => NOW });
+  await other.init();
+  await other.setupRoot();
+  const before = exec.calls.length;
+  await other.createAgent({ ...body, grantee: null });
+  const [mc] = exec.calls.slice(before);
+  assert.equal(mc.address, agent.resolver);
+  // The payout text already on-chain is kept; the missing address record is
+  // repaired; the grants found for the payee are revoked and their endpoints reset.
+  assert.deepEqual(decodeAll(mc).map((c) => [c.functionName, c.args[1], c.args[2]]), [
+    ['setText', 'agent-endpoint[mcp]', ''], ['setText', 'agent-endpoint[a2a]', ''],
+    ['setAddress', 60n, HIRED],
+    ['revokeRoles', RESOLVER_ROLES.SET_TEXT, getAddress(HIRED)], ['revokeRoles', RESOLVER_ROLES.SET_TEXT, getAddress(HIRED)],
+  ]);
+  assert.equal(await exec.read({ address: agent.resolver, functionName: 'hasRoles',
+    args: [keyResource('agent-endpoint[mcp]'), RESOLVER_ROLES.SET_TEXT, HIRED] }), false);
+});
+
+// A write that lands on-chain but whose receipt never reaches the service.
+function loseReceiptOnce(exec, fn, address) {
+  const write = exec.write.bind(exec);
+  let lost = false;
+  exec.write = async (req) => {
+    const result = await write(req);
+    if (!lost && req.functionName === fn && (!address || req.address === address)) {
+      lost = true;
+      throw new Error('receipt timed out');
+    }
+    return result;
+  };
+}
+
+test('a root registration whose receipt was lost resumes without redeploying', async () => {
+  const { exec, service } = await makeService();
+  loseReceiptOnce(exec, 'register', ADDRESSES.ethRegistrar);
+  await assert.rejects(service.setupRoot(), /receipt timed out/);
+  const root = await service.setupRoot();
+  assert.equal(root.status, 'active');
+  assert.equal(calls(exec, 'deployProxy').length, 2);
+  const [sub] = calls(exec, 'setSubregistry');
+  assert.equal(sub.args[1], root.registry); // the registry deployed before the failure
+});
+
+test('an agent registration whose receipt was lost resumes without redeploying', async () => {
+  const { exec, service } = await makeService();
+  const root = await service.setupRoot();
+  loseReceiptOnce(exec, 'register', root.registry);
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x', payout: HIRED } };
+  await assert.rejects(service.createAgent(body), /receipt timed out/);
+  const agent = await service.createAgent(body);
+  assert.equal(agent.status, 'active');
+  assert.equal(calls(exec, 'deployProxy').length, 4); // root 2 + agent 2
+  assert.equal(calls(exec, 'multicall').length, 0); // its own resolver: records already there
+  assert.equal(agent.text['x402-payto'], HIRED);
+});
+
+test('an on-chain agent name without a resolver is refused, not activated', async () => {
+  const { exec, service } = await makeService();
+  const root = await service.setupRoot();
+  await exec.write({ address: root.registry, functionName: 'register',
+    args: ['a1', exec.operator, zeroAddress, zeroAddress, 0n, BigInt(NOW + 9999)] });
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x' } };
+  for (let i = 0; i < 2; i += 1) {
+    await assert.rejects(service.createAgent(body), (e) => e.code === 'PARENT_NOT_READY');
+  }
+  assert.equal(calls(exec, 'deployProxy').length, 2); // root only
+  assert.notEqual(service.store.get('a1.agentslist-app.eth').status, 'active');
+});
+
+test('grants follow the grantee field: absent keeps them, null revokes them', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x' } };
+  await service.createAgent({ ...body, grantee: HIRED });
+  await service.createAgent(body);
+  assert.equal(calls(exec, 'revokeRoles').length + calls(exec, 'multicall').length, 1);
+  await service.createAgent({ ...body, grantee: null });
+  // Revoking also resets the endpoints the grantee could write.
+  assert.deepEqual(decodeAll(calls(exec, 'multicall')[1]).map((c) => c.functionName),
+    ['setText', 'setText', 'revokeRoles', 'revokeRoles']);
+  const agent = await service.createAgent({ ...body, grantee: null });
+  assert.equal(calls(exec, 'multicall').length, 2); // nothing left to revoke
+  assert.ok(agent.grants.every((g) => g.revoked));
+});
+
+test('an endpoint the platform stops sending is cleared only while it is still the platform value', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1' };
+  await service.createAgent({ ...body, records: { mcp: 'https://platform.example/mcp' } });
+  exec.readText = async () => 'https://agent.example/mcp'; // the agent replaced it
+  const kept = await service.createAgent({ ...body, records: { a2a: 'https://platform.example/a2a' } });
+  assert.deepEqual(decodeAll(calls(exec, 'multicall')[0]).map((c) => c.args[1]), ['agent-endpoint[a2a]']);
+  assert.equal(kept.text['agent-endpoint[mcp]'], undefined);
+  exec.readText = async () => { throw new Error('rpc down'); }; // unknown: keep it, try again later
+  const pending = await service.createAgent({ ...body, records: {} });
+  assert.equal(calls(exec, 'multicall').length, 1);
+  assert.equal(pending.text['agent-endpoint[a2a]'], 'https://platform.example/a2a');
+  exec.readText = async () => 'https://platform.example/a2a'; // still the platform's
+  await service.createAgent({ ...body, records: {} });
+  assert.deepEqual(decodeAll(calls(exec, 'multicall')[1]).map((c) => c.args.slice(1)), [['agent-endpoint[a2a]', '']]);
+});
+
+test('a job registration whose receipt was lost resumes without registering twice', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const agent = await service.createAgent({ agent_public_id: 'AGT-0000-0001-X', label: 'a1' });
+  loseReceiptOnce(exec, 'register', agent.registry);
+  const body = { parent: agent.name, label: 'eng-aaaa', expiry: NOW + 86400, records: { status: 'funded' }, grantee: HIRED };
+  await assert.rejects(service.createJob(body), /receipt timed out/);
+  const job = await service.createJob(body);
+  assert.equal(job.status, 'active');
+  assert.equal(calls(exec, 'register').filter((c) => c.args[0] === 'eng-aaaa').length, 1);
+  assert.equal(calls(exec, 'grantSetterRoles').length, 2);
+});
+
+async function adoptingHost(exec) {
+  const other = new NamesService({ exec, rootLabel: 'agentslist-app', now: () => NOW });
+  await other.init();
+  await other.setupRoot();
+  return other;
+}
+
+test('a failed read during adoption changes nothing, and the next try adopts', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x', payout: HIRED } };
+  await service.createAgent({ ...body, grantee: HIRED });
+  const other = await adoptingHost(exec);
+  const readText = exec.readText.bind(exec);
+  exec.readText = async () => { throw new Error('rpc down'); };
+  await assert.rejects(other.createAgent(body), /rpc down/);
+  const node = other.store.get('a1.agentslist-app.eth');
+  assert.ok(!node.registered && !node.adopted);
+  exec.readText = readText;
+  const adopted = await other.createAgent({ ...body, grantee: HIRED });
+  assert.equal(adopted.adopted, true);
+  assert.equal(adopted.grants.length, 2); // found on-chain, not granted again
+});
+
+test('an adopted payout is cleared even when the address record disagrees', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x', payout: HIRED } };
+  await service.createAgent(body);
+  exec.addrs.set(dnsEncode('a1.agentslist-app.eth'), getAddress('0x' + '77'.repeat(20)));
+  const other = await adoptingHost(exec);
+  const before = exec.calls.length;
+  await other.createAgent({ ...body, records: { context: 'x' } });
+  assert.deepEqual(decodeAll(exec.calls[before]).map((c) => [c.functionName, c.args[1], c.args[2]]), [
+    ['setText', 'x402-payto', ''], ['setAddress', 60n, '0x'],
+  ]);
+  assert.equal(await exec.readAddress('a1.agentslist-app.eth'), null);
+});
+
+test('state from an earlier build is reconciled with the chain once', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const body = { agent_public_id: 'AGT-0000-0001-X', label: 'a1', records: { context: 'x', payout: HIRED } };
+  await service.createAgent({ ...body, grantee: HIRED });
+  const node = service.store.get('a1.agentslist-app.eth');
+  delete node.reconciled; // as saved by a build that tracked neither grants nor the address record
+  delete node.addr;
+  node.grants = [];
+  const before = exec.calls.length;
+  await service.createAgent({ ...body, grantee: null });
+  assert.deepEqual(decodeAll(exec.calls[before]).map((c) => c.functionName),
+    ['setText', 'setText', 'revokeRoles', 'revokeRoles']); // grants found and revoked; address record already right
+  assert.equal(node.reconciled, true);
+  await service.createAgent({ ...body, grantee: null });
+  assert.equal(exec.calls.length, before + 1);
+});
+
+test('an adopted job on a resolver this sidecar did not deploy gets its records', async () => {
+  const { exec, service } = await makeService();
+  await service.setupRoot();
+  const agent = await service.createAgent({ agent_public_id: 'AGT-0000-0001-X', label: 'a1' });
+  loseReceiptOnce(exec, 'register', agent.registry);
+  const body = { parent: agent.name, label: 'eng-aaaa', expiry: NOW + 86400, records: { status: 'funded' } };
+  await assert.rejects(service.createJob(body), /receipt timed out/);
+  const other = '0x' + '55'.repeat(20);
+  exec.entries.get([...exec.entries.keys()].find((k) => k.startsWith(agent.registry.toLowerCase()))).resolver = other;
+  const job = await service.createJob(body);
+  assert.equal(job.resolver, getAddress(other));
+  assert.equal(await exec.readText(job.name, 'status'), 'funded');
+});
+
+test('adopt-only root setup never registers a new root', async () => {
+  const { exec, service } = await makeService();
+  await assert.rejects(service.setupRoot({ adopt_only: true }), (e) => e.code === 'ROOT_NOT_REGISTERED');
+  assert.equal(exec.calls.length, 0);
+});
+
+test('adoption refuses a name held by another account', async () => {
+  const { service } = await makeService({ exec: { reads: {
+    isAvailable: () => false,
+    getState: () => ({ status: 2, expiry: 9n, latestOwner: '0x' + '99'.repeat(20), tokenId: 0n, resource: 0n }),
+  } } });
+  await assert.rejects(service.setupRoot(), (e) => e.code === 'NAME_TAKEN');
+});
+
+test('an expired job is revoked without unregistering', async () => {
+  const { exec, service } = await makeService();
+  const { job } = await provision(service);
+  exec.overrides.getState = (args) => ({ status: 0, expiry: 1n, latestOwner: zeroAddress, tokenId: args[0], resource: 0n });
+  const revoked = await service.revoke({ name: job.name });
+  assert.equal(revoked.status, 'revoked');
+  assert.equal(calls(exec, 'revokeRoles').length, 2);
+  assert.equal(calls(exec, 'unregister').length, 0);
 });

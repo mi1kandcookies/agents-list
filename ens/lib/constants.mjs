@@ -28,6 +28,12 @@ export const RESOLVER_ROLES = Object.freeze({
   SET_TEXT: 1n << 4n,
 });
 
+// IPermissionedRegistry.Status. An expired name reads as AVAILABLE.
+export const NAME_STATUS = Object.freeze({ AVAILABLE: 0, RESERVED: 1, REGISTERED: 2 });
+
+// ENSIP-9 coin type of the address record ENS clients resolve by default.
+export const ETH_COIN_TYPE = 60n;
+
 // ETHRegistrar timing: commit, wait at least MIN_COMMITMENT_AGE, then register
 // (the commitment expires after 24 h). A few seconds of slack cover clock skew.
 export const MIN_COMMITMENT_AGE_SECONDS = 60;
@@ -56,7 +62,10 @@ export const ERC8004_REGISTRY_7930 = erc7930Address(SEPOLIA_CHAIN_ID, ADDRESSES.
 export const RECORD_KEYS = Object.freeze({
   context: 'agent-context',          // ENSIP-26: free text / Markdown / JSON
   mcp: 'agent-endpoint[mcp]',        // ENSIP-26: must be a URL
-  payout: 'x402-payto',              // payment recipient used by the resource server
+  a2a: 'agent-endpoint[a2a]',        // ENSIP-26: must be a URL
+  web: 'agent-endpoint[web]',        // ENSIP-26: the human-facing page (the listing)
+  payout: 'x402-payto',              // payment recipient; also written as the ETH address record
+  manifest_hash: 'manifest-hash',    // hash of the operator-stamped manifest
   sow_hash: 'sow-hash',
   escrow: 'escrow',
   mandate: 'mandate',
@@ -73,9 +82,16 @@ export function registrationKey(agentId, registry = ERC8004_REGISTRY_7930) {
 // Keys the hired agent may write on its own job resolver, and nothing else.
 export const AGENT_WRITABLE_JOB_KEYS = Object.freeze(['status', 'deliverable']);
 
+// Keys an agent may write on its own name: the protocol endpoints it runs.
+// Payout, manifest hash, ERC-8004 link and listing page stay platform-only.
+export const AGENT_WRITABLE_AGENT_KEYS = Object.freeze(['mcp', 'a2a']);
+
+// Records whose value must be an ENSIP-26 endpoint URL.
+export const ENDPOINT_RECORDS = Object.freeze(['mcp', 'a2a', 'web']);
+
 // Which logical records each kind of name accepts.
 export const ALLOWED_RECORDS = Object.freeze({
-  agent: ['context', 'mcp', 'payout', REGISTRATION_RECORD],
+  agent: ['context', 'mcp', 'a2a', 'web', 'payout', 'manifest_hash', REGISTRATION_RECORD],
   job: ['sow_hash', 'escrow', 'mandate', 'status', 'deliverable'],
   subjob: ['sow_hash', 'escrow', 'mandate', 'status', 'deliverable'],
 });

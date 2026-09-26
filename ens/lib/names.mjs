@@ -3,7 +3,9 @@ import { encodeAbiParameters, encodeFunctionData, isAddress, keccak256, stringTo
 import { labelhash, namehash, packetToBytes } from 'viem/ens';
 
 import { resolverAbi } from './abis.mjs';
-import { ALLOWED_RECORDS, RECORD_KEYS, REGISTRATION_RECORD, registrationKey } from './constants.mjs';
+import {
+  ALLOWED_RECORDS, ENDPOINT_RECORDS, ETH_COIN_TYPE, RECORD_KEYS, REGISTRATION_RECORD, registrationKey,
+} from './constants.mjs';
 import { badRequest } from './errors.mjs';
 
 const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -53,11 +55,14 @@ export function toTextRecords(kind, records = {}) {
       out.push({ field, key: registrationKey(value), value: '1', input: value });
       continue;
     }
-    if (field === 'mcp' && !/^(https|ipfs):\/\/\S+$/.test(value)) {
-      throw badRequest('mcp endpoint must be an https:// or ipfs:// URL', 'INVALID_RECORD');
+    if (ENDPOINT_RECORDS.includes(field) && !/^(https|ipfs):\/\/\S+$/.test(value)) {
+      throw badRequest(`${field} endpoint must be an https:// or ipfs:// URL`, 'INVALID_RECORD');
     }
     if (field === 'payout' && !isAddress(value)) {
       throw badRequest('payout must be a 20-byte address', 'INVALID_RECORD');
+    }
+    if (field === 'manifest_hash' && !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+      throw badRequest('manifest_hash must be a 0x-prefixed 32-byte hex hash', 'INVALID_RECORD');
     }
     out.push({ field, key: RECORD_KEYS[field], value, input: value });
   }
@@ -71,7 +76,18 @@ export function setTextCalls(name, entries) {
   }));
 }
 
+// The ETH address record, so the name resolves to the payee in any ENS
+// client. No address clears it.
+export const setAddressCall = (name, address) => encodeFunctionData({
+  abi: resolverAbi, functionName: 'setAddress', args: [dnsEncode(name), ETH_COIN_TYPE, address || '0x'],
+});
+
 // Setter calldata for grantSetterRoles: only the selector and the key matter.
 export const setterCalldata = (key) => encodeFunctionData({
   abi: resolverAbi, functionName: 'setText', args: ['0x', key, ''],
 });
+
+// grantSetterRoles calls, for a resolver multicall.
+export const grantCalls = (keys, account) => keys.map((key) => encodeFunctionData({
+  abi: resolverAbi, functionName: 'grantSetterRoles', args: [setterCalldata(key), account],
+}));

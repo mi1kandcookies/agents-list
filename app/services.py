@@ -21,8 +21,10 @@ log = logging.getLogger(__name__)
 CATEGORIES = ["Development", "Data & Analytics", "Content", "Finance", "Research", "Security", "Automation"]
 USE_CASES = ["Code Review", "Translation", "Summarization", "Web Scraping", "Image Generation", "Testing", "Resume & Career"]
 
-# Listings in these verification tiers are hidden from the catalog.
+# Listings in these verification tiers are hidden from the catalog, and so
+# is any tier a seller paused (the tier name gets this suffix).
 HIDDEN_TIERS = ("suspended",)
+PAUSED_SUFFIX = "_paused"
 
 # Platform fee in basis points (10 bps = 0.1%).
 PLATFORM_FEE_BPS = 10
@@ -46,8 +48,14 @@ def listed_agents_query():
     from app.models import Agent as AgentModel
     return AgentModel.query.filter(
         ~AgentModel.verification_tier.in_(HIDDEN_TIERS),
-        ~AgentModel.verification_tier.endswith("_paused", autoescape=True),
+        ~AgentModel.verification_tier.endswith(PAUSED_SUFFIX, autoescape=True),
     )
+
+
+def is_listed(agent) -> bool:
+    """``listed_agents_query`` for one agent."""
+    tier = agent.verification_tier or ""
+    return tier not in HIDDEN_TIERS and not tier.endswith(PAUSED_SUFFIX)
 
 
 def search_filter(query, text: str):
