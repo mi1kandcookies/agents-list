@@ -7,12 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926b">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260926c">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% set _path = request.path %}
 {% set _on_browse = _path == '/marketplace' or _path.startswith('/agent/') %}
 {% set _on_operator = _path.startswith('/seller') %}
@@ -21,7 +21,7 @@
   <div class="shell">
     {# Wordmark: logo mark + name. Swap static/img/agents-list-mark.png to rebrand. #}
     <a href="{{ url_for('catalog.index') }}" class="brand" aria-label="Agent's List home">
-      <span class="brand-mark"><img src="{{ url_for('static', filename='img/agents-list-mark.png') }}" alt="" width="28" height="28"></span>
+      <span class="brand-mark"><img src="{{ url_for('static', filename='img/agents-list-mark-transparent.png') }}" alt="" width="26" height="26"></span>
       <span class="brand-name">Agent's List</span>
     </a>
 
@@ -31,37 +31,45 @@
       <li><a href="{{ url_for('seller.seller_earnings') }}" {% if _on_operator %}aria-current="page"{% endif %}>For operators</a></li>
       {% if nav_human %}
       <li><a href="{{ url_for('engagements.jobs_list') }}" {% if _path.startswith('/jobs') %}aria-current="page"{% endif %}>Jobs</a></li>
-      <li class="nav-mobile-only"><span class="nav-who">Signed in · <span class="mono">{{ nav_human.short_id }}</span></span></li>
-      <li class="nav-mobile-only"><form method="post" action="{{ url_for('identity.logout_view') }}"><button type="submit" class="nav-link-btn">Sign out</button></form></li>
-      {% else %}
-      <li class="nav-mobile-only"><a href="{{ url_for('identity.login', next=_path) }}">Sign in</a></li>
       {% endif %}
     </ul>
 
     <div class="nav-right">
-      <div class="wallet-wrap" id="wallet-wrap">
-        <button class="wallet-btn" id="wallet-btn" data-connected="false" type="button" onclick="__walletClick(event)" title="Connect a wallet">
-          <span>Connect Wallet</span>
+      <div class="account" id="account">
+        <button class="account-btn" id="account-btn" type="button" aria-haspopup="menu" aria-expanded="false"
+                aria-controls="account-menu" aria-label="Account">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          {% if nav_human %}<span class="account-dot" aria-hidden="true"></span>{% endif %}
         </button>
-        <div class="popover" id="wallet-picker">
-          <div class="popover-title">Connect a wallet</div>
-          <div class="popover-status" id="wp-status"></div>
-          <div class="popover-options" id="wp-options"></div>
-        </div>
-        <div class="popover" id="wallet-menu">
-          <div class="popover-title">Connected</div>
-          <div class="wm-addr" id="wm-addr">—</div>
-          <div class="wm-kind" id="wm-kind">—</div>
-          <a class="wm-link" id="wm-explorer" href="#" target="_blank" rel="noopener">View on block explorer ↗</a>
-          <button type="button" class="btn btn-ghost btn-sm btn-full" onclick="__disconnectWallet(event)">Disconnect</button>
+        <div class="account-menu" id="account-menu" role="menu" hidden>
+          {% if nav_human %}
+          <a role="menuitem" href="{{ url_for('engagements.jobs_list') }}">Your jobs</a>
+          <form method="post" action="{{ url_for('identity.logout_view') }}">
+            <button type="submit" role="menuitem">Sign out</button>
+          </form>
+          {% else %}
+          <a role="menuitem" href="{{ url_for('identity.login', next=_path) }}">Sign in with World ID</a>
+          {% endif %}
+          <div class="account-sep" role="separator"></div>
+          <div class="wallet-wrap" id="wallet-wrap">
+            <button class="wallet-btn" id="wallet-btn" data-connected="false" type="button" onclick="__walletClick(event)" role="menuitem">
+              <span>Connect Wallet</span>
+            </button>
+            <div class="popover" id="wallet-picker">
+              <div class="popover-title">Connect a wallet</div>
+              <div class="popover-status" id="wp-status"></div>
+              <div class="popover-options" id="wp-options"></div>
+            </div>
+            <div class="popover" id="wallet-menu">
+              <div class="popover-title">Connected</div>
+              <div class="wm-addr" id="wm-addr">—</div>
+              <div class="wm-kind" id="wm-kind">—</div>
+              <a class="wm-link" id="wm-explorer" href="#" target="_blank" rel="noopener">View on block explorer ↗</a>
+              <button type="button" class="btn btn-ghost btn-sm btn-full" onclick="__disconnectWallet(event)">Disconnect</button>
+            </div>
+          </div>
         </div>
       </div>
-      {% if nav_human %}
-      <span class="nav-signin nav-who" data-signed-in title="Your World ID session">Signed in · <span class="mono">{{ nav_human.short_id }}</span></span>
-      <form method="post" action="{{ url_for('identity.logout_view') }}" class="nav-signout"><button type="submit" class="nav-signin">Sign out</button></form>
-      {% else %}
-      <a href="{{ url_for('identity.login', next=_path) }}" class="nav-signin">Sign in</a>
-      {% endif %}
       <a href="{{ url_for('intake.new_job') }}" class="btn btn-primary btn-sm">Describe your job</a>
       <button class="nav-toggle" type="button" aria-controls="primary-nav" aria-expanded="false" aria-label="Menu"
               onclick="const n=document.getElementById('primary-nav'); const o=n.classList.toggle('is-open'); this.setAttribute('aria-expanded', o);">
@@ -368,6 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/web3.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
