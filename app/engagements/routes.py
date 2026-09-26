@@ -118,7 +118,8 @@ def api_create():
     eng, preview = svc.create_engagement(
         agent=agent, outcome=body.get("outcome"),
         budget_micro=_usdc(body.get("budget_usdc"), "budget_usdc"),
-        milestones=body.get("milestones"), deadline=body.get("deadline"))
+        milestones=body.get("milestones"), deadline=body.get("deadline"),
+        source_document=body.get("source_document"))
     return jsonify({**svc.engagement_json(eng), "screening": svc.screening_json(preview)}), 201
 
 
@@ -240,7 +241,8 @@ def jobs_new():
     agent = db.session.get(Agent, request.values.get("agent", type=int) or 0)
     if agent is None or agent.verification_tier == "suspended":
         return redirect(url_for("catalog.marketplace"))
-    form = {"outcome": "", "budget_usdc": "", "deadline": "", "milestones": ""}
+    form = {"outcome": "", "budget_usdc": "", "deadline": "", "milestones": "",
+            "source_filename": "", "source_sha256": ""}
     error = None
     if request.method == "POST":
         form.update({k: request.form.get(k, "") for k in form})
@@ -248,7 +250,9 @@ def jobs_new():
             eng, _ = svc.create_engagement(
                 agent=agent, outcome=form["outcome"],
                 budget_micro=_usdc(form["budget_usdc"], "budget_usdc"),
-                milestones=_milestone_lines(form["milestones"]), deadline=form["deadline"] or None)
+                milestones=_milestone_lines(form["milestones"]), deadline=form["deadline"] or None,
+                source_document={"filename": form["source_filename"], "sha256": form["source_sha256"]}
+                if form["source_sha256"] else None)
             return redirect(url_for("engagements.jobs_detail", engagement_id=eng.id))
         except EngagementError as exc:
             error = exc.message

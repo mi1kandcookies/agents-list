@@ -3,8 +3,9 @@ llm.py - thin client for an OpenAI-compatible chat-completions endpoint.
 
 Speaks the /v1/chat/completions surface exposed by vLLM, Ollama and most
 hosted providers. Used for the optional "ask this agent" preview on agent
-pages. The scoping agent (roadmap Phase 2) will use a frontier model via the
-Anthropic API / Agent SDK instead.
+pages, and to read uploaded statements of work into a draft scope
+(app/intake/sow_parse.py). The scoping agent (roadmap Phase 2) will use a
+frontier model via the Anthropic API / Agent SDK instead.
 
 Env:
     LLM_URL      base URL of the endpoint (feature disabled when unset)
@@ -83,6 +84,34 @@ def generate(prompt: str, *, agent_name: str = "Agent",
         "totalTokens":      usage.get("total_tokens"),
         "latencyMs": int((time.time() - t0) * 1000),
     }
+
+
+def chat(system: str, user: str, *, max_tokens: int = 1200, temperature: float = 0.0,
+         timeout: float = 20) -> str:
+    """One system + user turn; returns the reply text. Raises RuntimeError on
+    any transport or server error, like ``generate``."""
+    if not LLM_URL:
+        raise RuntimeError("LLM_URL not configured in environment")
+    body = {
+        "model": LLM_MODEL,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "max_tokens": int(max_tokens),
+        "temperature": float(temperature),
+    }
+    headers = {"Content-Type": "application/json"}
+    if LLM_KEY:
+        headers["Authorization"] = f"Bearer {LLM_KEY}"
+    req = urllib.request.Request(f"{LLM_URL}/v1/chat/completions",
+                                 data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            payload = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"LLM {e.code}: {e.read()[:200].decode('utf-8', 'replace')}")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        raise RuntimeError(f"LLM unreachable: {getattr(e, 'reason', e)}")
+    choice = (payload.get("choices") or [{}])[0]
+    return (choice.get("message") or {}).get("content") or ""
 
 
 def health() -> dict:
