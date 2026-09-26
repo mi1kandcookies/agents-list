@@ -3,9 +3,11 @@ specialists/support_automation/checks.py - acceptance checks for the
 support-automation specialist.
 
 Each check is fn(workspace, params, *, run=None) -> {"passed", "details",
-"score"}. Checks recompute from the source files (ticket export, intent
-rules, help center, held-out set) instead of trusting the numbers the agent
-wrote, so a forged taxonomy, gap map or replay report fails.
+"score"}, listed in CHECK_DEFS (the kit's CheckRegistry.add_defs wraps them).
+Checks recompute from the source files (ticket export, intent rules, help
+center, held-out set) instead of trusting the numbers the agent wrote, so a
+forged taxonomy, gap map, held-out set or replay report fails. Every path
+goes through the kit's workspace jail (tools._resolve).
 """
 from __future__ import annotations
 
@@ -16,6 +18,9 @@ from typing import Any
 from specialists.support_automation import tools as T
 
 REQUIRED_ESCALATIONS = ("billing_dispute", "legal_threat", "safety", "account_security", "vulnerable_user")
+# Where article sources may live: the client's own material, never a file
+# written during the engagement.
+CLIENT_DIR = "inputs"
 
 
 def _result(passed: bool | None, details: str, score: float | None = None) -> dict:
@@ -97,6 +102,11 @@ def gap_map_consistent(workspace: Path, params: dict, *, run=None) -> dict:
     return _result(not bad, "; ".join(bad) or f"{len(expected)} intents match")
 
 
+def _articles(workspace: Path, rel_dir: str | None) -> list[Path]:
+    """Markdown articles directly inside a workspace directory (jailed)."""
+    return T._dir_files(T._resolver(workspace, None), rel_dir) if rel_dir else []
+
+
 def _gaps(workspace: Path, params: dict) -> list[dict]:
     intents = T.load_intent_rules(workspace, params["rules"])
     rows = T.compute_coverage(workspace, intents, T._read_taxonomy(workspace, params["taxonomy"]),
@@ -119,9 +129,8 @@ def top_gaps_addressed(workspace: Path, params: dict, *, run=None) -> dict:
     The top-N automatable gaps (recomputed against the original help center)
     must each have a new article or macro declaring the intent."""
     gaps = _gaps(workspace, params)[: int(params.get("top_n", 5))]
-    adir = T._resolve(workspace, params["articles_dir"])
     declared = set()
-    for p in sorted(adir.glob("*.md")) if adir.is_dir() else []:
+    for p in _articles(workspace, params["articles_dir"]):
         declared |= set(T.parse_article(p)["intents"])
     if params.get("macros"):
         for m in _load_macros(workspace, params["macros"]):
@@ -132,8 +141,9 @@ def top_gaps_addressed(workspace: Path, params: dict, *, run=None) -> dict:
                    f"all {len(gaps)} top gaps addressed", round(score, 4))
 
 
-def _source_exists(workspace: Path, ref: str) -> bool:
-    """A source is a workspace file, optionally with '#<ticket_id>' for a row."""
+def _source_exists(workspace: Path, ref: str, *, client_only: bool = False) -> bool:
+    """A source is a workspace file, optionally with '#<ticket_id>' for a row;
+    with client_only, a file under inputs/ (after resolving the path)."""
     rel, _, anchor = ref.partition("#")
     try:
         path = T._resolve(workspace, rel)
@@ -141,6 +151,10 @@ def _source_exists(workspace: Path, ref: str) -> bool:
         return False
     if not path.is_file():
         return False
+    if client_only:
+        parts = path.relative_to(Path(workspace).resolve()).parts
+        if not parts or parts[0].lower() != CLIENT_DIR:
+            return False
     if not anchor:
         return True
     if path.suffix.lower() != ".csv":
@@ -150,11 +164,12 @@ def _source_exists(workspace: Path, ref: str) -> bool:
 
 @_guard
 def articles_grounded(workspace: Path, params: dict, *, run=None) -> dict:
-    """params: articles_dir, min_articles (default 1), known_intents_from (rules).
-    Every article declares intents known to the rules and at least one source
-    that resolves to an input file or a ticket row."""
-    adir = T._resolve(workspace, params["articles_dir"])
-    paths = sorted(adir.glob("*.md")) if adir.is_dir() else []
+    """params: articles_dir, min_articles (default 1), rules (optional).
+    Every article declares intents known to the rules and at least one
+    source, and every source resolves to a client file under inputs/ or a
+    row of one ('inputs/tickets.csv#T0042'); files written during the
+    engagement do not count."""
+    paths = _articles(workspace, params["articles_dir"])
     known = {i["id"] for i in T.load_intent_rules(workspace, params["rules"])} if params.get("rules") else None
     problems = []
     for p in paths:
@@ -166,8 +181,8 @@ def articles_grounded(workspace: Path, params: dict, *, run=None) -> dict:
         if not art["sources"]:
             problems.append(f"{p.name}: no sources")
         for src in art["sources"]:
-            if not _source_exists(workspace, src):
-                problems.append(f"{p.name}: source not found {src}")
+            if not _source_exists(workspace, src, client_only=True):
+                problems.append(f"{p.name}: source not found under {CLIENT_DIR}/: {src}")
     if len(paths) < int(params.get("min_articles", 1)):
         problems.append(f"{len(paths)} articles, need {params.get('min_articles', 1)}")
     return _result(not problems, "; ".join(problems) or f"{len(paths)} articles grounded")
@@ -229,28 +244,33 @@ def agent_config_valid(workspace: Path, params: dict, *, run=None) -> dict:
 
 @_guard
 def eval_holdout_sealed(workspace: Path, params: dict, *, run=None) -> dict:
-    """params: tickets, holdout, build, holdout_fraction, seed, min_size,
-    articles_dir, macros. Recomputes the split, requires build/holdout to be
-    disjoint, and fails if any held-out ticket is cited by an article or macro
-    (leakage into what the agent was built from)."""
+    """params: tickets, source (optional), holdout, build, holdout_fraction,
+    seed, min_size, articles_dir, macros. Recomputes the split, requires
+    build/holdout to be disjoint, and fails if any held-out ticket is cited by
+    an article or macro (leakage into what the agent was built from). With
+    `source` (the client's export), the split must cover exactly its tickets
+    and every row must keep the export's must_escalate label and redacted
+    subject and body, so relabeling or rewriting a held-out ticket fails."""
     _, hold = T._read_csv(T._resolve(workspace, params["holdout"]))
     _, build = T._read_csv(T._resolve(workspace, params["build"]))
     hold_ids = {r["ticket_id"] for r in hold}
     problems = []
     if hold_ids & {r["ticket_id"] for r in build}:
         problems.append("holdout and build overlap")
-    if params.get("tickets"):
-        _, all_rows = T._read_csv(T._resolve(workspace, params["tickets"]))
-        frac = float(params.get("holdout_fraction", 0.3))
-        seed = str(params.get("seed", "support-automation"))
-        want = {r["ticket_id"] for r in all_rows if T._split_bucket(r["ticket_id"], seed) < frac}
-        if want != hold_ids:
-            problems.append("holdout does not match the seeded split")
+    frac = float(params.get("holdout_fraction", 0.3))
+    seed = str(params.get("seed", "support-automation"))
+    for key in ("tickets", "source"):
+        if params.get(key):
+            _, all_rows = T._read_csv(T._resolve(workspace, params[key]))
+            want = {r["ticket_id"] for r in all_rows if T._split_bucket(r["ticket_id"], seed) < frac}
+            if want != hold_ids:
+                problems.append(f"holdout does not match the seeded split of {params[key]}")
+    if params.get("source"):
+        problems += _altered_rows(workspace, params["source"], hold + build)
     if len(hold) < int(params.get("min_size", 1)):
         problems.append(f"holdout has {len(hold)} tickets, need {params.get('min_size')}")
     cited = set()
-    adir = T._resolve(workspace, params["articles_dir"]) if params.get("articles_dir") else None
-    for p in sorted(adir.glob("*.md")) if adir and adir.is_dir() else []:
+    for p in _articles(workspace, params.get("articles_dir")):
         cited |= {s.partition("#")[2] for s in T.parse_article(p)["sources"]}
     if params.get("macros"):
         for m in _load_macros(workspace, params["macros"]):
@@ -259,6 +279,28 @@ def eval_holdout_sealed(workspace: Path, params: dict, *, run=None) -> dict:
     if leaked:
         problems.append(f"held-out tickets cited as sources: {', '.join(leaked)}")
     return _result(not problems, "; ".join(problems) or f"{len(hold)} held-out tickets sealed")
+
+
+def _altered_rows(workspace: Path, source: str, rows: list[dict]) -> list[str]:
+    """Problems when `rows` are not exactly the source export's tickets with
+    their gold label and redacted text unchanged."""
+    _, src = T._read_csv(T._resolve(workspace, source))
+    by_id = {r.get("ticket_id"): r for r in src}
+    problems = []
+    seen = [r.get("ticket_id") for r in rows]
+    if sorted(seen, key=str) != sorted(by_id, key=str):
+        problems.append(f"split holds {len(seen)} tickets, {source} has {len(by_id)}")
+    altered = []
+    for row in rows:
+        orig = by_id.get(row.get("ticket_id"))
+        if orig is None:
+            continue
+        if T._truthy(row.get("must_escalate")) != T._truthy(orig.get("must_escalate")) or any(
+                (row.get(col) or "") != T.redact_text(orig.get(col) or "")[0] for col in ("subject", "body")):
+            altered.append(str(row.get("ticket_id")))
+    if altered:
+        problems.append(f"rows differ from {source}: {', '.join(sorted(altered)[:20])}")
+    return problems
 
 
 @_guard
