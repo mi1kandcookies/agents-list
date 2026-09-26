@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "contract": "inputs/northwind_saas_msa.txt",
+  "contract_sha256": "88e31ff7ac38f512269589599bb27e0abc0375bffc217b9ea63b4f160a984998",
+  "base": "accepted",
+  "pending_revisions": 0,
+  "playbook": "deliverables/m1-playbook/playbook.yaml",
+  "issues": [
+    {
+      "id": "I2",
+      "family": "liability_carve_outs",
+      "severity": "critical",
+      "escalate": true,
+      "quote": "The limitations in Section 9.2 apply to all claims, including claims under Section 8 and breaches of Section 4.",
+      "deviation": "The cap swallows indemnity and confidentiality claims.",
+      "recommendation": "Carve indemnity and confidentiality breaches out of the cap.",
+      "fallback": "Data-protection breaches under a super-cap of 3x the general cap.",
+      "location": "§9.3 p37"
+    },
+    {
+      "id": "I3",
+      "family": "indemnification",
+      "severity": "critical",
+      "escalate": true,
+      "quote": "hold harmless Provider from any claim arising out of any breach of this Agreement",
+      "deviation": "One-way customer indemnity for any breach.",
+      "recommendation": "Replace with a provider IP indemnity; narrow the customer indemnity.",
+      "fallback": "Mutual third-party-claim indemnities limited to IP infringement.",
+      "location": "§8.1 p32"
+    },
+    {
+      "id": "I1",
+      "family": "liability_cap_amount",
+      "severity": "high",
+      "quote": "shall not exceed the fees paid by Customer in the three (3) months preceding the claim",
+      "deviation": "Cap is three months of fees; the playbook wants twelve.",
+      "recommendation": "Raise the cap to twelve months of fees paid or payable.",
+      "fallback": "Six months with a USD 250,000 floor.",
+      "location": "§9.2 p36"
+    },
+    {
+      "id": "I4",
+      "family": "intellectual_property",
+      "severity": "high",
+      "escalate": true,
+      "review_flag": true,
+      "quote": "any Customer Data for any purpose, including to train",
+      "deviation": "Perpetual licence to train on Customer Data.",
+      "recommendation": "Limit the licence to feedback used to improve the Services.",
+      "fallback": "Aggregated, de-identified usage data only, never for training.",
+      "location": "§5.2 p22"
+    },
+    {
+      "id": "I5",
+      "family": "data_protection",
+      "severity": "high",
+      "quote": "notify Customer of a security incident affecting Customer Data within a commercially reasonable time",
+      "deviation": "No fixed breach-notice window and no DPA.",
+      "recommendation": "Notice within 72 hours and a DPA as an exhibit.",
+      "fallback": "Notice within five business days.",
+      "location": "§6.2 p26"
+    },
+    {
+      "id": "I10",
+      "family": "liability_cap_base",
+      "severity": "medium",
+      "quote": "the fees paid by Customer in the three (3) months",
+      "deviation": "Cap base counts fees paid only.",
+      "recommendation": "Use fees paid or payable.",
+      "fallback": "Fees paid in the 12 months before the claim.",
+      "location": "§9.2 p36"
+    },
+    {
+      "id": "I6",
+      "family": "warranties",
+      "severity": "medium",
+      "quote": "PROVIDER DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED",
+      "deviation": "Full as-is disclaimer.",
+      "recommendation": "Add a performance warranty.",
+      "fallback": "A 90-day warranty with re-performance as the remedy.",
+      "location": "§7.1 p29"
+    },
+    {
+      "id": "I7",
+      "family": "term_termination",
+      "severity": "medium",
+      "quote": "at least ninety (90) days before the end of the then-current term",
+      "deviation": "90-day non-renewal notice.",
+      "recommendation": "Shorten the window to 30 days.",
+      "fallback": "45 days.",
+      "location": "§3.2 p15"
+    },
+    {
+      "id": "I8",
+      "family": "payment",
+      "severity": "medium",
+      "quote": "Provider may increase the fees at any time",
+      "deviation": "Unilateral mid-term price increases.",
+      "recommendation": "Increases only at renewal, capped at 5%.",
+      "fallback": "Capped at 7%.",
+      "location": "§2.2 p11"
+    },
+    {
+      "id": "I9",
+      "family": "assignment",
+      "severity": "medium",
+      "quote": "Provider may assign this Agreement without consent",
+      "deviation": "One-sided assignment right.",
+      "recommendation": "Make assignment mutual.",
+      "fallback": "Provider may assign only to a successor that is not a Harborlight competitor.",
+      "location": "§10.1 p40"
+    }
+  ],
+  "coverage": [
+    {
+      "family": "liability_cap_amount",
+      "status": "deviation"
+    },
+    {
+      "family": "liability_cap_base",
+      "status": "deviation"
+    },
+    {
+      "family": "liability_indirect_damages",
+      "status": "compliant",
+      "quote": "In no event shall either party be liable for any indirect, incidental, special or consequential damages"
+    },
+    {
+      "family": "liability_carve_outs",
+      "status": "deviation"
+    },
+    {
+      "family": "indemnification",
+      "status": "deviation"
+    },
+    {
+      "family": "intellectual_property",
+      "status": "deviation"
+    },
+    {
+      "family": "data_protection",
+      "status": "deviation"
+    },
+    {
+      "family": "confidentiality",
+      "status": "compliant",
+      "quote": "shall protect the other party's Confidential Information using at least reasonable care"
+    },
+    {
+      "family": "warranties",
+      "status": "deviation"
+    },
+    {
+      "family": "term_termination",
+      "status": "deviation"
+    },
+    {
+      "family": "assignment",
+      "status": "deviation"
+    },
+    {
+      "family": "governing_law",
+      "status": "compliant",
+      "quote": "governed by the laws of the State of Delaware"
+    },
+    {
+      "family": "insurance",
+      "status": "absent",
+      "note": "The contract has no clause on this."
+    },
+    {
+      "family": "payment",
+      "status": "deviation"
+    },
+    {
+      "family": "non_solicitation",
+      "status": "absent",
+      "note": "The contract has no clause on this."
+    }
+  ]
+}

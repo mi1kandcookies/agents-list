@@ -624,6 +624,13 @@ def test_m3_redlines_only_the_issue_lists_contract(spec, ws):
     assert _results(sub)["redline_roundtrip"].passed is False and sub.status != "ready_for_review"
 
 
+def test_m3_eval_case_runs_offline_from_its_fixture(spec, tmp_path):
+    case = next(c for c in load_cases(spec) if c.path.name == "m3_msa_redline.json")
+    result = run_case(spec, case, adapter=ScriptedAdapter.from_tool_plan(_m3_plan()),
+                      workspace=tmp_path / "case")
+    assert result["status"] == "ready_for_review", result["checks"]
+
+
 def test_validate_intake_asks_for_one_contract_per_engagement(spec):
     intake = {**json.loads(INTAKE.read_text(encoding="utf-8")),
               "contract_files": ["inputs/msa.docx", "inputs/dpa.docx", "inputs/order-form.docx"]}

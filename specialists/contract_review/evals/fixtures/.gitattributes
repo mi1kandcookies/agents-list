@@ -1,0 +1,3 @@
+# Fixture bytes are hashed (sha256) by the checks and by recorded issue lists,
+# so they must be identical on every checkout: no line-ending conversion.
+* -text
