@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Manifest: {{ agent.name }}{% endblock %}
+{% block head %}
+<style>
+  .mf { padding-top: 40px; padding-bottom: 64px; }
+  .mf-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  .mf-hash { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); word-break: break-all; }
+  .mf-rows { width: 100%; border-collapse: collapse; }
+  .mf-rows th, .mf-rows td { text-align: left; padding: 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; font-size: var(--fs-sm); }
+  .mf-rows th { color: var(--ink-2); font-weight: 500; padding-right: 12px; white-space: nowrap; }
+  .mf-diff td { font-family: var(--font-mono); font-size: 0.75rem; word-break: break-all; }
+  .mf-old { color: var(--danger); }
+  .mf-new { color: var(--success); }
+  .mf-error { border: 1px solid var(--danger-line); background: var(--danger-soft); color: var(--danger); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: var(--fs-sm); }
+  .mf-note { border: 1px solid var(--border); background: var(--surface-2); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: var(--fs-sm); color: var(--ink-2); }
+  .mf-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  @media (max-width: 860px) { .mf-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-sm mf">
+  <div class="flex-center gap-8 mb-24 text-sm text-muted">
+    <a href="{{ url_for('seller.seller_manage_agent', agent_id=agent.id) }}" class="text-muted" style="text-decoration:underline;">{{ agent.name }}</a>
+    <span>›</span>
+    <span>Manifest</span>
+  </div>
+
+{% if forbidden %}
+  <div class="card">
+    <h1 style="font-size:1.5rem; margin-bottom:8px;">Not your agent</h1>
+    <p class="text-muted">This agent's configuration is stamped by another operator. Only that operator can change it.</p>
+  </div>
+{% else %}
+  {% set badge_class = 'badge-approved' if status.ok else 'badge-warning' %}
+  <div class="flex-between mb-24" style="gap:16px; flex-wrap:wrap;">
+    <div>
+      <h1 style="font-size:1.75rem; margin-bottom:8px;">Agent manifest</h1>
+      <p class="text-muted text-sm">The exact configuration buyers hire. Stamping it binds your World ID approval to this manifest's hash; any change needs a new stamp before the listing can be hired again.</p>
+    </div>
+    <span class="badge {{ badge_class }}" id="stamp-state" title="{{ status.reason }}">{{ 'Operator-stamped config' if status.ok else 'Re-stamp required' }}</span>
+  </div>
+
+  {% if error %}<div class="mf-error" role="alert">{{ error }}</div>{% endif %}
+  {% if saved %}<div class="mf-note">Manifest saved.{% if not status.ok %} Stamp it to make the listing hireable.{% endif %}</div>{% endif %}
+  {% if status.simulated %}<div class="mf-note">This stamp was written by the development seed (simulated, no World ID approval). Stamp it yourself to replace it.</div>{% endif %}
+
+  <div class="mf-grid">
+    <form method="post" class="card" id="manifest-form">
+      {% macro val(key, fallback) -%}{{ form.get(key, '') if form else fallback }}{%- endmacro %}
+      <div class="form-group">
+        <label class="form-label" for="mf-model">Model</label>
+        <input class="form-input" id="mf-model" name="model" required value="{{ val('model', manifest.model) }}" placeholder="provider | model-name">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="mf-tools">Tools</label>
+        <textarea class="form-textarea mono" id="mf-tools" name="tools" rows="3">{{ val('tools', manifest.tools|join('\n')) }}</textarea>
+        <div class="form-hint">One per line.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="mf-mcp">MCP servers</label>
+        <textarea class="form-textarea mono" id="mf-mcp" name="mcp_servers" rows="3">{{ val('mcp_servers', manifest.mcp_servers|join('\n')) }}</textarea>
+        <div class="form-hint">One per line (name or URL).</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="mf-skills">Skills</label>
+        <textarea class="form-textarea" id="mf-skills" name="skills" rows="3">{{ val('skills', manifest.skills|join('\n')) }}</textarea>
+      </div>
+      <div class="grid-2 gap-16">
+        <div class="form-group">
+          <label class="form-label" for="mf-min">Minimum price (USDC)</label>
+          <input class="form-input mono" id="mf-min" name="price_min_usdc" inputmode="decimal" value="{{ val('price_min_usdc', '%g'|format((manifest.price_min_micro or 0) / 1000000)) }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="mf-max">Maximum price (USDC)</label>
+          <input class="form-input mono" id="mf-max" name="price_max_usdc" inputmode="decimal" value="{{ val('price_max_usdc', '%g'|format((manifest.price_max_micro or 0) / 1000000)) }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="mf-payout">Payout address</label>
+        <input class="form-input mono" id="mf-payout" name="payout_address" required value="{{ val('payout_address', manifest.payout_address) }}" placeholder="0x…">
+        <div class="form-hint">Screened when you stamp. A refused address blocks the listing.</div>
+      </div>
+      <div class="mf-actions">
+        <button class="btn btn-secondary" type="submit" name="action" value="save">Save draft</button>
+        <button class="btn btn-primary" type="submit" name="action" value="stamp">Stamp with World ID</button>
+      </div>
+    </form>
+
+    <aside class="flex-col gap-20">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Stamp</h3>
+        <table class="mf-rows">
+          <tr><th scope="row">Status</th><td>{{ status.reason }}</td></tr>
+          <tr><th scope="row">Current</th><td class="mf-hash" id="current-hash">{{ current_hash }}</td></tr>
+          <tr><th scope="row">Stamped</th><td class="mf-hash" id="stamped-hash">{{ status.stamped_hash or '—' }}</td></tr>
+          {% if agent.manifest_stamped_at %}
+          <tr><th scope="row">Stamped at</th><td class="mono">{{ agent.manifest_stamped_at.strftime('%Y-%m-%d %H:%M UTC') }}</td></tr>
+          {% endif %}
+          {% if agent.manifest_stamp_approval_id %}
+          <tr><th scope="row">Approval</th><td class="mono"><a href="{{ url_for('approvals.status', approval_id=agent.manifest_stamp_approval_id) }}">{{ agent.manifest_stamp_approval_id }}</a></td></tr>
+          {% endif %}
+          {% if screening %}
+          <tr><th scope="row">Payout screening</th><td><span class="mono">{{ screening.verdict }}</span> · <span class="mono">{{ screening.id }}</span></td></tr>
+          {% endif %}
+        </table>
+      </div>
+
+      {% if stamped %}
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Changes since stamp</h3>
+        {% if changes %}
+        <table class="mf-rows mf-diff" id="manifest-diff">
+          {% for c in changes %}
+          <tr><th scope="row">{{ c.field }}</th>
+              <td><div class="mf-old">− {{ c.old if c.old is not none else '∅' }}</div>
+                  <div class="mf-new">+ {{ c.new if c.new is not none else '∅' }}</div></td></tr>
+          {% endfor %}
+        </table>
+        {% else %}
+        <p class="text-muted text-sm">None. The current manifest is the stamped one.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+{% endif %}
+</div>
+{% endblock %}

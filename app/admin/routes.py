@@ -241,6 +241,100 @@ def admin_investigate_report(rpt_id):
     return jsonify({"id": rpt_id, "status": "investigating"})
 
 
+def _human_or_404(human_id):
+    from app.models import Human
+    human = db.session.get(Human, human_id)
+    if human is None:
+        return None, api_error("human not found", 404, code="HUMAN_NOT_FOUND")
+    return human, None
+
+
+def _human_done(human, **extra):
+    if request.is_json:
+        return jsonify({"id": human.id, "banned": human.banned,
+                        "weekly_cap_micro": human.weekly_cap_micro, **extra})
+    return redirect(url_for("admin.admin_humans"))
+
+
+@bp.route("/humans")
+def admin_humans():
+    """Verified humans by hashed World ID sub: activity, weekly spend vs cap,
+    bans. A ban blocks the human's approvals and every agent they operate."""
+    import hashlib
+    from app.humans import service as humans
+    from app.models import Agent as AgentModel, Engagement, Human
+    rows = []
+    for h in Human.query.order_by(Human.last_seen_at.desc(), Human.id.desc()).limit(500).all():
+        try:
+            cap = humans.weekly_cap_micro(h)
+        except ValueError:
+            cap = None
+        rows.append({
+            "human": h, "sub_hash": hashlib.sha256(h.world_sub.encode()).hexdigest()[:16],
+            "jobs": Engagement.query.filter_by(buyer_human_id=h.id).count(),
+            "agents": AgentModel.query.filter_by(manifest_stamp_sub=h.world_sub).count(),
+            "spent": humans.weekly_spent_micro(h), "cap": cap,
+        })
+    return render_template("admin/humans.html", rows=rows)
+
+
+@bp.route("/humans/<int:human_id>/ban", methods=["POST"])
+@require_api_key
+def admin_ban_human(human_id):
+    from app.humans import service as humans
+    human, err = _human_or_404(human_id)
+    if err:
+        return err
+    data = request.get_json(silent=True) or request.form
+    reason = str(data.get("reason") or "").strip()[:500]
+    if not reason:
+        return api_error("a ban reason is required", field="reason")
+    humans.ban(human, reason)
+    db.session.commit()
+    log.info("Human %s banned", human.id)
+    return _human_done(human)
+
+
+@bp.route("/humans/<int:human_id>/unban", methods=["POST"])
+@require_api_key
+def admin_unban_human(human_id):
+    from app.humans import service as humans
+    human, err = _human_or_404(human_id)
+    if err:
+        return err
+    humans.unban(human)
+    db.session.commit()
+    log.info("Human %s unbanned", human.id)
+    return _human_done(human)
+
+
+@bp.route("/humans/<int:human_id>/cap", methods=["POST"])
+@require_api_key
+def admin_set_human_cap(human_id):
+    """Set the weekly cap in USDC; empty resets to HUMAN_WEEKLY_CAP_USDC."""
+    from decimal import Decimal, InvalidOperation
+    from app.humans import service as humans
+    human, err = _human_or_404(human_id)
+    if err:
+        return err
+    data = request.get_json(silent=True) or request.form
+    raw = str(data.get("weekly_cap_usdc") if data.get("weekly_cap_usdc") is not None else "").strip()
+    cap = None
+    if raw:
+        try:
+            micro = Decimal(raw) * 1_000_000
+        except InvalidOperation:
+            micro = Decimal(-1)
+        if not micro.is_finite() or micro < 0 or micro != micro.to_integral_value():
+            return api_error("weekly_cap_usdc must be >= 0 with at most 6 decimals",
+                             field="weekly_cap_usdc")
+        cap = int(micro)
+    humans.set_weekly_cap(human, cap)
+    db.session.commit()
+    log.info("Human %s weekly cap -> %s", human.id, cap)
+    return _human_done(human)
+
+
 @bp.route("/moderation/<rpt_id>/suspend", methods=["POST"])
 @require_api_key
 def admin_suspend_agent(rpt_id):
