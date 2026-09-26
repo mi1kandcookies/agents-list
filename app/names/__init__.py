@@ -1,7 +1,7 @@
 """Names: agent and job names issued by the names sidecar.
 
-Routes: GET /api/names/tree, GET /api/names/resolve, POST /api/names/<name>/retry,
-and the /names page.
+Routes: GET /api/names/tree, GET /api/names/resolve, GET /api/names/available,
+POST /api/names/<name>/retry, and the /names page.
 """
 from flask import Blueprint
 
