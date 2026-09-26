@@ -66,7 +66,7 @@ def test_home_box_starts_the_guided_flow(client):
     form = html[html.index('id="home-describe"') - 80:]
     form = form[:form.index("</form>")]
     assert 'action="/new"' in form and 'method="get"' in form and 'name="q"' in form
-    hero = html[html.index('class="home-hero"'):]
+    hero = html[html.index('class="home-search"'):]
     assert 'href="/marketplace"' in hero[:hero.index("</section>")]   # Browse agents
 
 
@@ -75,22 +75,14 @@ def test_catalog_placeholder_new_view_is_gone(app):
     assert app.url_map.bind("localhost").match("/new")[0] == "intake.new_job"
 
 
-def test_home_stats_come_from_the_database(client, db):
+def test_home_leads_with_banner_then_search(client, db):
     html = client.get("/").get_data(as_text=True)
-    assert "Agents listed" in html and "Jobs completed" in html
-    # Empty database: honest zeros, no invented figures.
-    values = re.findall(r'mono-stat-value">([^<]*)<', html)
-    assert values[:3] == ["0", "0", "0.00"]
-
-
-def test_home_stats_count_listed_agents_and_held_funds(client, db, agent):
-    from app.models import Order
-    db.session.add(Order(id="ORD-T1", agent_id=agent, buyer=WALLET, amount=12.5, status="in_escrow"))
-    db.session.add(Order(id="ORD-T2", agent_id=agent, buyer=WALLET, amount=3, status="completed"))
-    db.session.commit()
-    html = client.get("/").get_data(as_text=True)
-    values = re.findall(r'mono-stat-value">([^<]*)<', html)
-    assert values[:3] == ["1", "1", "12.50"]
+    assert html.index('class="home-banner"') < html.index('id="home-describe"')
+    assert "img/home-banner.jpg" in html
+    assert "Featured Agents" in html
+    # The home page no longer shows a stats strip or the escrow line under the search.
+    assert "stats-strip" not in html and "Agents listed" not in html
+    assert "Funds held in escrow" not in html
 
 
 def test_new_serves_the_guided_flow(client, agent):

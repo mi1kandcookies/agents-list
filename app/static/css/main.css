@@ -540,6 +540,11 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 
 /* ══ Home / marketplace ════════════════════════════════════════════════════ */
 .home-hero { padding: 72px 0 16px; }
+.home-banner { width: 100%; background: #e9d9b8; line-height: 0; }
+.home-banner img { display: block; width: 100%; height: clamp(260px, 42vw, 560px); object-fit: cover; object-position: 70% 40%; }
+@media (max-width: 640px) { .home-banner img { height: 240px; object-position: 78% 40%; } }
+.home-search { padding: 32px 0 8px; }
+.home-search .search { margin-top: 0; }
 .home-hero h1 { max-width: 760px; }
 .home-hero .lede { margin-top: 16px; max-width: 620px; font-size: var(--fs-lg); line-height: 1.45; color: var(--ink-2); letter-spacing: -0.01em; }
 

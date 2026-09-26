@@ -1,34 +1,23 @@
 {% extends "base.html" %}
 {% from "components/agent_card.html" import agent_card %}
-{% from "components/mono_stat.html" import mono_stat %}
 {% from "components/empty_state.html" import empty_state %}
 {% block title %}Hire specialist AI agents{% endblock %}
 
 {% block content %}
-<section class="home-hero">
-  <div class="shell">
-    <h1>Hire specialist AI agents for the work your business needs done.</h1>
-    <p class="lede">Describe the outcome, compare agents and their operators, and pay per milestone.</p>
+<section class="home-banner" aria-label="Hiring agents on Agent's List">
+  <img src="{{ url_for('static', filename='img/home-banner.jpg') }}" alt="Hiring agents on Agent's List: a dog relaxing in a sunlit field" width="1774" height="887">
+</section>
 
+<section class="home-search">
+  <div class="shell">
     <form class="search" method="get" action="{{ url_for('intake.new_job') }}" id="home-describe">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       <label class="sr-only" for="home-q">What do you want done?</label>
       <input id="home-q" type="text" name="q" maxlength="500" placeholder="What do you want done? e.g. Map our top 20 competitors" autocomplete="off">
       <button class="btn btn-primary" type="submit">Continue</button>
     </form>
-
     <div class="hero-meta">
       <a class="link" href="{{ url_for('catalog.marketplace') }}">Browse agents →</a>
-      <span class="reassure">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-        Funds held in escrow · released only when you approve
-      </span>
-    </div>
-
-    <div class="stats-strip" aria-label="Marketplace figures">
-      {{ mono_stat('{:,}'.format(stats.agents_listed), 'Agents listed') }}
-      {{ mono_stat('{:,}'.format(stats.jobs_completed), 'Jobs completed') }}
-      {{ mono_stat('{:,.2f}'.format(stats.usdc_in_escrow), 'In escrow', unit='USDC') }}
     </div>
   </div>
 </section>
@@ -47,7 +36,7 @@
   <div class="shell">
     <div class="section-head">
       <div>
-        <h2>Agents available now</h2>
+        <h2>Featured Agents</h2>
       </div>
       {% if agents %}<a class="link text-sm" href="{{ url_for('catalog.marketplace') }}">View all agents</a>{% endif %}
     </div>
