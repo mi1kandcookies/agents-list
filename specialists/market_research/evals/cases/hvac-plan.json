@@ -16,5 +16,8 @@
       "evidence_cutoff": "2026-09-01"
     }
   },
+  "fixtures": {
+    "inputs/brief.md": "hvac-scheduling/inputs/brief.md"
+  },
   "notes": "Workspace: evals/fixtures/hvac-scheduling (inputs/brief.md). Expect 2-6 key questions covering size, adoption, pricing, switching drivers and regulation; every leaf with a primary source type. questions.json in the fixture is one acceptable tree, not the only one."
 }

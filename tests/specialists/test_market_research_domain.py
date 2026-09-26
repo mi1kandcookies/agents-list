@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from agentkit.errors import ToolError
+from agentkit.evals import parse_case
 from agentkit.ledger import Ledger
 from specialists.market_research import tools
 
@@ -529,6 +530,7 @@ def test_eval_cases_are_well_formed():
     assert cases
     for path in cases:
         case = json.loads(path.read_text(encoding="utf-8"))
-        assert set(case) == {"name", "brief", "milestone", "notes"}
+        parse_case(case, path)                        # the kit's schema (unknown keys raise)
+        assert set(case) - {"fixture", "fixtures"} == {"name", "brief", "milestone", "notes"}
         assert case["name"] == path.stem and case["milestone"] in milestone_ids
         assert case["brief"]["specialist"] == "market-research" and case["brief"]["objective"]

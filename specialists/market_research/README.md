@@ -21,8 +21,11 @@ All deliverables live under `deliverables/<milestone-id>/`.
 ## Inputs (intake)
 
 Required: `research_objective`, `market_definition`, `geography`.
-Optional: `competitors`, `evidence_cutoff`, `allowed_domains` (narrows egress),
-`tier1_share` (default 0.6), `client_documents` (placed in `inputs/`).
+Optional: `competitors`, `evidence_cutoff`, `allowed_domains` (a list of host
+rules; every fetched URL must also match one of them), `tier1_share` (a share
+in (0, 1] that replaces the 0.6 threshold of `source_tier_mix`),
+`client_documents` (placed in `inputs/`). `validate-intake` reports a
+malformed `allowed_domains` or `tier1_share` as blocking.
 
 ## Tools
 
@@ -39,8 +42,11 @@ Kit tools (workspace, `http_fetch`, `web_search`, ledger, `ask_client`,
 - `build_sizing_model` - top-down and bottom-up TAM, SAM, SOM, method gap and
   sensitivity table
 
-The ledger is read from `.agentkit/ledger.json` with snapshots in
-`.agentkit/sources/<id>.txt` (the kit's ledger layout).
+The claim ledger is the kit's (`.agentkit/ledger.json`, snapshots in
+`.agentkit/sources/<id>.txt`), and the domain tools and checks verify claims
+with the kit's own rules. `agent.py` holds the `Specialist` subclass: it
+registers the domain checks as `automated` (a brief cannot turn one into a
+pending check) and applies the intake's `tier1_share`.
 
 ## Human gate and limits
 
@@ -61,5 +67,8 @@ to `allowed_domains` when given). No shell commands.
 `evals/fixtures/hvac-scheduling/` is a synthetic workspace (fictional
 companies and figures) with a ledger, snapshots (one carrying a planted
 injection) and an example question tree. `evals/cases/*.json` hold golden
-cases for live-model evaluation; unit tests in
-`tests/specialists/test_market_research_domain.py` run offline.
+cases for live-model evaluation (`python -m agentkit eval market-research`);
+each declares the fixture files its milestone starts from. Offline tests:
+`tests/specialists/test_market_research_domain.py` (tools and checks) and
+`tests/specialists/test_market_research_e2e.py` (all three milestones through
+the kit with a scripted model).

@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from agentkit.errors import AgentKitError
+from agentkit.evals import case_brief, load_cases, prepare_workspace
 from agentkit.events import MemorySink
 from agentkit.evidence import evidence_hash
 from agentkit.llm import ScriptedAdapter
@@ -469,3 +470,21 @@ def test_brief_cannot_downgrade_domain_checks(spec, ws):
     b.milestones = [extra]
     by = results_of(spec.check(ws, "m9-recheck", RunContext(brief=b, workspace=ws)))
     assert by["question_coverage"].kind == "automated" and by["question_coverage"].passed is False
+
+
+def test_eval_cases_seed_the_workspace_their_milestone_needs(spec, tmp_path):
+    cases = {c.name: c for c in load_cases(spec)}
+    assert set(cases) == {"ambiguous-scope-asks-client", "hvac-evidence-injection", "hvac-plan",
+                          "hvac-report"}
+    for case in cases.values():
+        ws = tmp_path / case.name
+        prepare_workspace(spec, case, ws)
+        assert case_brief(spec, case).milestone(case.milestone) is not None
+        tree = ws / M1[1]
+        if case.milestone == "m1-plan":
+            assert not tree.exists() and not (ws / "questions.json").exists()   # no answer key
+            assert (ws / "inputs/brief.md").is_file() == (case.name == "hvac-plan")
+        else:   # m2 and m3 build on an approved tree and the fixture's ledger
+            assert json.loads(tree.read_text(encoding="utf-8")) == TREE
+            status = tools.verify_claims(ws)
+            assert len(status) == 7 and all(s["verified"] for s in status.values())
