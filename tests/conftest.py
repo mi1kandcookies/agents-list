@@ -7,7 +7,8 @@ import pytest
 
 # Keep tests hermetic: no network chain calls, no keys, no LLM.
 for _var in ("FACILITATOR_PRIVATE_KEY", "GATEKEEPER_PRIVATE_KEY", "PRIVATE_KEY",
-             "LLM_URL", "API_KEY", "DATABASE_URL"):
+             "LLM_URL", "API_KEY", "DATABASE_URL", "INTERCEPTA_API_KEY", "INTERCEPTA_BASE_URL",
+             "SCREENING_ADDRESS_MAP"):
     os.environ.pop(_var, None)
 os.environ["FLASK_ENV"] = "testing"
 # Unroutable RPC: any accidental chain read fails fast and falls back.

@@ -77,6 +77,22 @@ facilitator: Google Cloud Web3 faucet or the Alchemy/Infura faucets.
 Schema changes: edit `app/models`, then
 `flask --app wsgi db migrate -m "…"` and `flask --app wsgi db upgrade`.
 
+## Payment screening
+
+Every payment hop is screened with the Intercepta (Web3 Antivirus) API before
+money moves, and the verdict (`PAY | CAP | ASK_HUMAN | REFUSE`) is stored as a
+`screenings` row, served at `GET /api/screening/<id>`. Risk data is mainnet
+only, so a Sepolia payee is screened as its mapped mainnet address
+(`agents.screening_address`, else `SCREENING_ADDRESS_MAP`). No key, an
+unmapped address, a timeout or any provider error means `REFUSE`
+(fail-closed). Traits drive the decision; the vendor publishes no toxic-score
+threshold, so the score thresholds are ours (see `.env.example`).
+
+Files that call the API: `app/screening/intercepta.py` (the only HTTP client),
+used by `app/screening/service.py`, and `scripts/screening_smoke.py` (manual,
+live only when `INTERCEPTA_API_KEY` is set). Tests use fixtures shaped per the
+provider's OpenAPI reference and never reach the network.
+
 ## Project structure
 
 ```

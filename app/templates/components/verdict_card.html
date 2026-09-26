@@ -1,0 +1,51 @@
+{#
+  verdict_card(v): one screening verdict (docs/decisions/0001-custody-chain.md §4).
+  Page must include css/screening.css.
+
+    {% from "components/verdict_card.html" import verdict_card %}
+    {{ verdict_card(screening) }}
+#}
+{% macro short_addr(addr) -%}
+  {%- if addr and addr|length > 12 -%}{{ addr[:6] }}…{{ addr[-4:] }}{%- else -%}{{ addr or "—" }}{%- endif -%}
+{%- endmacro %}
+
+{% macro verdict_card(v) -%}
+{%- set labels = {"PAY": "Pay", "CAP": "Pay with cap", "ASK_HUMAN": "Ask a human", "REFUSE": "Refuse"} -%}
+{%- set kind = v.verdict if v.verdict in labels else "REFUSE" -%}
+{%- set subject = v.subject or {} -%}
+<section class="verdict-card verdict-card--{{ kind|lower|replace('_', '-') }}" data-screening-id="{{ v.id }}">
+  <header class="verdict-card__head">
+    <span class="verdict-card__badge">{{ labels[kind] }}</span>
+    <span class="verdict-card__hop">{{ v.hop }}</span>
+    {% if kind == "CAP" and v.cap_micro is not none %}
+      <span class="verdict-card__cap">max {{ "%.2f"|format(v.cap_micro / 1000000) }} USDC</span>
+    {% endif %}
+  </header>
+
+  {% if v.fail_closed %}
+    <p class="verdict-card__failclosed">Screening could not complete, so this payment is refused (fail-closed).</p>
+  {% endif %}
+
+  {% if v.reasons %}
+    <ul class="verdict-card__reasons">
+      {% for r in v.reasons %}
+        <li><code>{{ r.code }}</code> {{ r.message }}{% if r.source %} <span class="verdict-card__src">{{ r.source }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="verdict-card__clean">No risk signals found.</p>
+  {% endif %}
+
+  <footer class="verdict-card__foot">
+    {% if subject.screened_address and subject.screened_address != subject.chain_address %}
+      <span title="{{ subject.screened_address }} ← {{ subject.chain_address }}">Screened as mainnet {{ short_addr(subject.screened_address) }} (mapped from Sepolia {{ short_addr(subject.chain_address) }})</span>
+    {% elif subject.screened_address %}
+      <span title="{{ subject.screened_address }}">Screened {{ short_addr(subject.screened_address) }}</span>
+    {% else %}
+      <span title="{{ subject.chain_address }}">Not screened: {{ short_addr(subject.chain_address) }}</span>
+    {% endif %}
+    <span>{{ v.latency_ms }} ms</span>
+    <span>{{ v.provider }} · {{ v.id }}</span>
+  </footer>
+</section>
+{%- endmacro %}
