@@ -8,12 +8,16 @@
     "intake": {
       "research_objective": "US launch and pricing decision",
       "market_definition": "HVAC contractors with fewer than 20 employees",
-      "geography": "United States"
+      "geography": "United States",
+      "competitors": ["Brightwrench", "Tallyho Dispatch"]
     }
   },
   "fixture": "hvac-scheduling",
   "fixtures": {
-    "deliverables/m1-plan/questions.json": "hvac-scheduling/questions.json"
+    "deliverables/m1-plan/questions.json": "hvac-scheduling/questions.json",
+    "deliverables/m2-evidence/claims.csv": "hvac-scheduling-m2/claims.csv",
+    "deliverables/m2-evidence/claim-map.json": "hvac-scheduling-m2/claim-map.json",
+    "deliverables/m2-evidence/contradictions.md": "hvac-scheduling-m2/contradictions.md"
   },
-  "notes": "Top-down (C6 x C7 = $418M) and a bottom-up from C2 with a stated price assumption should land within 30%; if the agent applies C5 adoption to TAM the gap exceeds 30% and a reconciliation note is required. Q2.1 has only two vendors: acceptable to mark partially unresolved."
+  "notes": "The m2 deliverables list C1-C9. Top-down C6 x C7 = $418M; bottom-up C2 units x C3 price x C9 technicians x 12 months (an assumption) = about $387M, within 30%. Applying C5 (current adoption) inside TAM is the wrong path: adoption belongs in SAM or SOM. Both named competitors need matrix rows with dated prices. Q1.2 rests on one survey: acceptable to mark it unresolved or answer it with that caveat."
 }

@@ -19,5 +19,5 @@
   "fixtures": {
     "inputs/brief.md": "hvac-scheduling/inputs/brief.md"
   },
-  "notes": "Workspace: evals/fixtures/hvac-scheduling (inputs/brief.md). Expect 2-6 key questions covering size, adoption, pricing, switching drivers and regulation; every leaf with a primary source type. questions.json in the fixture is one acceptable tree, not the only one."
+  "notes": "Workspace: inputs/brief.md only; m1 has no network. Expect 2-6 key questions covering size, adoption, pricing, switching drivers and regulation; every leaf with a primary source type; source_domains naming concrete sites (statistics offices, the named competitors, trade press) with their types. questions.json in the fixture is one acceptable plan, not the only one."
 }

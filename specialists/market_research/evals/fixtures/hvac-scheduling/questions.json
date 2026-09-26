@@ -1,6 +1,14 @@
 {
   "objective": "Decide whether to launch HVAC scheduling software in the US at $40-$70 per technician per month.",
   "evidence_cutoff": "2026-09-01",
+  "source_domains": {
+    ".statistics-bureau.example.gov": "government",
+    ".workforce.example.gov": "government",
+    ".brightwrench.example.com": "company",
+    ".tallyho-dispatch.example.com": "company",
+    ".fieldops-weekly.example.net": "trade_press",
+    ".market-notes.example.org": "analyst"
+  },
   "questions": [
     {"id": "Q1", "text": "How large is the US market for scheduling software among small HVAC contractors?", "children": [
       {"id": "Q1.1", "text": "How many US HVAC contractors have fewer than 20 employees?", "source_types": ["government", "trade_press"]},
