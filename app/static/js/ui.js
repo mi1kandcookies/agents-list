@@ -7,21 +7,23 @@
   var hero = document.querySelector("[data-hero]");
   var media = document.querySelector("[data-hero-media]");
   var title = document.querySelector("[data-hero-title]");
-  var img = document.querySelector("[data-hero-img]");
+  var heroImgs = document.querySelectorAll("[data-hero-img], [data-footer-img]");
 
-  /* Hero image: fade in once decoded, never pop. */
-  if (img) {
-    var shown = function () { img.classList.add("is-loaded"); };
-    if (img.complete && img.naturalWidth) { requestAnimationFrame(shown); }
-    else { img.addEventListener("load", shown, { once: true }); img.addEventListener("error", shown, { once: true }); }
-  }
+  /* Banner images (hero + footer, both variants): fade in once decoded, never pop.
+     Hidden variants are lazy and only load when shown, then fade the same way. */
+  Array.prototype.forEach.call(heroImgs, function (im) {
+    var shown = function () { im.classList.add("is-loaded"); };
+    if (im.complete && im.naturalWidth) { requestAnimationFrame(shown); }
+    else { im.addEventListener("load", shown, { once: true }); im.addEventListener("error", shown, { once: true }); }
+  });
 
-  /* Footer scene: same decode fade as the hero (lazy-loaded). */
-  var fimg = document.querySelector("[data-footer-img]");
-  if (fimg) {
-    var fshow = function () { fimg.classList.add("is-loaded"); };
-    if (fimg.complete && fimg.naturalWidth) { fshow(); }
-    else { fimg.addEventListener("load", fshow, { once: true }); fimg.addEventListener("error", fshow, { once: true }); }
+  /* Toggle between banner sets by clicking the first word of the headline. */
+  var toggle = document.querySelector("[data-banner-toggle]");
+  if (toggle) {
+    toggle.addEventListener("click", function () {
+      var on = document.documentElement.classList.toggle("banner-surf");
+      try { localStorage.setItem("al-banner", on ? "surf" : "field"); } catch (e) {}
+    });
   }
 
   /* Scroll: header frosting + gentle hero parallax, batched per frame. */
