@@ -164,6 +164,7 @@ def api_protocol_status():
     from chain.config import get_deployment
     from app.names import service as names
     tree = names.tree()
+    names_client = names.get_client()
     try:
         name_count = len(tree.get("children") or [])
     except AttributeError:
@@ -172,7 +173,7 @@ def api_protocol_status():
         "onchain": get_deployment(),
         "wallets": _wallet_snapshot(),
         "integrations": {
-            "ens": {"configured": True, "local_name_records": name_count},
+            "ens": {"configured": names_client.configured, "local_name_records": name_count},
             "intercepta": {"configured": bool((os.environ.get("INTERCEPTA_API_KEY") or "").strip()),
                            "fail_closed": True},
             "world_approval": {"backend_gate": True},
