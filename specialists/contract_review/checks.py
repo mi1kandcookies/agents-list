@@ -150,7 +150,8 @@ def issue_list_valid(workspace: Path, params: dict) -> dict[str, Any]:
         for key, render in (("markdown", t.render_issues_md), ("csv", t.render_issues_csv)):
             if params.get(key):
                 view = t.resolve(workspace, params[key])
-                if not view.is_file() or view.read_text(encoding="utf-8") != render(recorded):
+                rendered = render(recorded)
+                if not view.is_file() or view.read_text(encoding="utf-8") != rendered:
                     problems.append(f"{params[key]} is not the rendering of {params['issues']}; "
                                     "call record_issues again instead of editing either file")
     if problems:
@@ -204,7 +205,8 @@ def redline_roundtrip(workspace: Path, params: dict) -> dict[str, Any]:
     markdown = _pinned(params, rec, "markdown")
     if markdown:
         md_path = t.resolve(workspace, markdown)
-        if not md_path.is_file() or md_path.read_text(encoding="utf-8") != t.render_redline_md(plan, ops):
+        rendered = t.render_redline_md(plan, ops)
+        if not md_path.is_file() or md_path.read_text(encoding="utf-8") != rendered:
             problems.append(f"{markdown} is not the rendering of the redline ops")
     issues_path = params.get("issues") or rec.get("issues")
     if issues_path:
