@@ -182,6 +182,51 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     assert resp.headers["X-PAYMENT-RESPONSE"] == resp.headers["PAYMENT-RESPONSE"]
 
 
+def test_finance_demo_agent_gets_a_real_llm_deliverable(monkeypatch, client, db, callee,
+                                                        payer_agent, payer_key, mandate, screener):
+    """The one designated finance demo agent (app.llm.FINANCE_DEMO_AGENT_ID)
+    gets a real model completion as its deliverable instead of the
+    deterministic QA test-plan template; every other agent is unaffected
+    (test_paid_task_settles_under_the_mandate covers that default path)."""
+    from app import llm
+
+    monkeypatch.setattr(llm, "FINANCE_DEMO_AGENT_ID", callee.public_id)
+    monkeypatch.setattr(llm, "FINANCE_LLM_URL", "http://finance.test")
+    monkeypatch.setattr(llm, "FINANCE_LLM_MODEL", "finance-model")
+    monkeypatch.setattr(llm, "generate", lambda *a, **k: {
+        "response": "Revenue grew 20% MoM; churn ticked up and bears watching.",
+        "model": "finance-model", "promptTokens": 10, "completionTokens": 12,
+        "totalTokens": 22, "latencyMs": 42,
+    })
+
+    resp, _ = _pay(client, callee, payer_key, mandate, task="One paragraph investor update.")
+    assert resp.status_code == 200, resp.get_json()
+    deliverable = resp.get_json()["deliverable"]
+    assert deliverable["type"] == "llm_completion"
+    assert deliverable["model"] == "finance-model"
+    assert deliverable["response"] == "Revenue grew 20% MoM; churn ticked up and bears watching."
+    assert deliverable["agent_id"] == callee.public_id
+
+
+def test_finance_agent_falls_back_to_qa_plan_when_llm_unreachable(monkeypatch, client, db, callee,
+                                                                  payer_agent, payer_key, mandate,
+                                                                  screener):
+    """A live-endpoint failure degrades to the deterministic plan rather than
+    failing the paid task outright."""
+    from app import llm
+
+    monkeypatch.setattr(llm, "FINANCE_DEMO_AGENT_ID", callee.public_id)
+    monkeypatch.setattr(llm, "FINANCE_LLM_URL", "http://finance.test")
+
+    def boom(*a, **k):
+        raise RuntimeError("LLM unreachable: timed out")
+    monkeypatch.setattr(llm, "generate", boom)
+
+    resp, _ = _pay(client, callee, payer_key, mandate, task="GET /v1/orders")
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["deliverable"]["type"] == "api_test_plan"
+
+
 def test_official_x402_client_payload_is_accepted_by_task_route(
         client, db, callee, payer_agent, payer_key, mandate, screener):
     """The protected route accepts the official SDK's v2 exact payload."""

@@ -82,7 +82,7 @@ def test_reset_leaves_only_demo_agents_and_three_example_jobs(app, db, messy):
     agents = Agent.query.all()
     assert sorted(a.name for a in agents) == sorted(s["name"] for s in DEMO_AGENTS)
     assert all(a.seller == DEMO_OPERATOR and stamp_status(a).ok for a in agents)
-    assert "Hireable now: 10 of 10 agents." in out.output
+    assert f"Hireable now: {len(DEMO_AGENTS)} of {len(DEMO_AGENTS)} agents." in out.output
     assert Approval.query.count() == ApprovalEvent.query.count() == Mandate.query.count() == 0
     assert Order.query.count() == 0
     assert EnsName.query.count() == 0

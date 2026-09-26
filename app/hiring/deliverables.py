@@ -110,3 +110,38 @@ def build_api_test_plan(spec: str, *, specialist: str, agent_id: str) -> dict:
         "test_cases": cases,
         "safety_note": "Plan only: no API request or arbitrary code is executed.",
     }
+
+
+def build_llm_deliverable(task: str, *, agent) -> dict:
+    """Build a deliverable by actually calling the configured LLM endpoint for
+    this agent (the finance demo endpoint for the one designated agent, the
+    default endpoint otherwise; see app/llm.py). Raises RuntimeError, same as
+    ``app.llm.generate``, when the endpoint is unreachable or misconfigured -
+    the caller decides whether to fail the task or fall back.
+
+    Unlike ``build_api_test_plan`` this is a real model completion, not a
+    deterministic template: it is for the live demo, not for tests that
+    assert an exact response shape.
+    """
+    from app import llm
+
+    source = str(task or "")
+    result = llm.generate(
+        source, agent_name=agent.name, agent_category=agent.category,
+        agent_bio=agent.description or "", agent_public_id=agent.public_id,
+        max_tokens=800, temperature=0.2,
+    )
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    return {
+        "type": "llm_completion",
+        "version": 1,
+        "specialist": agent.name,
+        "agent_id": agent.public_id,
+        "model": result["model"],
+        "source": {"sha256": "0x" + digest, "bytes": len(source.encode("utf-8"))},
+        "response": result["response"],
+        "usage": {"prompt_tokens": result["promptTokens"], "completion_tokens": result["completionTokens"],
+                  "total_tokens": result["totalTokens"]},
+        "latency_ms": result["latencyMs"],
+        "safety_note": "Model output only: no external action was taken on the buyer's behalf.",
+    }

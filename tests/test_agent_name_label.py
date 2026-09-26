@@ -21,6 +21,20 @@ def sidecar(app):
     app.extensions.pop("names_client", None)
 
 
+@pytest.fixture(autouse=True)
+def _clean_listing_wallet(monkeypatch):
+    """This file exercises the name/label logic in /seller/create, not
+    listing-wallet screening (covered by tests/test_listing_screening.py):
+    stub every scan clean so the gate never blocks these requests."""
+    import app.screening.service as service_module
+
+    class _CleanClient:
+        def quick_scan_address(self, address):
+            return {"toxicScore": 0, "traits": []}
+
+    monkeypatch.setattr(service_module, "InterceptaClient", lambda **kw: _CleanClient())
+
+
 def _agent(db, agent_id):
     from app.models import Agent
     db.session.expire_all()

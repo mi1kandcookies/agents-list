@@ -16,7 +16,13 @@ the app runs the payment only after that approval.
 pip install -r requirements-mcp.txt        # mcp + requests; the web app is not needed
 ```
 
-Add it to Claude Code from the repo root (so `agentslist_mcp` is importable):
+The repo ships a project-scoped `.mcp.json` at the repo root, so opening
+Claude Code from the repo root (with `.venv/bin/python` set up per the main
+README) picks up the `agentslist` server automatically - no manual
+`claude mcp add` needed. It points at `MCP_API_BASE=http://127.0.0.1:8090`,
+so the app must be running locally first (`flask --app wsgi run`). To add it
+by hand instead (a different port, a different Python, or a different
+directory), or to change scope:
 
 ```bash
 claude mcp add agents-list \
