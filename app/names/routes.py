@@ -2,6 +2,7 @@
 from flask import jsonify, render_template, request
 
 from app.auth import require_api_key
+from app.engagements.routes import _api
 from app.names import bp, service
 
 
@@ -20,6 +21,18 @@ def names_resolve():
         return jsonify({"error": "active ENS agent name not found", "code": "NAME_NOT_ACTIVE",
                         "name": name.lower().rstrip(".")}), 404
     return jsonify(row)
+
+
+@bp.get("/api/names/available")
+@_api
+def names_available():
+    """Is ``label`` free for an agent name? ``agent_id`` (optional) is the
+    listing asking, so its own claim does not count as taken."""
+    label = request.args.get("label")
+    if label is None:
+        return jsonify({"error": "label is required", "code": "LABEL_REQUIRED"}), 400
+    agent_id = request.args.get("agent_id", type=int)
+    return jsonify(service.check_label(label, agent_id))
 
 
 @bp.post("/api/names/<path:name>/retry")

@@ -50,6 +50,19 @@ def seller_create():
             except (TypeError, ValueError):
                 return default
 
+        # The agent's name label: validated when given, else the name's slug
+        # when that is free (else issued with a suffix at publish time).
+        from app.names import service as names
+        if str(data.get("ens_label") or "").strip():
+            label = names.check_label(data["ens_label"])
+            if not label["available"]:
+                return jsonify({"error": f"agent name: {label['error']}", "code": label["code"],
+                                "field": "ens_label"}), 400
+            ens_label = label["label"]
+        else:
+            default = names.check_label(names.slug(data["name"]))
+            ens_label = default["label"] if default["available"] else None
+
         # Wizard sends USD per 1M tokens for input/output.
         in_per_1m = _num("min_input_tokens")
         out_per_1m = _num("min_output_tokens")
@@ -72,6 +85,7 @@ def seller_create():
             deployer_wallet=wallet.lower(),
             input_price_per_1m=int(in_per_1m * 1_000_000),
             output_price_per_1m=int(out_per_1m * 1_000_000),
+            ens_label=ens_label,
         )
         model = str(data.get("model") or "")
         if "|" in model:
@@ -96,7 +110,9 @@ def seller_create():
                 "message": "Agent listed. Stamp its configuration to publish it.",
             }), 201
         return redirect(url_for("catalog.agent_detail", agent_id=row.id))
-    return render_template("seller/create.html", categories=CATEGORIES, use_cases=USE_CASES)
+    from app.names.service import root_name
+    return render_template("seller/create.html", categories=CATEGORIES, use_cases=USE_CASES,
+                           ens_root=root_name())
 
 
 @bp.route("/verification")
@@ -255,8 +271,24 @@ def seller_manifest(agent_id):
     if operator and operator != stamp.DEV_STAMP_SUB and operator != current_human().world_sub:
         return render_template("seller/manifest.html", agent=row, forbidden=True), 403
 
+    from app.names import service as names
     error = error_field = None
-    if request.method == "POST":
+    action = request.form.get("action") if request.method == "POST" else None
+    if action == "ens_label":
+        try:
+            names.set_agent_label(row, request.form.get("ens_label"))
+        except names.LabelError as exc:
+            db.session.rollback()
+            error, error_field = f"Agent name: {exc.message}", "ens_label"
+        else:
+            db.session.commit()
+            return redirect(url_for("seller.seller_manifest", agent_id=row.id, saved="name"))
+    elif action == "retry_name":
+        name_row = names.agent_name_row(row)
+        if name_row is not None:
+            names.retry(name_row.name)
+        return redirect(url_for("seller.seller_manifest", agent_id=row.id))
+    elif request.method == "POST":
         data = {k: request.form.get(k, "") for k in MANIFEST_FORM_FIELDS}
         try:
             manifest = stamp.build_manifest(row, **data)
@@ -274,8 +306,11 @@ def seller_manifest(agent_id):
     stamped = stamp.stamped_manifest(row)
     return render_template(
         "seller/manifest.html", agent=row, forbidden=False, manifest=current,
-        form=request.form if error else None, error=error, error_field=error_field,
+        form=request.form if error and error_field != "ens_label" else None,
+        error=error, error_field=error_field,
         current_hash=stamp.manifest_hash(current), status=stamp.stamp_status(row),
         stamped=stamped, changes=stamp.diff(stamped, current) if stamped else [],
         screening=stamp.onboarding_screening(row), saved=request.args.get("saved") == "1",
+        name=names.agent_name_view(row), name_saved=request.args.get("saved") == "name",
+        name_input=request.form.get("ens_label") if error_field == "ens_label" else None,
     ), 400 if error else 200
