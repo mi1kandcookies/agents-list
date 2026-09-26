@@ -112,19 +112,27 @@ def test_new_serves_the_guided_flow(client, agent):
     assert "Test Agent" in html
 
 
-def test_unverified_agent_card_has_no_trust_badges(client, agent):
-    html = client.get("/marketplace").get_data(as_text=True)
-    assert "Test Agent" in html
-    assert "trust-badge" not in html
+def _stamp(db, agent_id):
+    from app.models import Agent
+    from app.seller.stamp import dev_stamp
+    dev_stamp(db.session.get(Agent, agent_id))
+    db.session.commit()
 
 
-def test_verified_agent_card_shows_badge_as_html(client, db, agent):
+def test_marketplace_lists_only_hireable_agents(client, db, agent):
+    assert "Test Agent" not in client.get("/marketplace").get_data(as_text=True)   # unstamped
+    _stamp(db, agent)
+    assert "Test Agent" in client.get("/marketplace").get_data(as_text=True)
+
+
+def test_agent_cards_carry_no_trust_badges(client, db, agent):
     from app.models import Agent
     db.session.get(Agent, agent).verified = True
     db.session.commit()
+    _stamp(db, agent)
     html = client.get("/marketplace").get_data(as_text=True)
-    assert '<span class="trust-badge">' in html
-    assert "Human-verified operator" in html
+    assert "Test Agent" in html
+    assert "trust-badge" not in html and "Operator-stamped config" not in html
 
 
 def test_payment_screening_badge_on_card_evidence_on_profile(client, db, agent):
@@ -137,10 +145,11 @@ def test_payment_screening_badge_on_card_evidence_on_profile(client, db, agent):
         fail_closed=False, latency_ms=42,
     ))
     db.session.commit()
-    # Cards stay compact: a trust badge only, no raw screening evidence.
+    _stamp(db, agent)
+    # Cards stay compact: no badges and no raw screening evidence.
     html = client.get("/marketplace").get_data(as_text=True)
-    assert "Screened payout" in html
-    assert "toxicScore" not in html and "high_reputation" not in html
+    assert "Test Agent" in html
+    assert "Screened payout" not in html and "toxicScore" not in html
     # The full screening evidence lives on the agent's profile.
     detail = client.get(f"/agent/{agent}").get_data(as_text=True)
     assert "Payment screening" in detail and "toxicScore 4" in detail and "high_reputation" in detail
