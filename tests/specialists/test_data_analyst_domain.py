@@ -879,6 +879,34 @@ def test_parse_number(text, value):
     assert tools.parse_number(text) == value
 
 
+def test_non_utf8_exports_and_blank_lines_load(tmp_path):
+    """Spreadsheets often save Windows-1252; a stray blank line is not a row."""
+    (tmp_path / "inputs").mkdir()
+    (tmp_path / "inputs" / "clients.csv").write_bytes(
+        "id,name,fee\n1,Café Nord,10\n\n2,Zürich AG,20\n\n".encode("cp1252"))
+    out = tools.list_tables(tmp_path)
+    assert out["tables"][0]["rows"] == 2
+    assert any("Windows-1252" in w for w in out["warnings"])
+    rows = tools.run_query(tmp_path, sql="SELECT name, fee FROM clients ORDER BY id")["rows"]
+    assert rows == [["Café Nord", 10], ["Zürich AG", 20]]
+
+
+def test_an_unparseable_csv_is_skipped_with_a_warning(tmp_path):
+    (tmp_path / "inputs").mkdir()
+    (tmp_path / "inputs" / "ok.csv").write_text("a\n1\n", encoding="utf-8")
+    (tmp_path / "inputs" / "bad.csv").write_text("a\n" + "x" * 200_000 + "\n", encoding="utf-8")
+    out = tools.list_tables(tmp_path)
+    assert [t["table"] for t in out["tables"]] == ["ok"]
+    assert any(w.startswith("bad.csv: cannot be parsed as CSV") for w in out["warnings"])
+
+
+def test_exempt_sections_can_be_emptied(ws):
+    _analysis(ws, "August paid revenue was $4,436.00 [F:aug-rev].\n\n## Method\n\nTolerance 0.5%.")
+    assert checks.figures_match_queries(ws, {"milestone": "m3-analysis"})["passed"] is True
+    res = checks.figures_match_queries(ws, {"milestone": "m3-analysis", "exempt_sections": []})
+    assert res["passed"] is False and "'0.5%'" in res["details"]
+
+
 def test_ids_beyond_64_bits_stay_text(tmp_path):
     (tmp_path / "inputs").mkdir()
     (tmp_path / "inputs" / "orders.csv").write_text(

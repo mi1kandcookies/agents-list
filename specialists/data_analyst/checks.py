@@ -269,7 +269,7 @@ def figures_match_queries(workspace: Path, params: dict, *, run=None) -> dict:
             ok += 1
     finally:
         session.close()
-    loose = unmarked_numbers(report, list(params.get("exempt_sections") or ["Method"]))
+    loose = unmarked_numbers(report, list(params.get("exempt_sections", ["Method"]) or []))
     if loose:
         shown_numbers = ", ".join(repr(n) for n in loose[:8]) + (" ..." if len(loose) > 8 else "")
         problems.append(f"{len(loose)} number(s) in the report have no [F:id] marker: {shown_numbers}; "
