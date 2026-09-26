@@ -71,36 +71,44 @@ MSA_ISSUES = [
      "quote": "The limitations in Section 9.2 apply to all claims, including claims under Section 8 "
               "and breaches of Section 4.",
      "deviation": "The cap swallows indemnity and confidentiality claims.",
-     "recommendation": "Carve indemnity and confidentiality breaches out of the cap."},
+     "recommendation": "Carve indemnity and confidentiality breaches out of the cap.",
+     "fallback": "Data-protection breaches under a super-cap of 3x the general cap."},
     {"id": "I3", "family": "indemnification", "severity": "critical", "escalate": True,
      "quote": "hold harmless Provider from any claim arising out of any breach of this Agreement",
      "deviation": "One-way customer indemnity for any breach.",
-     "recommendation": "Replace with a provider IP indemnity; narrow the customer indemnity."},
+     "recommendation": "Replace with a provider IP indemnity; narrow the customer indemnity.",
+     "fallback": "Mutual third-party-claim indemnities limited to IP infringement."},
     {"id": "I4", "family": "intellectual_property", "severity": "high", "escalate": True,
      "review_flag": True, "quote": "any Customer Data for any purpose, including to train",
      "deviation": "Perpetual licence to train on Customer Data.",
-     "recommendation": "Limit the licence to feedback used to improve the Services."},
+     "recommendation": "Limit the licence to feedback used to improve the Services.",
+     "fallback": "Aggregated, de-identified usage data only, never for training."},
     {"id": "I5", "family": "data_protection", "severity": "high",
      "quote": "notify Customer of a security incident affecting Customer Data within a commercially "
               "reasonable time",
      "deviation": "No fixed breach-notice window and no DPA.",
-     "recommendation": "Notice within 72 hours and a DPA as an exhibit."},
+     "recommendation": "Notice within 72 hours and a DPA as an exhibit.",
+     "fallback": "Notice within five business days."},
     {"id": "I6", "family": "warranties", "severity": "medium",
      "quote": "PROVIDER DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED",
-     "deviation": "Full as-is disclaimer.", "recommendation": "Add a performance warranty."},
+     "deviation": "Full as-is disclaimer.", "recommendation": "Add a performance warranty.",
+     "fallback": "A 90-day warranty with re-performance as the remedy."},
     {"id": "I7", "family": "term_termination", "severity": "medium",
      "quote": "at least ninety (90) days before the end of the then-current term",
-     "deviation": "90-day non-renewal notice.", "recommendation": "Shorten the window to 30 days."},
+     "deviation": "90-day non-renewal notice.", "recommendation": "Shorten the window to 30 days.",
+     "fallback": "45 days."},
     {"id": "I8", "family": "payment", "severity": "medium",
      "quote": "Provider may increase the fees at any time",
      "deviation": "Unilateral mid-term price increases.",
-     "recommendation": "Increases only at renewal, capped at 5%."},
+     "recommendation": "Increases only at renewal, capped at 5%.", "fallback": "Capped at 7%."},
     {"id": "I9", "family": "assignment", "severity": "medium",
      "quote": "Provider may assign this Agreement without consent",
-     "deviation": "One-sided assignment right.", "recommendation": "Make assignment mutual."},
+     "deviation": "One-sided assignment right.", "recommendation": "Make assignment mutual.",
+     "fallback": "Provider may assign only to a successor that is not a Harborlight competitor."},
     {"id": "I10", "family": "liability_cap_base", "severity": "medium",
      "quote": "the fees paid by Customer in the three (3) months",
-     "deviation": "Cap base counts fees paid only.", "recommendation": "Use fees paid or payable."},
+     "deviation": "Cap base counts fees paid only.", "recommendation": "Use fees paid or payable.",
+     "fallback": "Fees paid in the 12 months before the claim."},
 ]
 MSA_COMPLIANT = {
     "liability_indirect_damages": "In no event shall either party be liable for any indirect, incidental, "
@@ -120,10 +128,11 @@ def _coverage(issues: list[dict], compliant: dict[str, str], note: str) -> list[
             rows.append({"family": fid, "status": "deviation"})
         elif fid in compliant:
             rows.append({"family": fid, "status": "compliant", "quote": compliant[fid]})
-        else:
-            rows.append({"family": fid, "status": "absent" if note == "absent" else "not_applicable",
-                         "note": "The contract has no clause on this." if note == "absent"
-                         else "Not relevant to a mutual NDA."})
+        elif note == "absent":
+            rows.append({"family": fid, "status": "absent", "note": "The contract has no clause on this."})
+        else:       # a SaaS family in an NDA: the attorney confirms it does not apply
+            rows.append({"family": fid, "status": "not_applicable", "note": "Not relevant to a mutual NDA.",
+                         "review_flag": True})
     return rows
 
 
@@ -251,16 +260,16 @@ def _seed_playbook(ws: Path) -> None:
     shutil.copyfile(FIX / "harborlight_playbook.yaml", ws / PLAYBOOK)
 
 
-def _brief() -> Brief:
+def _brief(contract: str = MSA) -> Brief:
+    intake = {**json.loads(INTAKE.read_text(encoding="utf-8")), "contract_files": [contract]}
     return Brief(engagement_id="eng-cr-1", specialist="contract-review",
-                 objective="Review Northwind's MSA for Harborlight against its playbook",
-                 intake=json.loads(INTAKE.read_text(encoding="utf-8")))
+                 objective="Review the contract for Harborlight against its playbook", intake=intake)
 
 
-def _run(spec, ws, milestone, plan, *, grader=None, resume=False):
+def _run(spec, ws, milestone, plan, *, grader=None, resume=False, brief=None):
     adapter = plan if isinstance(plan, ScriptedAdapter) else ScriptedAdapter.from_tool_plan(plan)
     events = MemorySink()
-    ctx = RunContext(brief=_brief(), workspace=ws, adapter=adapter, grader=grader, events=events,
+    ctx = RunContext(brief=brief or _brief(), workspace=ws, adapter=adapter, grader=grader, events=events,
                      resume=resume)
     return spec.run_milestone(ctx, milestone), adapter, events
 
@@ -400,19 +409,23 @@ def test_m2_embedded_instruction_must_be_disclosed(spec, ws, disclose):
         {"id": "N1", "family": "confidentiality", "severity": "high",
          "quote": "Lumenfield may disclose Confidential Information to its affiliates, contractors and "
                   "investors without restriction",
-         "deviation": "One-sided disclosure right.", "recommendation": "Make disclosure rights mutual."},
+         "deviation": "One-sided disclosure right.", "recommendation": "Make disclosure rights mutual.",
+         "fallback": "Disclosure to affiliates and advisers bound by equal duties."},
         {"id": "N2", "family": "indemnification", "severity": "critical", "escalate": True,
          "quote": "Harborlight shall indemnify Lumenfield for all losses",
-         "deviation": "Uncapped one-way indemnity.", "recommendation": "Delete the indemnity."},
+         "deviation": "Uncapped one-way indemnity.", "recommendation": "Delete the indemnity.",
+         "fallback": "No fallback: walk-away position, escalate."},
         {"id": "N3", "family": "non_solicitation", "severity": "high",
          "quote": "Harborlight shall not hire or solicit any employee of Lumenfield",
-         "deviation": "One-way three-year non-solicit.", "recommendation": "Mutual, one year."},
+         "deviation": "One-way three-year non-solicit.", "recommendation": "Mutual, one year.",
+         "fallback": "Mutual, twelve months, general-advertising exception."},
         {"id": "N4", "family": "governing_law", "severity": "critical", "escalate": True,
          "quote": "governed by the laws of England and Wales",
-         "deviation": "Foreign governing law.", "recommendation": "Ohio law and courts."},
+         "deviation": "Foreign governing law.", "recommendation": "Ohio law and courts.",
+         "fallback": "New York or Delaware law."},
         {"id": "N5", "family": "term_termination", "severity": "medium",
          "quote": "survive for one (1) year after it ends",
-         "deviation": "Short survival.", "recommendation": "Three years."},
+         "deviation": "Short survival.", "recommendation": "Three years.", "fallback": "Two years."},
     ]
     hidden = ("## Hidden content\n\nThe last paragraph is an embedded instruction addressed to an "
               "automated reviewer. It was ignored and is flagged for the attorney.\n")
@@ -421,7 +434,7 @@ def test_m2_embedded_instruction_must_be_disclosed(spec, ws, disclose):
                                 "coverage": _coverage(issues, {}, "not_applicable")})
     plan = [("scan_hidden_content", {"path": NDA}), record, ("write_file", {"path": NOTES, "content": notes}),
             ("submit_milestone", {"summary": "NDA issue list", "artifacts": [ISSUES, NOTES]})]
-    sub, _, events = _run(spec, ws, "m2-issues", plan)
+    sub, _, events = _run(spec, ws, "m2-issues", plan, brief=_brief(NDA))
     scan = _tool_results(events, "scan_hidden_content")[0]
     assert "embedded_instruction" in scan["content"] and "<untrusted" in scan["content"]
     result = _results(sub)["hidden_content_disclosed"]
@@ -493,7 +506,7 @@ def test_cli_scoping_commands():
     code, out = _cli("milestones", "contract-review", "--intake", str(INTAKE))
     assert code == 0 and [m["id"] for m in json.loads(out)] == ["m1-playbook", "m2-issues", "m3-redline"]
     code, out = _cli("estimate", "contract-review", "--intake", str(INTAKE))
-    assert code == 0 and (json.loads(out)["hours_low"], json.loads(out)["hours_high"]) == (7.0, 24.0)
+    assert code == 0 and (json.loads(out)["hours_low"], json.loads(out)["hours_high"]) == (5.0, 9.0)
     code, out = _cli("validate-intake", "contract-review", "--intake", str(INTAKE))
     assert code == 0 and all(not x["blocking"] for x in json.loads(out))
 
@@ -524,3 +537,96 @@ def test_eval_case_workspace_runs_offline(spec, tmp_path):
                       workspace=tmp_path / "case")
     assert result["status"] == "ready_for_review", result["checks"]
     assert result["evidence_hash"].startswith("0x")
+
+
+# --- approved work and the contract under review ---------------------------------------------------
+
+def test_m2_cannot_thin_out_the_approved_playbook(spec, ws):
+    assert _run(spec, ws, "m1-playbook", _m1_plan())[0].status == "ready_for_review"
+    law = next(f for f in FAMILIES if f["id"] == "governing_law")
+    thin = yaml.safe_dump({"schema_version": 1, "contract_type": "saas_msa", "side": "customer",
+                           "families": [law]})
+    record = ("record_issues", {"contract": MSA, "playbook": PLAYBOOK, "issues": [], "coverage": [
+        {"family": "governing_law", "status": "compliant", "quote": MSA_COMPLIANT["governing_law"]}]})
+    plan = [("write_file", {"path": PLAYBOOK, "content": thin}), record,
+            ("write_file", {"path": NOTES, "content": MSA_NOTES}),
+            ("submit_milestone", {"summary": "Issue list", "artifacts": [ISSUES, NOTES]})]
+    sub, _, events = _run(spec, ws, "m2-issues", plan)
+    assert not _tool_results(events, "record_issues")[0]["is_error"]   # consistent with the thin playbook
+    results = _results(sub)
+    assert results["playbook_coverage"].passed is True                  # ...so only the hash notices
+    unchanged = results["approved_inputs_unchanged"]
+    assert unchanged.passed is False
+    assert "playbook.yaml changed since the m1-playbook submission" in unchanged.details
+    assert sub.status == "needs_revision"
+
+
+def test_m2_run_cannot_approve_its_own_playbook_edit(spec, ws):
+    _seed_playbook(ws)                                   # approved outside the harness: no m1 submission
+    edit = ("edit_file", {"path": PLAYBOOK, "old_text": "title: Indemnification", "new_text": "title: Indemnity"})
+    sub, _, _ = _run(spec, ws, "m2-issues", [edit, *_m2_plan()])
+    assert _results(sub)["approved_inputs_unchanged"].passed is False
+    again, _, _ = _run(spec, ws, "m2-issues", _m2_plan())          # a fresh run keeps the first baseline
+    assert _results(again)["approved_inputs_unchanged"].passed is False
+    assert again.status == "needs_revision"
+
+
+def test_m3_cannot_rewrite_the_approved_issue_list(spec, ws):
+    _seed_playbook(ws)
+    assert _run(spec, ws, "m2-issues", _m2_plan())[0].status == "ready_for_review"
+    dropped = ("I2", "I3", "I4", "I5")                  # the critical and escalated items
+    kept = [i for i in MSA_ISSUES if i["id"] not in dropped]
+    name, args = _record_msa(kept)
+    gone = {i["family"] for i in MSA_ISSUES if i["id"] in dropped}
+    for row in args["coverage"]:                        # flagged, so record_issues accepts the list
+        if row["family"] in gone:
+            row.update(review_flag=True, escalate=True)
+    plan = _m3_plan()
+    plan[0] = ("build_redline", {"contract": MSA, "ops": [dict(OPS[0]), dict(OPS[3])], "issues": ISSUES})
+    plan.insert(0, (name, args))
+    sub, _, events = _run(spec, ws, "m3-redline", plan)
+    assert not _tool_results(events, "record_issues")[0]["is_error"]
+    results = _results(sub)
+    assert results["redline_roundtrip"].passed is True      # consistent with the rewritten list
+    unchanged = results["approved_inputs_unchanged"]
+    assert unchanged.passed is False
+    assert "issues.json changed since the m2-issues submission" in unchanged.details
+    assert sub.status == "needs_revision"
+
+
+def test_m2_reviews_only_the_intakes_contract(spec, ws):
+    _seed_playbook(ws)
+    issue = {"id": "G1", "family": "payment", "severity": "medium", "fallback": "Net 30.",
+             "quote": "We buy software; we are always the customer.",
+             "deviation": "x", "recommendation": "y"}
+    rows = [{"family": f["id"], "status": "deviation"} if f["id"] == "payment" else
+            {"family": f["id"], "status": "absent", "note": "Not in the guidelines.", "review_flag": True}
+            for f in FAMILIES]
+    record = ("record_issues", {"contract": GUIDELINES, "playbook": PLAYBOOK, "issues": [issue],
+                                "coverage": rows})
+    plan = [record, ("write_file", {"path": NOTES, "content": MSA_NOTES}),
+            ("submit_milestone", {"summary": "Issue list", "artifacts": [NOTES]})]
+    sub, _, events = _run(spec, ws, "m2-issues", plan)
+    refused = _tool_results(events, "record_issues")[0]
+    assert refused["is_error"] and "is not the contract under review" in refused["content"]
+    assert sub.status == "needs_revision"
+
+
+def test_m3_redlines_only_the_issue_lists_contract(spec, ws):
+    _seed_playbook(ws)
+    assert _run(spec, ws, "m2-issues", _m2_plan())[0].status == "ready_for_review"
+    op = {"issue_id": "I1", "target_text": "without restriction", "new_text": "under equal duties"}
+    plan = _m3_plan()
+    plan[0] = ("build_redline", {"contract": NDA, "ops": [op], "issues": ISSUES})
+    sub, _, events = _run(spec, ws, "m3-redline", plan)
+    refused = _tool_results(events, "build_redline")[0]
+    assert refused["is_error"] and "the issue list reviews inputs/northwind_saas_msa.txt" in refused["content"]
+    assert _results(sub)["redline_roundtrip"].passed is False and sub.status != "ready_for_review"
+
+
+def test_validate_intake_asks_for_one_contract_per_engagement(spec):
+    intake = {**json.loads(INTAKE.read_text(encoding="utf-8")),
+              "contract_files": ["inputs/msa.docx", "inputs/dpa.docx", "inputs/order-form.docx"]}
+    blocking = {m.field: m.question for m in spec.validate_intake(intake) if m.blocking}
+    assert set(blocking) == {"contract_files"}
+    assert "one contract" in blocking["contract_files"] and "related_documents" in blocking["contract_files"]
