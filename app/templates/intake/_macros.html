@@ -28,7 +28,8 @@
 {% endmacro %}
 
 {% macro contract(brief="", agent="", agent_id="", milestones=None, total="", deadline="",
-                  deadline_is_date=False, auto_days=7, sow_hash=None, engagement_id=None) %}
+                  deadline_is_date=False, auto_days=7, sow_hash=None, engagement_id=None,
+                  source=None) %}
 <dl class="terms">
   <div class="term">
     <dt>Scope</dt>
@@ -81,6 +82,12 @@
     <dt>Changes and disputes</dt>
     <dd class="term-value">Request changes on any delivery. If you cannot agree, open a dispute; that milestone's funds stay held until it is resolved.</dd>
     <dd class="term-plain">Money for work you have not accepted does not leave escrow while a dispute is open.</dd>
+  </div>
+  <div class="term" data-term="source"{% if not source %} hidden{% endif %}>
+    <dt>Drafted from</dt>
+    <dd class="term-value"><span data-bind="c-source">{{ source.filename if source else "" }}</span>
+      <span class="mono hash-meta" data-bind="c-source-hash">{{ ("sha256 " ~ source.sha256) if source else "" }}</span></dd>
+    <dd class="term-plain">The file this scope was drafted from. Its fingerprint is part of the statement of work, so the approval covers it.</dd>
   </div>
   <div class="term">
     <dt>Statement of work</dt>

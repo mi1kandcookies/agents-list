@@ -1,0 +1,85 @@
+/*
+ * Statement-of-work upload (components/sow_drop.html, js/sow-upload.js).
+ * Used on /new, the home search box and /jobs/new. Tokens from main.css.
+ */
+.sow-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.sow-drop {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 4px 14px; align-items: center;
+  margin-top: 12px; padding: 14px 16px;
+  background: var(--bg); border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  transition: border-color .15s, background .15s;
+}
+.sow-drop.is-over { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+.sow-drop-icon {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--ink-2);
+}
+.sow-drop.is-over .sow-drop-icon, .sow-drop[data-state="done"] .sow-drop-icon { color: var(--accent); border-color: var(--accent-line); }
+.sow-drop-text { min-width: 0; }
+.sow-drop-text p { margin: 0; }   /* the .sow-drop prefixes below outrank flow.css ".flow p" */
+.sow-drop .sow-drop-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+.sow-drop .sow-drop-hint { font-size: 13px; line-height: 1.45; color: var(--ink-3); }
+.sow-drop .sow-drop-status { font-size: 13px; color: var(--ink-2); }
+.sow-drop .sow-drop-status:empty { display: none; }
+.sow-drop[data-state="busy"] .sow-drop-hint { display: none; }
+
+.sow-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1; color: var(--ink);
+  padding: 10px 14px; border-radius: 8px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  transition: border-color .15s, background .15s;
+}
+.sow-btn:hover:not(:disabled) { border-color: var(--ink-3); }
+.sow-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sow-btn:disabled { opacity: .55; cursor: progress; }
+
+.sow-drop-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: transparent;
+}
+.sow-drop-bar span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .2s ease; }
+.sow-drop:not([data-state="busy"]) .sow-drop-bar span { width: 0 !important; }
+.sow-drop[data-state="busy"] .sow-drop-bar { background: var(--accent-soft); }
+
+.sow-drop .sow-drop-error {
+  grid-column: 2 / -1; margin: 6px 0 0; font-size: 13px; color: var(--danger);
+}
+.sow-drop .sow-drop-error[hidden] { display: none; }
+
+/* Result note under the zone: "Filled from <file> — review each step". */
+.sow-note {
+  margin-top: 10px; padding: 10px 14px; font-size: 14px; color: var(--ink-2);
+  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+.sow-note[hidden] { display: none; }
+.sow-note p { margin: 0; }
+.sow-note strong { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.sow-note ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-3); }
+.sow-note li + li { margin-top: 2px; }
+
+/* Home search box: the whole box accepts a dropped file. */
+.sow-home.is-over .search { border-color: var(--accent); box-shadow: var(--focus-ring); background: var(--accent-soft); }
+.sow-link {
+  font: inherit; font-size: var(--fs-sm); color: var(--link); background: none; border: 0; padding: 0;
+  cursor: pointer;
+}
+.sow-link:hover { text-decoration: underline; }
+.sow-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.sow-link:disabled { color: var(--ink-3); cursor: progress; text-decoration: none; }
+.sow-home .sow-home-status { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.sow-home-status:empty { display: none; }
+.sow-home .sow-home-error { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--danger); }
+.sow-home-error[hidden] { display: none; }
+
+@media (max-width: 560px) {
+  .sow-drop { grid-template-columns: 32px minmax(0, 1fr); padding: 12px; }
+  .sow-drop-icon { width: 32px; height: 32px; }
+  .sow-btn { grid-column: 1 / -1; justify-content: center; width: 100%; margin-top: 8px; }
+  .sow-drop .sow-drop-error { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sow-drop, .sow-drop-bar span, .sow-btn { transition: none; }
+}

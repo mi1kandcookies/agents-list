@@ -1,0 +1,22 @@
+{# Statement-of-work upload zone; wired by static/js/sow-upload.js. #}
+{% macro sow_input(id) -%}
+<input type="file" id="{{ id }}" class="sow-file" data-sow-input tabindex="-1" aria-hidden="true" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown">
+{%- endmacro %}
+
+{% macro sow_drop(id="sow", hint="Drop a PDF, Word, text or Markdown file here (up to 5 MB). We fill in the steps from it; you review each one.") %}
+<div class="sow-drop" id="{{ id }}" data-sow-drop data-state="idle" data-hint="{{ hint }}">
+  {{ sow_input(id ~ "-input") }}
+  <span class="sow-drop-icon" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 17v-6"/><path d="m9.5 13.5 2.5-2.5 2.5 2.5"/></svg>
+  </span>
+  <div class="sow-drop-text">
+    <p class="sow-drop-title" data-sow-title>Have a statement of work?</p>
+    <p class="sow-drop-hint" data-sow-hint>{{ hint }}</p>
+    <p class="sow-drop-status" data-sow-status aria-live="polite"></p>
+  </div>
+  <button type="button" class="sow-btn" data-sow-pick aria-describedby="{{ id }}-hint-sr">Upload SOW</button>
+  <span class="sr-only" id="{{ id }}-hint-sr">PDF, Word, text or Markdown, up to 5 MB</span>
+  <span class="sow-drop-bar" aria-hidden="true"><span data-sow-bar></span></span>
+  <p class="sow-drop-error" data-sow-error role="alert" hidden></p>
+</div>
+{% endmacro %}
