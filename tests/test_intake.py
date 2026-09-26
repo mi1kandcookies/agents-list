@@ -103,17 +103,25 @@ def test_category_defaults_are_consistent():
 
 
 def test_estimate_is_deterministic_and_tightens_with_detail():
-    vague = estimate(outcome="short", milestones=[{"amount_cents": 50_000, "criteria": 0}],
+    # Cost is now token based (see tests/test_token_model.py); the buffer only
+    # widens the duration range.
+    vague = estimate(outcome="short", milestones=[{"amount_cents": 50_000, "criteria": []}],
                      category="research")
     assert vague["confidence"] == "low"
-    assert vague["cost_low_cents"] == 50_000
-    assert vague["cost_high_cents"] == 65_000
+    assert vague["total_cents"] == 50_000
+    assert vague["cost_low_micro"] is None and vague["cost_high_micro"] is None  # no prices
     assert (vague["days_low"], vague["days_high"]) == (3, 5)
 
     detailed = estimate(outcome="x" * 100,
-                        milestones=[{"amount_cents": 50_000, "criteria": 2}] * 2,
-                        category="research", deadline=date(2026, 1, 8), today=date(2026, 1, 1))
+                        milestones=[{"title": "M", "amount_cents": 50_000, "criteria": ["a", "b"]}] * 2,
+                        category="research", deadline=date(2026, 1, 8), today=date(2026, 1, 1),
+                        input_price_per_1m=3_000_000, output_price_per_1m=15_000_000)
     assert detailed["confidence"] == "good" and detailed["tips"] == []
-    assert detailed["cost_high_cents"] == 110_000
     assert (detailed["days_low"], detailed["days_high"]) == (6, 8)
     assert detailed["deadline_fit"] == "tight"
+    assert 0 < detailed["cost_low_micro"] < detailed["cost_high_micro"]
+    assert detailed["over_budget"] is False
+    assert detailed == estimate(outcome="x" * 100,
+                                milestones=[{"title": "M", "amount_cents": 50_000, "criteria": ["a", "b"]}] * 2,
+                                category="research", deadline=date(2026, 1, 8), today=date(2026, 1, 1),
+                                input_price_per_1m=3_000_000, output_price_per_1m=15_000_000)
