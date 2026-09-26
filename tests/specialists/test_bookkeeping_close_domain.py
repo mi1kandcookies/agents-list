@@ -415,3 +415,14 @@ def test_prompts_and_rubrics_referenced_by_the_manifest_exist():
         assert rubric["name"] and 0 < rubric["threshold"] <= 1
         assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9
         assert all(c["id"] and c["description"] for c in rubric["criteria"])
+
+
+def test_eval_cases_are_well_formed():
+    ids = {ms["id"] for ms in _manifest()["milestones"]}
+    cases = sorted((PACK / "evals" / "cases").glob("*.json"))
+    assert len(cases) >= 3
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert {"name", "brief", "milestone", "notes"} <= set(case) and case["milestone"] in ids
+        assert case["brief"]["specialist"] == "bookkeeping-close"
+        assert (PACK / "evals" / "fixtures" / case["fixture"] / "inputs").is_dir()
