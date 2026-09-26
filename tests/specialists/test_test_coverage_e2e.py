@@ -53,8 +53,8 @@ def _covered(xml: str, filename: str) -> str:
 BASELINE_MD = """# Baseline: brambleway pricing
 
 ## Summary
-The suite passes and is stable over five runs. Line coverage is 52.38% and
-branch coverage 30% over 21 measured lines. fares.py carries the most risk.
+The suite passes and is stable over five runs. Line coverage is 50% and
+branch coverage 33.33% over 24 measured lines. fares.py carries the most risk.
 
 ## Reproduce
 From repo/: `python -m pytest -q` (Python 3.12, pytest). No services.
@@ -62,18 +62,18 @@ From repo/: `python -m pytest -q` (Python 3.12, pytest). No services.
 ## Coverage by module
 | file | line % | branch % |
 |---|---|---|
-| brambleway/fares.py | 30.77 | 0.0 |
-| brambleway/zones.py | 87.5 | 50.0 |
+| brambleway/fares.py | 25.0 | 0.0 |
+| brambleway/zones.py | 100.0 | 100.0 |
 
 ## Flaky tests
-None in five runs; the weekly red builds are not reproduced here.
+None in five runs, all in file order: an order dependence would not show here.
 
 ## Risk-ranked targets
 1. brambleway/fares.py - most commits, least covered.
 2. brambleway/zones.py
 
 ## Proposed thresholds
-fares.py to 55% line coverage in M3, zones.py to 90%; mutation floor 60%.
+fares.py to 45% line coverage in M3, zones.py stays at 100%; mutation floor 60%.
 
 ## Environment needs
 Python 3.12 and pytest only.
@@ -184,10 +184,10 @@ SUSPICIOUS_MD = """# Suspicious behaviors
 UPLIFT_MD = """# Coverage uplift: brambleway/fares.py
 
 ## Summary
-Line coverage rose from 52.38% to 95.24% with boundary tests for fares.py.
+Line coverage rose from 50% to 100% with boundary tests for fares.py.
 
 ## Coverage delta
-+42.86pp line coverage over the whole package (coverage-before.xml -> coverage-after.xml).
++50pp line coverage over the whole package (coverage-before.xml -> coverage-after.xml).
 
 ## Mutation score
 100% of scorable mutants detected; both earlier survivors are now killed.
@@ -206,7 +206,7 @@ and the 10- and 50-parcel discount tiers.
 None beyond the M2 suspicious-behavior log.
 
 ## Remaining gaps
-zones.py line 8 (the cached branch) is still unexecuted.
+No unexecuted lines remain; the express rounding at half-cent values is untested.
 """
 
 
@@ -407,9 +407,9 @@ def test_m1_baseline_ready_for_review(spec, tmp_path):
     assert commands[0][:2] == ["git", "log"]
     assert [c[:3] for c in commands[1:]] == [[sys.executable, "-m", "pytest"]] * 5
     census = json.loads((ws / M1 / "flake-census.json").read_text(encoding="utf-8"))
-    assert (census["runs"], census["tests"], census["flaky"], census["all_green"]) == (5, 2, [], True)
+    assert (census["runs"], census["tests"], census["flaky"], census["all_green"]) == (5, 3, [], True)
     targets = (ws / M1 / "targets.csv").read_text(encoding="utf-8").splitlines()
-    assert targets[1].startswith("1,brambleway/fares.py,13,30.77,0.0,3,")
+    assert targets[1].startswith("1,brambleway/fares.py,16,25.0,0.0,3,")
     assert "brambleway/fares.py,3" in (ws / M1 / "churn.csv").read_text(encoding="utf-8")
     assert not events.of_type("patch_base")  # M1 delivers no patch
     assert events.of_type("repo_snapshot")[0].data["ok"] is True   # but repo/ is snapshotted
@@ -477,7 +477,7 @@ def test_m2_characterization_ready_for_review(spec, tmp_path):
     assert sum("pytest" in argv for argv in runner.spawned) == 1   # the new tests really ran
 
     matrix = json.loads((ws / M2 / "runs" / "matrix.json").read_text(encoding="utf-8"))
-    assert (matrix["runs"], matrix["tests"], matrix["all_green"]) == (10, 9, True)
+    assert (matrix["runs"], matrix["tests"], matrix["all_green"]) == (10, 10, True)
     # the harness snapshotted repo/ at the start and rebuilt the patch from its own store
     base = events.of_type("patch_base")[0].data
     assert base["base"] == events.of_type("repo_snapshot")[0].data["tree"]
@@ -600,7 +600,7 @@ def m3_plan() -> list:
         ("export_patch", {"out": f"{M3}/repo.patch"}),
         ("find_assertion_free_tests", {"patch": f"{M3}/repo.patch"}),
         ("write_file", {"path": f"{M3}/uplift-report.md", "content": UPLIFT_MD}),
-        ("submit_milestone", {"summary": "fares.py line coverage +42.86pp", "artifacts": M3_ARTIFACTS}),
+        ("submit_milestone", {"summary": "fares.py line coverage +50pp", "artifacts": M3_ARTIFACTS}),
     ]
 
 
@@ -612,9 +612,9 @@ def test_m3_coverage_uplift_ready_for_review(spec, tmp_path):
     assert_ready(spec, ws, "m3-coverage-uplift", sub, events)
     assert sum("pytest" in argv for argv in runner.spawned) == 1
     matrix = json.loads((ws / M3 / "runs" / "matrix.json").read_text(encoding="utf-8"))
-    assert (matrix["runs"], matrix["tests"], matrix["all_green"]) == (10, 10, True)
+    assert (matrix["runs"], matrix["tests"], matrix["all_green"]) == (10, 11, True)
     delta = next(r for r in sub.check_results if r.check == "coverage_delta_min")
-    assert "52.38% -> 95.24%" in delta.details and delta.score == pytest.approx(0.9524)
+    assert "50.0% -> 100.0%" in delta.details and delta.score == 1.0
     assert next(r for r in sub.check_results if r.check == "mutation_score_min").score == 1.0
     patch = (ws / M3 / "repo.patch").read_text(encoding="utf-8")
     assert T.scope_report(T.parse_patch(patch))["files"] == [
@@ -641,7 +641,7 @@ def test_m3_after_m2_patches_only_its_own_tests(spec, tmp_path):
     assert patch_files(ws, f"{M2}/repo.patch") == ["tests/test_fares.py"]
     assert patch_files(ws, f"{M3}/repo.patch") == ["tests/test_fares_unit.py"]
     matrix = json.loads((ws / M3 / "runs" / "matrix.json").read_text(encoding="utf-8"))
-    assert (matrix["tests"], matrix["all_green"]) == (17, True)   # M2's tests still run in M3
+    assert (matrix["tests"], matrix["all_green"]) == (18, True)   # M2's tests still run in M3
 
 
 # --- the runs behind tests_stable are the harness's ---------------------------------------
@@ -685,7 +685,7 @@ def test_m2_runs_that_skip_the_new_tests_fail(spec, tmp_path):
                       ReplayRunner())
     assert not tool_errors(events)
     replay = events.of_type("matrix_replayed")[0].data
-    assert (replay["ok"], replay["runs"], replay["tests"]) == (True, 10, 2)
+    assert (replay["ok"], replay["runs"], replay["tests"]) == (True, 10, 3)
     record = json.loads((ws / M2 / "runs" / "matrix.json").read_text(encoding="utf-8"))
     assert record["replayed_by"] == "harness" and len(record["log"]) == 10
     assert "test_fares" not in (ws / M2 / "runs" / "run-01.xml").read_text(encoding="utf-8")
@@ -720,7 +720,7 @@ def test_m2_must_keep_running_the_suite_m1_measured(spec, tmp_path):
     m1 = m1_plan([("run_test_matrix", {"argv": PYTEST, "runs": 5, "runs_dir": f"{M1}/runs"})])
     sub1, events1 = run(spec, ws, "baseline-brambleway", "m1-baseline", m1, runner)
     assert_ready(spec, ws, "m1-baseline", sub1, events1)
-    assert events1.of_type("suite_recorded")[0].data == {"milestone": "m1-baseline", "runs": 5, "tests": 2}
+    assert events1.of_type("suite_recorded")[0].data == {"milestone": "m1-baseline", "runs": 5, "tests": 3}
     plan = [step if not (isinstance(step, tuple) and step[0] == "run_test_matrix") else
             ("run_test_matrix", {"argv": [*PYTEST, "tests/test_fares.py"], "runs": 10, "runs_dir": f"{M2}/runs"})
             for step in m2_plan()]

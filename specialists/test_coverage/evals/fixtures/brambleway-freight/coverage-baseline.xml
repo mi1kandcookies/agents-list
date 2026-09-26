@@ -1,13 +1,13 @@
 <?xml version="1.0" ?>
-<coverage version="7.6.1" timestamp="1790000000000" lines-valid="21" lines-covered="11" line-rate="0.5238" branches-covered="3" branches-valid="10" branch-rate="0.3" complexity="0">
+<coverage version="7.6.1" timestamp="1790000000000" lines-valid="24" lines-covered="12" line-rate="0.5" branches-covered="4" branches-valid="12" branch-rate="0.3333" complexity="0">
 	<sources><source>/work/repo</source></sources>
 	<packages>
-		<package name="brambleway" line-rate="0.5238" branch-rate="0.3" complexity="0">
+		<package name="brambleway" line-rate="0.5" branch-rate="0.3333" complexity="0">
 			<classes>
 				<class name="__init__.py" filename="brambleway/__init__.py" complexity="0" line-rate="1" branch-rate="1">
 					<methods/><lines/>
 				</class>
-				<class name="fares.py" filename="brambleway/fares.py" complexity="0" line-rate="0.3077" branch-rate="0">
+				<class name="fares.py" filename="brambleway/fares.py" complexity="0" line-rate="0.25" branch-rate="0">
 					<methods/>
 					<lines>
 						<line number="2" hits="1"/>
@@ -23,16 +23,19 @@
 						<line number="17" hits="1"/>
 						<line number="18" hits="0" branch="true" condition-coverage="0% (0/2)" missing-branches="19,20"/>
 						<line number="19" hits="0"/>
+						<line number="20" hits="0" branch="true" condition-coverage="0% (0/2)" missing-branches="21,22"/>
+						<line number="21" hits="0"/>
+						<line number="22" hits="0"/>
 					</lines>
 				</class>
-				<class name="zones.py" filename="brambleway/zones.py" complexity="0" line-rate="0.875" branch-rate="0.5">
+				<class name="zones.py" filename="brambleway/zones.py" complexity="0" line-rate="1" branch-rate="1">
 					<methods/>
 					<lines>
 						<line number="2" hits="1"/>
 						<line number="5" hits="1"/>
-						<line number="6" hits="2"/>
-						<line number="7" hits="2" branch="true" condition-coverage="50% (1/2)" missing-branches="8"/>
-						<line number="8" hits="0"/>
+						<line number="6" hits="3"/>
+						<line number="7" hits="3" branch="true" condition-coverage="100% (2/2)"/>
+						<line number="8" hits="1"/>
 						<line number="9" hits="2" branch="true" condition-coverage="100% (2/2)"/>
 						<line number="10" hits="2"/>
 						<line number="11" hits="2"/>

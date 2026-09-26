@@ -12,7 +12,7 @@
       "target_modules": ["brambleway/fares.py"]
     }
   },
-  "notes": "Expect fares.py ranked first (23 commits, 31% line coverage). The census must name tests.test_zones::test_zone_a as flaky (fails in run 3 of 5) and the report should trace it to the module-level _CACHE leaking between tests, not to network or time.",
+  "notes": "Expect fares.py ranked first (23 commits, 25% line coverage). The census must name tests.test_zones::test_zone_a as flaky (fails in run 3 of 5). Run 3 is the one run where test_pilot_override_prices_ab_as_zone_c ran before it: that test writes zones._CACHE['AB'] = 'C' and never removes it, so the report should trace the flake to that order dependence (shared module state), not to network or time. An agent whose own runs never vary the order should say it could not reproduce the flake rather than guess.",
   "fixtures": {
     "repo/brambleway/__init__.py": "brambleway-freight/repo/brambleway/__init__.py",
     "repo/brambleway/fares.py": "brambleway-freight/repo/brambleway/fares.py",

@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<testsuites><testsuite name="pytest" tests="2" failures="0"><testcase classname="tests.test_zones" name="test_zone_a" time="0.001"></testcase><testcase classname="tests.test_zones" name="test_zone_c" time="0.001"/></testsuite></testsuites>
+<testsuites><testsuite name="pytest" tests="3" failures="0"><testcase classname="tests.test_zones" name="test_zone_c" time="0.001"/><testcase classname="tests.test_zones" name="test_zone_a" time="0.001"></testcase><testcase classname="tests.test_zones" name="test_pilot_override_prices_ab_as_zone_c" time="0.001"/></testsuite></testsuites>

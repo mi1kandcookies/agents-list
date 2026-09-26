@@ -700,12 +700,16 @@ FIXTURE = PACK / "evals" / "fixtures" / "brambleway-freight"
 
 def test_fixture_baseline_reports_are_consistent():
     cov = T.summarize_coverage((FIXTURE / "coverage-baseline.xml").read_text(encoding="utf-8"))
-    assert cov["totals"]["lines_total"] == 21 and cov["totals"]["lines_covered"] == 11
+    assert cov["totals"]["lines_total"] == 24 and cov["totals"]["lines_covered"] == 12
     ranked = T.rank_targets(FIXTURE, coverage="coverage-baseline.xml", churn="churn.csv")["targets"]
     assert ranked[0]["path"] == "brambleway/fares.py"
     census = T.census_from_runs([T.parse_junit_text(p.read_text(encoding="utf-8"))
                                  for p in sorted((FIXTURE / "runs").glob("run-*.xml"))])
     assert census["runs"] == 5 and census["flaky"] == ["tests.test_zones::test_zone_a"]
+    assert census["distinct_orders"] == 4        # the flake is real: run 3 ran the polluting test first
+    # every statement of fares.py is in the report, down to its last line (22)
+    assert cov["files"]["brambleway/fares.py"]["missing_lines"][-3:] == [20, 21, 22]
+    assert len((FIXTURE / "repo/brambleway/fares.py").read_text(encoding="utf-8").splitlines()) == 22
     assert C.mutation_score_min(FIXTURE, {"report": "mutation.json", "min_score_pct": 60})["passed"]
 
 
