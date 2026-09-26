@@ -9,7 +9,7 @@ Project context lives in `README.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.m
 ## 1. Golden rules
 
 1. **Never commit directly to `main`.** All changes land through a pull request. `main` is protected.
-2. **One task → one branch → one PR.** Keep PRs small and focused (aim < 400 changed lines, excluding generated files/lockfiles).
+2. **One task → one branch → one worktree → one PR.** Every task gets its own branch and worktree before any work starts — including research, planning and docs-only tasks, even when the output ends up outside the repo. Never work in the main checkout. Keep PRs small and focused (aim < 400 changed lines, excluding generated files/lockfiles).
 3. **Tests must pass locally before you push** (`pytest`). CI re-runs them; red PRs don't get reviewed.
 4. **Never commit secrets.** No private keys, wallet mnemonics, RPC keys, API keys or `.env` files. Use `.env.example` for new variables (with a placeholder value and a comment).
 5. **Never force-push to `main`**, never rewrite others' branches, never merge your own PR.
@@ -44,7 +44,7 @@ Delete the branch after merge (GitHub does this automatically).
 
 ---
 
-## 3. Worktrees (required for parallel / agent work)
+## 3. Worktrees (required for every task)
 
 Use `git worktree` so several people or agents can work on different branches from one clone without stomping on each other. Worktrees live in `.worktrees/` (git-ignored).
 
@@ -58,6 +58,7 @@ cd ../.. && git worktree remove .worktrees/12-scoping-agent   # after merge
 ```
 
 Rules:
+- **Every task starts here**, not in the main checkout (which stays on a clean `main`). This covers research and docs tasks too: if a task produces nothing to commit, the empty branch still marks who is working on what; delete it when done.
 - **One agent per worktree.** Never point two agents at the same worktree.
 - Each worktree gets its own `.venv` and its own dev-server port (`PORT=8091`, `8092`, …) and its own SQLite DB (the default `instance/` path is per-worktree).
 - Don't edit files in another worktree. If you need someone else's change, wait for it to merge and rebase.
