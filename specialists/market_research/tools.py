@@ -8,10 +8,13 @@ the reading and judgement; these functions do the bookkeeping it must not get
 wrong: question-tree validation, source tiering, claim-to-question mapping,
 the evidence export, the competitor matrix and the sizing arithmetic.
 
-Ledger layout (written by the kit's record_source / record_claim):
-    .agentkit/ledger.json        {"sources": [{id, uri, title, retrieved_at, sha256?}],
-                                  "claims":  [{id, text, source, quote, location}]}
+The claim ledger is the kit's (agentkit.ledger, written by http_fetch,
+record_source and record_claim):
+    .agentkit/ledger.json        {"sources": [{id, uri, title, retrieved_at, kind, sha256}],
+                                  "claims":  [{id, text, source, quote, location}], "authored": [...]}
     .agentkit/sources/<id>.txt   text snapshot of each source
+Claims are re-verified with the kit's own rules (verify_claims), so a claim
+these tools accept is exactly one the ledger_verified check accepts.
 """
 from __future__ import annotations
 
@@ -20,11 +23,13 @@ import hashlib
 import io
 import json
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from agentkit.errors import ToolError
+from agentkit.ledger import Ledger
 
 LEDGER_PATH = ".agentkit/ledger.json"
 SNAPSHOT_DIR = ".agentkit/sources"
@@ -75,49 +80,27 @@ def load_json(workspace: Path, rel: str, default: Any = None) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_ledger(workspace: Path) -> dict[str, Any]:
-    data = load_json(workspace, LEDGER_PATH, {}) or {}
-    return {"sources": list(data.get("sources", [])), "claims": list(data.get("claims", []))}
-
-
-def snapshot_text(workspace: Path, source_id: str) -> str | None:
-    path = Path(workspace) / SNAPSHOT_DIR / f"{source_id}.txt"
-    return path.read_text(encoding="utf-8") if path.is_file() else None
-
-
 def snapshot_sha256(workspace: Path, source_id: str) -> str:
     path = Path(workspace) / SNAPSHOT_DIR / f"{source_id}.txt"
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
 
 
-def verify_claims(workspace: Path, ledger: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+def verify_claims(workspace: Path) -> dict[str, dict[str, Any]]:
     """Recompute each claim's status from the ledger and snapshots on disk.
 
-    Returns {claim_id: {"verified": bool, "reason": str, "source": dict|None}}.
-    A claim verifies only when its source exists, the snapshot is present and
-    intact (sha256 matches when the ledger recorded one) and the quote appears
-    verbatim, whitespace-normalised, in the snapshot.
+    Returns {claim_id: {"verified": bool, "reason": str, "source": dict|None}}
+    in ledger order. The rules are the kit ledger's: the source exists, its
+    snapshot is present, unchanged since it was recorded (sha256) and not a
+    file written during the engagement, and the quote appears verbatim in it
+    after whitespace and Unicode normalization.
     """
-    ledger = ledger or load_ledger(workspace)
-    sources = {s.get("id"): s for s in ledger["sources"]}
+    ledger = Ledger(workspace)
     out: dict[str, dict[str, Any]] = {}
-    for claim in ledger["claims"]:
-        cid = claim.get("id", "")
-        src = sources.get(claim.get("source"))
-        reason = ""
-        if src is None:
-            reason = "unknown source"
-        else:
-            text = snapshot_text(workspace, src["id"])
-            if text is None:
-                reason = "snapshot missing"
-            elif src.get("sha256") and src["sha256"] != snapshot_sha256(workspace, src["id"]):
-                reason = "snapshot hash mismatch"
-            elif not normalize_ws(claim.get("quote", "")):
-                reason = "empty quote"
-            elif normalize_ws(claim["quote"]) not in normalize_ws(text):
-                reason = "quote not found in snapshot"
-        out[cid] = {"verified": not reason, "reason": reason, "source": src}
+    for claim in ledger.claims:
+        src = ledger.source(claim.source)
+        reason = ledger.snapshot_problem(claim.source) or ledger.quote_problem(claim.source, claim.quote)
+        out[claim.id] = {"verified": not reason, "reason": reason or "",
+                         "source": asdict(src) if src else None}
     return out
 
 
@@ -179,11 +162,13 @@ def classify(uri: str, declared_type: str | None = None) -> dict[str, Any]:
     The host decides where it can: government and filing hosts are tier 1,
     community hosts tier 3 whatever is declared. A declared government or
     filing type on a non-government host is ignored, so a tier cannot be
-    raised by assertion alone. Client files (inputs/...) are tier 1.
+    raised by assertion alone. Client files are tier 1: inputs/... or the
+    workspace:inputs/... uri the kit's record_source gives them.
     """
     parsed = urlparse(uri or "")
     host = (parsed.hostname or "").lower()
-    if not host and (uri or "").replace("\\", "/").lstrip("./").startswith("inputs/"):
+    local = (uri or "").removeprefix("workspace:").replace("\\", "/").lstrip("./")
+    if not host and local.startswith("inputs/"):
         return {"tier": 1, "source_type": "client", "host": "", "primary": True}
     if host.startswith("www."):
         host = host[4:]
@@ -282,19 +267,18 @@ def map_claims(workspace: Path, *, mapping: dict[str, list[str]] | None = None,
 
 def expected_evidence_rows(workspace: Path) -> list[dict[str, str]]:
     """The claims.csv rows the ledger and snapshots imply (shared with the check)."""
-    ledger = load_ledger(workspace)
-    status = verify_claims(workspace, ledger)
+    status = verify_claims(workspace)
     claim_map = (load_json(workspace, CLAIM_MAP_PATH, {}) or {}).get("claims", {})
     rows = []
-    for claim in ledger["claims"]:
-        cid = claim.get("id", "")
+    for claim in Ledger(workspace).claims:
+        cid = claim.id
         src = status[cid]["source"] or {}
         cls = source_classification(workspace, src) if src else {"tier": "", "source_type": ""}
         rows.append({
             "claim_id": cid,
             "question_ids": ";".join(claim_map.get(cid, [])),
-            "text": claim.get("text", ""),
-            "quote": claim.get("quote", ""),
+            "text": claim.text,
+            "quote": claim.quote,
             "source_id": src.get("id", ""),
             "uri": src.get("uri", ""),
             "retrieved_at": src.get("retrieved_at", ""),

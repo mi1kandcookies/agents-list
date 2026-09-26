@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from agentkit.errors import ToolError
+from agentkit.ledger import Ledger
 from specialists.market_research import tools
 
 PKG = Path(__file__).resolve().parents[2] / "specialists" / "market_research"
@@ -86,6 +87,8 @@ def test_write_question_tree_rejects_duplicates_and_bad_cutoff(ws):
     ("https://data.statistics-bureau.example.gov/x", None, 1, "government"),
     ("https://www.sec.gov/cgi-bin/browse-edgar", None, 1, "filing"),
     ("inputs/win-loss.md", None, 1, "client"),
+    ("workspace:inputs/win-loss.md", None, 1, "client"),               # the kit's record_source uri
+    ("workspace:deliverables/notes.md", "company", 1, "company"),       # declared, not client
     ("https://brightwrench.example.com/pricing", "company", 1, "company"),
     ("https://fieldops-weekly.example.net/a", "trade_press", 2, "trade_press"),
     ("https://www.reddit.com/r/hvac", "company", 3, "community"),       # host wins over the hint
@@ -111,8 +114,9 @@ def test_verify_claims_detects_forged_quote_and_missing_snapshot(ws):
     (ws / tools.SNAPSHOT_DIR / "S3.txt").unlink()
     (ws / tools.LEDGER_PATH).write_text(json.dumps(ledger), encoding="utf-8")
     status = tools.verify_claims(ws)
-    assert status["C1"] == {**status["C1"], "verified": False, "reason": "quote not found in snapshot"}
-    assert status["C4"]["reason"] == "snapshot missing"
+    assert status["C1"] == {**status["C1"], "verified": False,
+                            "reason": "quote not found verbatim in source S1"}
+    assert status["C4"] == {**status["C4"], "verified": False, "reason": "snapshot of S3 is missing"}
     assert status["C2"]["verified"] is True
 
 
@@ -123,7 +127,24 @@ def test_verify_claims_detects_tampered_snapshot(ws):
     assert tools.verify_claims(ws)["C3"]["verified"] is True
     snap = ws / tools.SNAPSHOT_DIR / "S2.txt"
     snap.write_text(snap.read_text(encoding="utf-8") + "edited\n", encoding="utf-8")
-    assert tools.verify_claims(ws)["C3"]["reason"] == "snapshot hash mismatch"
+    assert tools.verify_claims(ws)["C3"] == {**tools.verify_claims(ws)["C3"], "verified": False,
+                                             "reason": "snapshot of S2 changed after it was recorded"}
+
+
+def test_verify_claims_follows_the_kit_ledger(tmp_path):
+    ledger = Ledger(tmp_path)
+    web = ledger.add_source("https://x.example.com/a", "A", "The vendor\u2019s  Pro plan costs $59 a month.",
+                            kind="web")
+    ledger.add_claim("Pro costs $59", web.id, "The vendor's Pro plan costs $59")   # normalized match
+    notes = ledger.add_source("workspace:repo/NOTES.md", "notes", "Churn was 4% in 2025 per the team.",
+                              kind="customer")
+    ledger.add_claim("Churn was 4%", notes.id, "Churn was 4% in 2025")
+    ledger.note_authored("repo/notes.md")        # the agent wrote that file: never a source
+    status = tools.verify_claims(tmp_path)
+    assert status["C1"]["verified"] is True and status["C1"]["source"]["kind"] == "web"
+    assert status["C2"]["verified"] is False and "written during the engagement" in status["C2"]["reason"]
+    kit_rejects = {p.split(":")[0] for p in Ledger(tmp_path).verify()}
+    assert {c for c, s in status.items() if not s["verified"]} == kit_rejects == {"C2"}
 
 
 def test_map_claims_merges_and_validates(ws):
@@ -433,6 +454,21 @@ def test_check_defs_signature(ws):
     for fn in checks.CHECK_DEFS.values():
         res = fn(empty, {}, run=None)
         assert set(res) == {"passed", "details", "score"} and res["passed"] is False
+
+
+def test_checks_keep_param_paths_inside_the_workspace(ws):
+    _save_tree(ws)
+    outside = ws.parent / "outside.json"
+    outside.write_text(json.dumps(_tree()), encoding="utf-8")   # a valid tree outside the workspace
+    for rel in ("../outside.json", str(outside)):
+        for fn, params in [(checks.question_tree_valid, {"path": rel}),
+                           (checks.evidence_export_matches_ledger, {"path": rel}),
+                           (checks.question_coverage, {"questions": rel}),
+                           (checks.matrix_cells_cited, {"path": rel}),
+                           (checks.sizing_model_consistent, {"path": rel}),
+                           (checks.report_answers_questions, {"path": rel})]:
+            res = fn(ws, params)
+            assert res["passed"] is False and "outside the workspace" in res["details"], (fn, rel)
 
 
 # --- manifest --------------------------------------------------------------------
