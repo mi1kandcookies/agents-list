@@ -41,8 +41,32 @@
     "uniform sampler2D uImg; uniform sampler2D uMask;\n" +
     "uniform vec2 uScale; uniform vec2 uOffset;   // canvas uv -> image uv (object-fit: cover)\n" +
     "uniform vec2 uCss;                           // element size in CSS px\n" +
-    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic; uniform float uSparkle;\n" +
+    "uniform float uT; uniform float uWater; uniform float uSpray; uniform float uGlint; uniform float uCaustic; uniform float uSparkle; uniform float uMist; uniform float uSwell;\n" +
     "vec2 hash22(vec2 p){ p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }\n" +
+    "// Fine spray droplets: three depth layers drifting up and back off the wave lip.\n" +
+    "float mist(vec2 px, float t){\n" +
+    "  float acc = 0.0;\n" +
+    "  for (int l = 0; l < 3; l++) {\n" +
+    "    float fl = float(l);\n" +
+    "    float cs = 9.0 + fl * 5.0;\n" +
+    "    vec2 vel = vec2(-9.0 - fl * 6.0, -15.0 - fl * 8.0);\n" +
+    "    vec2 q = px - vel * t;\n" +
+    "    vec2 c = floor(q / cs);\n" +
+    "    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {\n" +
+    "      vec2 cc = c + vec2(float(i), float(j));\n" +
+    "      vec2 r = hash22(cc + fl * 17.0);\n" +
+    "      if (r.x > 0.68) continue;\n" +
+    "      vec2 pos = (cc + 0.15 + 0.7 * hash22(cc * 1.7 + 3.0 + fl)) * cs;\n" +
+    "      float life = 1.5 + 1.5 * r.y;\n" +
+    "      float ph = fract(t / life + r.x * 3.1);\n" +
+    "      float env = sin(3.14159265 * ph); env *= env;\n" +
+    "      vec2 d = q - pos;\n" +
+    "      float sz = 0.6 + 0.7 * r.y + fl * 0.35;\n" +
+    "      acc += env * exp(-dot(d, d) / (sz * sz)) * (0.6 - fl * 0.14);\n" +
+    "    }\n" +
+    "  }\n" +
+    "  return acc;\n" +
+    "}\n" +
     "// Occasional star glints on the brightest water: each cell flashes briefly at its own random rhythm.\n" +
     "float sparkle(vec2 px, float t){\n" +
     "  const float cell = 46.0;\n" +
@@ -81,7 +105,11 @@
     "  vec2 dw = vec2(a * 0.65 + b * 0.35, b * 0.55 - a * 0.25) * uWater * w;\n" +
     "  // spray: rising drift with a little turbulence\n" +
     "  float c = snoise(vec3(p * 3.0 + vec2(0.0, t * 0.20), t * 0.36 + 3.0));\n" +
-    "  vec2 ds = vec2(c * 0.6, -0.55 - abs(c) * 0.45) * uSpray * s;\n" +
+    "  // Crest (above the horizon) reads as airborne spray: droplets instead of a smear.\n" +
+    "  float crest = s * (1.0 - smoothstep(0.50, 0.58, iuv.y));\n" +
+    "  vec2 ds = vec2(c * 0.6, -0.55 - abs(c) * 0.45) * uSpray * (s - crest * 0.7);\n" +
+    "  // Same rolling pattern on the open water, kept level so it swells instead of rising.\n" +
+    "  dw += vec2(c * 0.6, c * 0.30) * uSwell * w;\n" +
     "  vec2 dpx = dw + ds;                       // CSS px\n" +
     "  vec3 col = texture(uImg, iuv + (dpx / uCss) * uScale).rgb;\n" +
     "  // soft caustic light bands drifting across the water\n" +
@@ -96,12 +124,13 @@
     "  // spray breathes very slightly\n" +
     "  col += s * 0.035 * snoise(vec3(p * 2.0, t * 0.50 + 5.0));\n" +
     "  col += uSparkle * sparkle(vUv * uCss, t) * vec3(1.0, 0.97, 0.9);\n" +
+    "  if (s > 0.01 && uMist > 0.0) col = mix(col, vec3(0.97, 0.99, 1.0), clamp((0.35 * s + crest) * uMist * mist(vUv * uCss, t), 0.0, 0.8));\n" +
     "  outColor = vec4(col, 1.0);\n" +
     "}";
 
   var PRESETS = {
     hero:   { water: 3.2, spray: 0.0, glint: 0.22, caustic: 0.035, sparkle: 0.9 },
-    footer: { water: 2.0, spray: 4.0, glint: 0.14, caustic: 0.028 },
+    footer: { water: 2.0, spray: 4.0, glint: 0.14, caustic: 0.028, mist: 1.5, swell: 2.2 },
   };
 
   function compile(gl, type, src) {
@@ -169,12 +198,14 @@
       gl.activeTexture(gl.TEXTURE1); texture(gl, ims[1], false);
       var u = function (n) { return gl.getUniformLocation(prog, n); };
       self.u = { img: u("uImg"), mask: u("uMask"), scale: u("uScale"), offset: u("uOffset"), css: u("uCss"),
-                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic"), sparkle: u("uSparkle") };
+                 t: u("uT"), water: u("uWater"), spray: u("uSpray"), glint: u("uGlint"), caustic: u("uCaustic"), sparkle: u("uSparkle"), mist: u("uMist"), swell: u("uSwell") };
       gl.uniform1i(self.u.img, 0); gl.uniform1i(self.u.mask, 1);
       gl.uniform1f(self.u.water, self.preset.water); gl.uniform1f(self.u.spray, self.preset.spray);
       gl.uniform1f(self.u.glint, self.preset.glint);
       gl.uniform1f(self.u.caustic, self.preset.caustic || 0);
       gl.uniform1f(self.u.sparkle, self.preset.sparkle || 0);
+      gl.uniform1f(self.u.mist, self.preset.mist || 0);
+      gl.uniform1f(self.u.swell, self.preset.swell || 0);
       self.natural = [ims[0].naturalWidth, ims[0].naturalHeight];
       img.insertAdjacentElement("afterend", canvas);
       self.resize();
