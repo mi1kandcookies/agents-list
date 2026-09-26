@@ -8,7 +8,9 @@ company, headed `## <Company name> (CIK <number>)`, containing this table:
 
 Status is one of `found`, `not_found`, `not_applicable`. Evidence for `found`
 is an accession number (`0000000000-00-000000`), a ledger claim `[C#]`, or an
-`inputs/` path. Evidence for `not_found` says what you reviewed.
+`inputs/` path. Evidence for `not_found` says what you reviewed. Every
+accession, claim and `inputs/` path you cite must exist: accessions in the
+company's filing index, claims in the ledger, paths in the workspace.
 
 | ID | Item | How to check |
 |---|---|---|
@@ -24,9 +26,9 @@ is an accession number (`0000000000-00-000000`), a ledger claim `[C#]`, or an
 | RF10 | Material litigation or regulatory proceedings | Item 3 of the 10-K, contingencies note |
 
 RF01-RF04 and RF09 are re-derived by the acceptance check from the SEC filing
-index: if the index shows an event, the row must be `found` and cite that
-accession. Accessions you cite must exist in the company's filing index, so
-copy them from tool output.
+index: if the index shows an event in the window, the row must be `found`
+and cite that accession. Accessions you cite must exist in the company's
+filing index, so copy them from tool output.
 
 For every `found` item, the memo's **Red flags** section explains what
 happened, when, how it was resolved and what it implies, with citations.
@@ -34,7 +36,17 @@ Filing-level flags are prompts to read the filing, not conclusions: an
 auditor change can be routine rotation, and a 10-K/A may only add Part III.
 Say which it is once you have read it.
 
-Defaults: look back three years from the latest filing unless the plan says
-otherwise. An item you could not assess (text not available) is a question
-for the client, listed in `questions.md`, and marked `not_found` with the
-limitation stated, never silently skipped.
+## Window
+
+The window runs three years back from the company's latest filing unless
+the plan says otherwise; the acceptance check uses the same window.
+`filing_red_flags` reports the window and whether the loaded filing index
+covers it (`complete`). SEC's index JSON holds only recent filings (about a
+year, or 1,000 filings, for heavy filers); when `complete` is false, call
+`edgar_submissions` with `since=<window start>` to load the older pages and
+scan again. The check fails a checklist whose window the index does not
+cover. State the window at the top of each company's section.
+
+An item you could not assess (text not available) is a question for the
+client, listed in `questions.md`, and marked `not_found` with the limitation
+stated, never silently skipped.

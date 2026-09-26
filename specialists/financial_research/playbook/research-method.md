@@ -20,8 +20,11 @@ Write `deliverables/m1-plan-sources/research_plan.md` with these sections:
 
 Then:
 
-1. `edgar_submissions` for every company (confirms name, CIK, fiscal year end,
-   filing history) and `edgar_companyfacts` for every company.
+1. Resolve every ticker or company name to a CIK with `sec_company_lookup`
+   (never from memory: a wrong CIK yields another company's data), then
+   `edgar_submissions` for every company (confirms name, CIK, fiscal year end,
+   filing history) and `edgar_companyfacts` for every company. Record the
+   name / ticker / CIK mapping in the peer set table.
 2. `index_dataroom` (writes the index even when there is no data room).
 3. Write `source_inventory.csv` with columns
    `source_id, kind, company, cik, form, accession, filed, uri, sha256`:
@@ -30,7 +33,8 @@ Then:
      document URL from `edgar_submissions`;
    - `edgar_api`: the data.sec.gov submissions and companyfacts URLs you used;
    - `dataroom`: each data-room file you rely on, with its sha256 from the index;
-   - `web`: anything else, only when the client allowed it.
+   - `web`: a page this engagement actually retrieved (it must be a web
+     source in the claim ledger). Egress here is SEC-only, so normally none.
 4. Ask the client to approve the peer set and questions (human sign-off).
 
 ## Default positions
@@ -40,7 +44,8 @@ Then:
 - Fiscal years: the last three completed fiscal years, plus the year before the
   first for growth.
 - Source tiers: filings and XBRL first, then data-room documents, then client
-  statements. Press and web pages only as context, labelled as secondary.
+  statements. Press or web material only when the client supplies it under
+  inputs/, as context labelled secondary.
 - A company without XBRL financials (some foreign private issuers, very small
   filers) stays in the plan with a note; its figures come from quoted filing
   text recorded in the ledger, not from companyfacts.
