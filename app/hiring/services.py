@@ -31,7 +31,7 @@ def new_id(prefix: str) -> str:
 
 def _intent_terms(*, owner_id, payer, specialist_name, endpoint, pay_to, chain_id,
                   network, token_address, amount_atomic, task_digest, ens_snapshot,
-                  expires_at) -> dict:
+                  expires_at, screening_verdict_id) -> dict:
     return {
         "ownerId": owner_id,
         "payer": payer.lower(),
@@ -43,6 +43,7 @@ def _intent_terms(*, owner_id, payer, specialist_name, endpoint, pay_to, chain_i
         "tokenAddress": token_address.lower(),
         "amountAtomic": str(amount_atomic),
         "taskHash": task_digest,
+        "screeningVerdictId": screening_verdict_id,
         "ensSnapshot": ens_snapshot,
         "policyVersion": POLICY_VERSION,
         "expiresAt": expires_at.isoformat(),
@@ -86,6 +87,7 @@ def create_intent(*, owner_id: str, payer: str, specialist_name: str, task: str,
         endpoint=resolved.endpoint, pay_to=resolved.address, chain_id=chain.chain_id,
         network=chain.caip2, token_address=token, amount_atomic=PRICE_ATOMIC,
         task_digest=digest, ens_snapshot=snapshot, expires_at=expires_at,
+        screening_verdict_id=screening.verdict_id,
     )
     listed_agent = Agent.query.filter(Agent.name == resolved.name).first() or Agent.query.first()
     intent = HireIntent(

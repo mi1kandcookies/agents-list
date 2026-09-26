@@ -47,6 +47,7 @@ def test_protected_flow_requires_approval_before_any_payment_or_result(client, h
     response = _create(client)
     assert response.status_code == 201
     intent = response.get_json()
+    assert intent["canonicalTerms"]["screeningVerdictId"] == intent["screening"]["verdictId"]
     work = client.post(f"/api/hiring/intents/{intent['id']}/work",
                        headers={"X-Hire-Demo-Payment": "1"}, json={})
     assert work.status_code == 403
@@ -111,6 +112,17 @@ def test_changed_ens_snapshot_holds_after_approval(client, hiring_fixture, monke
                        headers={"X-Hire-Demo-Payment": "1"}, json={})
     assert work.status_code == 409
     assert work.get_json()["code"] == "ENS_CHANGED"
+
+
+def test_changed_intercepta_verdict_holds_after_approval(client, hiring_fixture, monkeypatch):
+    response = _create(client)
+    intent = response.get_json()
+    assert _approve(client, intent).status_code == 200
+    monkeypatch.setenv("INTERCEPTA_FIXTURE_DECISION", "HOLD")
+    work = client.post(f"/api/hiring/intents/{intent['id']}/work",
+                       headers={"X-Hire-Demo-Payment": "1"}, json={})
+    assert work.status_code == 409
+    assert work.get_json()["code"] == "SCREENING_CHANGED"
 
 
 def test_legacy_work_and_payment_paths_are_closed(client, agent):

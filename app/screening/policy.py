@@ -38,7 +38,7 @@ def normalize_verdict(payload: dict, *, address: str, provider: str,
     mapping = {"ALLOW": "PAY", "PAY": "PAY", "CAP": "CAP", "DENY": "REFUSE",
                "REFUSE": "REFUSE", "HOLD": "ASK_HUMAN", "ASK_HUMAN": "ASK_HUMAN"}
     decision = mapping.get(raw, "ASK_HUMAN")
-    verdict_id = str(payload.get("verdictId") or payload.get("id") or "")
+    verdict_id = str(payload.get("verdictId") or payload.get("verdict_id") or payload.get("id") or "")
     if not verdict_id:
         # Provider timestamps are evidence metadata, not authorization terms.
         # Excluding them keeps an otherwise identical recheck bound to the same

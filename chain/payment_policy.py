@@ -48,6 +48,11 @@ def screen_and_validate(intent) -> ScreeningResult:
         raise PaymentPolicyError(str(exc), "ENS_UNAVAILABLE") from exc
     check_snapshot(intent, resolved)
     screening = quick_scan_address(intent.pay_to)
+    frozen_terms = json.loads(intent.canonical_terms or "{}")
+    expected_verdict_id = str(frozen_terms.get("screeningVerdictId") or "")
+    if expected_verdict_id and screening.verdict_id != expected_verdict_id:
+        raise PaymentPolicyError("Intercepta screening evidence changed after approval",
+                                 "SCREENING_CHANGED")
     if screening.decision == "DENY":
         raise PaymentPolicyError(screening.reason, "INTERCEPTA_DENY")
     if screening.decision != "ALLOW":
