@@ -465,6 +465,16 @@ tbody tr:hover { background: var(--surface-2); }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .nav-signin { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2); padding: 0 10px; height: 36px; display: inline-flex; align-items: center; border-radius: var(--radius-sm); }
 .nav-signin:hover { color: var(--ink); background: var(--surface-2); }
+button.nav-signin { background: none; border: 0; cursor: pointer; font-family: inherit; }
+.nav-who, .nav-who:hover { color: var(--ink-3); background: none; cursor: default; white-space: nowrap; gap: 5px; }
+.nav-who .mono { color: var(--ink-2); font-size: var(--fs-xs); }
+.nav-signout { display: contents; }
+.nav-link-btn {
+  display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border: 0; background: none;
+  font: 500 var(--fs-sm)/1 var(--font-body); color: var(--ink-2); cursor: pointer; border-radius: var(--radius-sm);
+}
+.nav-link-btn:hover { color: var(--ink); background: var(--surface-2); }
+.primary-nav .nav-who { display: inline-flex; align-items: center; height: 36px; padding: 0 12px; font-size: var(--fs-sm); }
 .nav-toggle { display: none; }
 .nav-mobile-only { display: none; }
 
@@ -736,9 +746,9 @@ tbody tr:hover { background: var(--surface-2); }
   white-space: nowrap;
 }
 .status-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.status-pill.is-draft, .status-pill.is-expired      { color: var(--ink-3); }
-.status-pill.is-pending, .status-pill.is-submitted  { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
-.status-pill.is-approved, .status-pill.is-released  { color: var(--success); background: var(--success-soft); border-color: var(--success-line); }
+.status-pill.is-draft, .status-pill.is-expired, .status-pill.is-cancelled, .status-pill.is-scoped { color: var(--ink-3); }
+.status-pill.is-pending, .status-pill.is-submitted, .status-pill.is-awaiting_approval, .status-pill.is-held { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
+.status-pill.is-approved, .status-pill.is-released, .status-pill.is-completed { color: var(--success); background: var(--success-soft); border-color: var(--success-line); }
 .status-pill.is-funded, .status-pill.is-in_progress { color: var(--info); background: var(--info-soft); border-color: var(--info-line); }
 .status-pill.is-denied, .status-pill.is-refused     { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
 
@@ -806,6 +816,15 @@ tbody tr:hover { background: var(--surface-2); }
 .chain-meta  { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); margin-top: 2px; word-break: break-all; }
 .chain-meta a { color: var(--link); }
 .chain-amount { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--ink); white-space: nowrap; }
+
+/* copy button (js/copy.js): <button class="copy-btn" data-copy="…"> */
+.copy-btn {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink-2);
+  font: 500 var(--fs-xs)/1 var(--font-body); cursor: pointer; transition: color var(--transition), border-color var(--transition);
+}
+.copy-btn:hover { color: var(--ink); border-color: var(--border-strong); }
+.copy-btn.is-copied, .btn.is-copied { color: var(--success); border-color: var(--success-line); }
 
 /* empty_state */
 .empty-state {

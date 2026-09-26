@@ -1,35 +1,77 @@
 {% extends "base.html" %}
+{% from "components/status_pill.html" import status_pill %}
 {% block title %}Jobs{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926b">{% endblock %}
 
 {% block content %}
-<div class="container-sm" style="padding-top:48px; padding-bottom:80px;">
-  <div style="margin-bottom:32px;">
-    <div class="hero-eyebrow" style="margin-bottom:12px;">Buyer</div>
-    <h1 style="font-size:clamp(1.75rem,3vw,2.25rem); letter-spacing:-.025em; margin-bottom:10px;">Jobs</h1>
-    <p style="color:var(--text-2); font-size:.9375rem;">Scoped engagements, their escrow and milestones.</p>
+<div class="jobs-page" data-scope="{{ scope }}">
+  <header class="jobs-head">
+    <div>
+      <h1>Jobs</h1>
+      <p>{% if scope == 'mine' %}Work you have hired for: escrow, milestones and approvals in one place.
+         {%- elif scope == 'all' %}Every job on this development server. Signed in, you see only your own.
+         {%- else %}Sign in with World ID to see the jobs you have hired for.{% endif %}</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('intake.new_job') }}">Describe your job</a>
+  </header>
+
+  {% if scope == 'signed_out' %}
+  <div class="jobs-empty">
+    <h2>Sign in to see your jobs</h2>
+    <p>Your jobs are tied to your World ID. Sign in to track escrow, milestones and approvals.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="{{ url_for('identity.login', next='/jobs') }}">Sign in</a>
+      <a class="btn btn-secondary" href="{{ url_for('intake.new_job') }}">Describe your job</a>
+    </div>
   </div>
+  {% else %}
+
+  {% if counts.all %}
+  <nav class="filter-chips" aria-label="Filter by status">
+    {% for key, (label, _) in filters.items() %}
+    <a href="{{ url_for('engagements.jobs_list', status=key) if key != 'all' else url_for('engagements.jobs_list') }}"{% if key == active %} aria-current="true"{% endif %}>{{ label }} <span class="n">{{ counts[key] }}</span></a>
+    {% endfor %}
+  </nav>
+  {% endif %}
 
   {% if jobs %}
-  <div style="display:flex; flex-direction:column; gap:12px;">
+  <div class="jobs-table" role="list">
+    <div class="jobs-row is-head" aria-hidden="true">
+      <span>Job</span><span>Status</span><span style="text-align:right;">Released / total</span><span style="text-align:right;">Opened</span>
+    </div>
     {% for job in jobs %}
-    <a href="/jobs/{{ job.engagement_id }}" class="card card-hover" style="display:grid; grid-template-columns:1fr auto; gap:16px; align-items:center; text-decoration:none; color:inherit;">
+    {% set pct = (100 * job.released_micro / job.total_micro)|round(1) if job.total_micro else 0 %}
+    <a class="jobs-row" role="listitem" href="/jobs/{{ job.engagement_id }}" data-job="{{ job.engagement_id }}">
       <div style="min-width:0;">
-        <div style="font-weight:600; margin-bottom:4px;">{{ job.outcome|truncate(90) }}</div>
-        <div class="text-sm" style="color:var(--text-3); font-family:var(--font-mono);">
-          {{ job.engagement_id }} · {{ job.agent_name }} · {{ job.milestones|length }} milestone{{ '' if job.milestones|length == 1 else 's' }}
-        </div>
+        <div class="title">{{ job.outcome|truncate(90) }}</div>
+        <div class="sub"><span class="mono">{{ job.engagement_id }}</span> · {{ job.agent_name or 'Unknown agent' }} · <span class="mono">{{ job.milestones_done }}/{{ job.milestones|length }}</span> milestone{{ '' if job.milestones|length == 1 else 's' }} released{% if job.parent_engagement_id %} · sub-hire{% endif %}</div>
       </div>
-      <div style="text-align:right;">
-        <div style="font-family:var(--font-mono); font-weight:700; margin-bottom:4px;">{{ job.total_micro|usdc }}</div>
-        <span class="badge badge-pending">{{ job.status|replace('_', ' ') }}</span>
+      <div class="col-status">{{ status_pill(job.status) }}</div>
+      <div class="num col-amount">
+        {{ job.total_micro|usdc }}
+        <small>{{ job.released_micro|usdc }} released</small>
+        <div class="mini-bar" aria-hidden="true"><span style="width:{{ pct }}%"></span></div>
       </div>
+      <div class="when col-when">{{ job.created_at|utc('%Y-%m-%d') }}</div>
     </a>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="card" style="text-align:center; color:var(--text-2);">
-    No jobs yet. Pick an agent in the <a href="/marketplace">marketplace</a> and choose Hire.
+  {% elif counts.all %}
+  <div class="jobs-empty">
+    <h2>No {{ filters[active][0]|lower }} jobs</h2>
+    <p>Nothing matches this filter right now.</p>
+    <div class="actions"><a class="btn btn-secondary" href="{{ url_for('engagements.jobs_list') }}">Show all jobs</a></div>
   </div>
+  {% else %}
+  <div class="jobs-empty">
+    <h2>No jobs yet</h2>
+    <p>Describe the outcome you need. We'll scope it into milestones, estimate the cost and match you with agents. Nothing is charged until you approve.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="{{ url_for('intake.new_job') }}">Describe your job</a>
+      <a class="btn btn-secondary" href="{{ url_for('catalog.marketplace') }}">Browse agents</a>
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 {% endblock %}
