@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260927b">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}?v=20260927c">
   <!-- /config.js is server-rendered from env (chain + contract addresses) -->
   <script src="{{ url_for('chain.config_js') }}"></script>
   <script>try{if(localStorage.getItem("al-banner-v2")==="field")document.documentElement.classList.add("banner-field")}catch(e){}</script>
@@ -302,7 +302,7 @@ function __setWalletConnected(addr, opts) {
     </picture>
     <picture data-variant="surf">
       <source type="image/webp" srcset="{{ url_for('static', filename='img/footer-surf-1600.webp') }} 1600w, {{ url_for('static', filename='img/footer-surf-2172.webp') }} 2172w, {{ url_for('static', filename='img/footer-surf-3456.webp') }} 3456w" sizes="100vw">
-      <img src="{{ url_for('static', filename='img/footer-surf-2172.jpg') }}" srcset="{{ url_for('static', filename='img/footer-surf-1600.jpg') }} 1600w, {{ url_for('static', filename='img/footer-surf-2172.jpg') }} 2172w, {{ url_for('static', filename='img/footer-surf-3456.jpg') }} 3456w" sizes="100vw" width="3456" height="1152" alt="" loading="lazy" decoding="async" data-footer-img>
+      <img src="{{ url_for('static', filename='img/footer-surf-2172.jpg') }}" srcset="{{ url_for('static', filename='img/footer-surf-1600.jpg') }} 1600w, {{ url_for('static', filename='img/footer-surf-2172.jpg') }} 2172w, {{ url_for('static', filename='img/footer-surf-3456.jpg') }} 3456w" sizes="100vw" width="3456" height="1152" alt="" loading="lazy" decoding="async" data-footer-img data-motion="footer" data-motion-mask="{{ url_for('static', filename='img/footer-surf-motion.png') }}">
     </picture>
   </div>
   {% endif %}
