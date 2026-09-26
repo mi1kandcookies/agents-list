@@ -1,22 +1,21 @@
 # Agent's List roadmap
 
-Where Agent's List is going, as a checklist. The reasoning behind each item is in
-the morph plan: [`docs/plans/morph-plan.md`](plans/morph-plan.md) (§5 new
-components, §7 phases and first commits, §8 open questions).
+Where Agent's List is going, as a checklist. Architecture decisions live in
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md) and `docs/decisions/`.
 
 Target flow: **intake → scoping agent → SOW/quote → signed contract with milestone
 escrow → agent booted on a VM with the brief → milestone delivery and acceptance →
 reputation**, with an MCP server for local agents and a Verified Agents catalog on
-top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
+top. Chain: **Ethereum Sepolia** (mainnet target to be decided).
 
-## Done: Phase 0 (fork and cleanup) and Phase 1 (chain config)
+## Done: foundation and chain config
 
-- [x] 1. Import the prototype source with a fresh history
-- [x] 2. Remove the sim engine, demo/sim/agent-mode pages, ICM, auctions, surge, live-writes toggle, seed packs and the prototype's demo docs
-- [x] 3. Replace the in-memory `AGENTS` list with DB queries and drop the junk-name filters
-- [x] 4. Split `app.py` into catalog/seller/admin/api/chain blueprints behind an app factory
-- [x] 5. Add Alembic migrations and a Postgres docker-compose; remove the `_ensure_columns` ALTER hack
-- [x] 6. Centralize chain config: Sepolia defaults, `explorer_url()`, `snowtrace` → `explorer`
+- [x] 1. Flask app, Apache-2.0 license
+- [x] 2. Marketplace, seller and admin surfaces
+- [x] 3. Database-backed agents and orders
+- [x] 4. catalog/seller/admin/api/chain blueprints behind an app factory
+- [x] 5. Alembic migrations and a Postgres docker-compose
+- [x] 6. Centralized chain config: Sepolia defaults, `explorer_url()`
 - [x] 7. Pay in Circle Sepolia USDC; read the EIP-712 domain from the contract; EIP-1559 fees
 
 ## Next commits
@@ -32,21 +31,21 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 - [ ] Async transaction status (pending → confirmed); never block a request thread on receipts (~12 s blocks)
 - [ ] Etherscan API v2 (or our own event logs) for activity feeds
 - [ ] Mintable EIP-3009 `MockUSDC3009` for CI and load tests only (behind `USDC_ADDRESS`)
-- [ ] Rewrite the agent-deployer handoff prompt for the manifest and Sepolia
+- [ ] Agent-deployer handoff prompt for the manifest and Sepolia
 
 ## Phase 2: scoping, SOW and escrow (≈2–3 weeks)
 
 - [ ] Intake form
-- [ ] Scoping agent (see 5b)
+- [ ] Scoping agent 
 - [ ] Scope → SOW editor
 - [ ] EIP-712 contract signing (client and provider/platform)
-- [ ] `EngagementEscrow` with milestones (see 5a)
+- [ ] `EngagementEscrow` with milestones 
 - [ ] Engagement page that replaces `order.html`; `Order` becomes `Engagement`
 
 ## Phase 3: VM runtime (≈2–3 weeks)
 
-- [ ] Agent manifest schema (see 5d)
-- [ ] Fly Machines orchestrator behind a `Runtime` interface (see 5c)
+- [ ] Agent manifest schema 
+- [ ] Fly Machines orchestrator behind a `Runtime` interface 
 - [ ] In-VM harness image
 - [ ] Standby pool (stopped Machines, started on hire)
 - [ ] Log streaming and heartbeats
@@ -66,7 +65,7 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 - [ ] Vendor attestation flow linked from the vendor's ERC-8004 identity
 - [ ] Tier B referral-only listings
 
-## New components (plan §5)
+## New components
 
 ### 5a. Contracts (Foundry, `contracts/`)
 - [ ] `EngagementEscrow.sol`: one contract, many engagements
@@ -106,7 +105,7 @@ top. Chain: **Ethereum Sepolia** (mainnet target to be decided; see §8.7).
 - [ ] Tier A (API/CLI, BYO key or partner account) vs. Tier B (enterprise, listing and referral only)
 - [ ] "Verified" means vendor-attested, backed by a signed attestation linked from the ERC-8004 identity
 
-## Open questions (plan §8)
+## Open questions
 
 - [ ] Verified-Agents terms of service and trademark use
 - [ ] Money transmission / custody review before real USDC

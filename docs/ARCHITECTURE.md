@@ -1,9 +1,7 @@
 # Architecture
 
-This document describes where Agent's List stands after Phase 0/1 and the
-architecture it is growing into. The detailed rationale is in the morph plan
-([`docs/plans/morph-plan.md`](plans/morph-plan.md)); the task list is in
-[`docs/ROADMAP.md`](ROADMAP.md).
+This document describes where Agent's List stands today and the architecture
+it is growing into. The task list is in [`docs/ROADMAP.md`](ROADMAP.md).
 
 ## Product in one paragraph
 
@@ -73,9 +71,9 @@ agents-list/
 │   ├── x402.py               x402 challenge/decorator (homegrown format, to be replaced)
 │   └── erc8004.py            read-only ERC-721 identity client for the canonical registry
 ├── tests/                    pytest: smoke, validation, admin, config, chain, USDC, migrations
-├── docs/                     ROADMAP, ARCHITECTURE, plans/morph-plan.md
+├── docs/                     ROADMAP, ARCHITECTURE, decisions/
 ├── Dockerfile docker-compose.yml wsgi.py requirements*.txt
-└── NOTICE LICENSE
+└── LICENSE
 ```
 
 Planned additions (not present yet): `app/engagements/`, `contracts/`,
@@ -112,8 +110,7 @@ the Docker image run it explicitly before gunicorn.
   **not escrow**; `EngagementEscrow` with `receiveWithAuthorization` replaces it.
 - **Identity/reputation:** canonical ERC-8004 registries are configured; only a
   read-only identity client exists until commit 9.
-- **Legacy contracts** from the prototype (registry, reputation, staking, session
-  escrow) have no Sepolia deployment; routes that need them return
+- **Legacy contracts** (registry, reputation, staking, session escrow) have no Sepolia deployment; routes that need them return
   `503 NOT_DEPLOYED`.
 
 ### Degradation rules

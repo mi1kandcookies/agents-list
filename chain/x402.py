@@ -35,7 +35,7 @@ If the caller attaches a valid X-Payment header, the decorator:
 
 Otherwise it returns 402 with a challenge header describing what's expected.
 
-Note: this is the homegrown `x402/eip-3009` format inherited from the prototype.
+Note: this is a homegrown `x402/eip-3009` format.
 Moving to the current x402 spec (`exact` scheme, CAIP-2 network ids) with the
 official SDK is on the roadmap.
 """
