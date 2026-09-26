@@ -1,12 +1,12 @@
-<div class="apr-panel" id="approval-pending">
+<section class="apr-panel" id="approval-pending">
   {% if start_error %}
-  <p class="apr-muted" role="alert">The identity provider could not be reached. Try again.</p>
+  <p class="apr-alert" role="alert">The identity provider could not be reached. Try again.</p>
   {% endif %}
-  <p class="apr-muted">Approve with World ID. You will be asked to verify again, even if you
-    signed in recently.</p>
-  <p class="apr-muted">Expires in <span data-countdown>…</span>.</p>
+  <h2 class="apr-panel-title">Confirm it's you</h2>
+  <p class="apr-muted">You'll verify with World ID again, even if you signed in recently. That fresh check is what authorises this exact action.</p>
   <div class="apr-actions">
-    <a class="btn btn-primary" href="{{ url_for('approvals.start', approval_id=approval.id) }}">Approve with World ID</a>
+    <a class="btn btn-primary btn-lg apr-world" href="{{ url_for('approvals.start', approval_id=approval.id) }}">Continue with World ID</a>
     <button type="button" class="btn btn-ghost" data-cancel-button>Cancel</button>
   </div>
-</div>
+  <p class="apr-live" role="status">{% if approval.state == 'pending' %}<span class="apr-spinner" aria-hidden="true"></span>Waiting for World ID · expires in{% else %}Expires in{% endif %} <span class="mono" data-countdown>…</span></p>
+</section>

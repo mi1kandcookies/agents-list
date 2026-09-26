@@ -1,43 +1,77 @@
-<div class="apr-panel apr-terminal" id="approval-terminal" data-outcome="{{ approval.state }}{% if approval.failure_code == 'REPLAYED_TOKEN' %}-replay{% endif %}">
+{%- set outcome = approval.state ~ ('-replay' if approval.failure_code == 'REPLAYED_TOKEN' else '') -%}
+{%- set tone = 'ok' if approval.state in ('consumed', 'approved') else ('muted' if approval.state in ('expired', 'cancelled') else 'bad') -%}
+{% macro icon(kind, tone) -%}
+<span class="apr-icon is-{{ tone }}" aria-hidden="true">
+{%- if kind == 'ok' -%}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+{%- elif kind == 'wait' -%}<span class="apr-spinner"></span>
+{%- elif kind == 'clock' -%}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+{%- elif kind == 'shield' -%}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6z"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+{%- elif kind == 'minus' -%}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="12" x2="18" y2="12"/></svg>
+{%- else -%}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+{%- endif -%}
+</span>
+{%- endmacro %}
+<section class="apr-panel apr-terminal is-{{ tone }}" id="approval-terminal" data-outcome="{{ outcome }}">
 {% if approval.state == 'consumed' %}
-  <h2>Approved</h2>
+  {{ icon('ok', tone) }}
+  <h2>Approved &amp; done</h2>
   <p class="apr-muted">{{ result.summary if result and result.summary else 'The action was carried out.' }}</p>
-  {% if result and result.ledger_ids %}
-  <p class="apr-muted">Ledger: {{ result.ledger_ids | join(', ') }}</p>
+  {% if ledger %}
+  <ul class="apr-ledger">
+    {% for e in ledger %}
+    <li>
+      <span>{{ {'fund': 'Funded', 'release': 'Released', 'hold': 'Held', 'refund': 'Refunded'}.get(e.kind, e.kind|capitalize) }}</span>
+      <span class="mono">{{ e.amount_micro|usdc }}</span>
+      <span class="mono ref">{% if e.explorer %}<a href="{{ e.explorer }}" target="_blank" rel="noopener">{{ e.tx_hash[:10] }}… ↗</a>{% elif e.simulated %}{{ e.id }} · simulated{% else %}{{ e.id }}{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif result and result.ledger_ids %}
+  <p class="apr-muted mono">Ledger {{ result.ledger_ids | join(', ') }}</p>
   {% endif %}
   {% if replays %}
-  <p class="apr-muted" id="approval-replay-note">Replay blocked: {{ replays }} later attempt{{ 's' if replays != 1 }} to reuse this approval {{ 'were' if replays != 1 else 'was' }} refused.</p>
+  <p class="apr-note" id="approval-replay-note"><strong>Replay blocked:</strong> {{ replays }} later attempt{{ 's' if replays != 1 }} to reuse this approval {{ 'were' if replays != 1 else 'was' }} refused.</p>
   {% endif %}
   {% if result and result.redirect %}
   <div class="apr-actions"><a class="btn btn-primary" href="{{ result.redirect }}">Continue</a></div>
   {% endif %}
 {% elif approval.state == 'approved' %}
+  {{ icon('wait', tone) }}
   <h2>Approved</h2>
-  <p class="apr-muted">Approved by World ID. Waiting for the action to be carried out.</p>
+  <p class="apr-muted">Verified with World ID. Carrying out the action now.</p>
 {% elif approval.state == 'denied' %}
+  {{ icon('x', tone) }}
   <h2>Denied</h2>
   <p class="apr-muted">The approval was declined in World ID. Nothing was done.</p>
 {% elif approval.state == 'expired' %}
+  {{ icon('clock', tone) }}
   <h2>Expired</h2>
-  <p class="apr-muted">This approval request expired before it was approved. Nothing was done.
-    Ask for a new approval to continue.</p>
+  <p class="apr-muted">This request expired before it was approved. Nothing was done. Ask for a new approval to continue.</p>
 {% elif approval.state == 'cancelled' %}
+  {{ icon('minus', tone) }}
   <h2>Cancelled</h2>
-  <p class="apr-muted">This approval request was cancelled. Nothing was done.</p>
+  <p class="apr-muted">This request was cancelled. Nothing was done.</p>
 {% elif approval.state == 'rejected' and approval.failure_code == 'REPLAYED_TOKEN' %}
+  {{ icon('shield', tone) }}
   <h2>Replay blocked</h2>
   <p class="apr-muted">{{ failure }} Nothing was done.</p>
 {% elif approval.state == 'rejected' %}
+  {{ icon('x', tone) }}
   <h2>Rejected</h2>
   <p class="apr-muted">{{ failure }} Nothing was done.</p>
-  <p class="apr-muted mono">Reason: {{ approval.failure_code }}</p>
+  <p class="apr-code-note">Reason code <span class="mono">{{ approval.failure_code }}</span></p>
 {% elif approval.state == 'blocked' %}
+  {{ icon('shield', tone) }}
   <h2>Blocked</h2>
-  <p class="apr-muted">{{ failure }} Nothing was done.</p>
-  <p class="apr-muted mono">Reason: {{ approval.failure_code }}</p>
+  <p class="apr-muted">{{ failure or 'This action is not allowed.' }} Nothing was done, and it was never sent for sign-in.</p>
+  <p class="apr-code-note">Reason code <span class="mono">{{ approval.failure_code }}</span></p>
 {% elif approval.state == 'failed' %}
+  {{ icon('x', tone) }}
   <h2>Failed</h2>
   <p class="apr-muted">{{ failure }} This approval cannot be used again.</p>
-  {% if result and result.summary %}<p class="apr-muted mono">{{ result.summary }}</p>{% endif %}
+  {% if result and result.summary %}<p class="apr-code-note mono">{{ result.summary }}</p>{% endif %}
 {% endif %}
-</div>
+{% if approval.state not in ('consumed', 'approved') and job_url %}
+  <div class="apr-actions"><a class="btn btn-secondary" href="{{ job_url }}">Back to the job</a></div>
+{% endif %}
+</section>
