@@ -9,6 +9,7 @@ someone else cannot sign them in.
 from __future__ import annotations
 
 import functools
+import hashlib
 import hmac
 from typing import Optional
 from urllib.parse import urlsplit
@@ -72,6 +73,12 @@ def current_human() -> Optional[Human]:
             human = None
     g.current_human = human
     return human
+
+
+def short_id(human: Human) -> str:
+    """A short, stable display handle for a human: the first 8 hex digits of
+    sha256(world_sub). Never shows the subject itself."""
+    return hashlib.sha256((human.world_sub or "").encode("utf-8")).hexdigest()[:8]
 
 
 def login(human: Human, *, at: int) -> None:

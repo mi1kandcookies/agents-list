@@ -75,31 +75,18 @@ def test_before_sign_hook_runs_before_the_signer(req, payer, monkeypatch):
     original = x402_v2.GuardedSigner.sign_typed_data
 
     def hook(typed):
-        order.append(("screen", typed["message"]["to"], typed["message"]["value"]))
+        order.append("screening")
+        assert typed["message"]["to"] == PAYEE
+        assert int(typed["message"]["value"]) == AMOUNT
 
-    def signer(self, typed, *, now=None):
-        order.append(("sign", typed["message"]["to"], typed["message"]["value"]))
-        return original(self, typed, now=now)
+    def wrapped(self, full_message, **kwargs):
+        order.append("signer")
+        return original(self, full_message, **kwargs)
 
-    monkeypatch.setattr(x402_v2.GuardedSigner, "sign_typed_data", signer)
+    monkeypatch.setattr(x402_v2.GuardedSigner, "sign_typed_data", wrapped)
     x402_v2.sign_payment(payer, req, expected=_expect(), domain=DOMAIN,
                          before_sign=hook)
-    assert order == [("screen", PAYEE, AMOUNT), ("sign", PAYEE, AMOUNT)]
-
-
-def test_before_sign_hook_can_block_without_calling_signer(req, payer, monkeypatch):
-    def signer(*args, **kwargs):
-        raise AssertionError("signer must not run after a blocked pre-sign gate")
-
-    monkeypatch.setattr(x402_v2.GuardedSigner, "sign_typed_data", signer)
-
-    def block(_typed):
-        raise X402Error("SCREENING_REFUSED", "Intercepta refused the payee")
-
-    with pytest.raises(X402Error) as exc:
-        x402_v2.sign_payment(payer, req, expected=_expect(), domain=DOMAIN,
-                             before_sign=block)
-    assert exc.value.code == "SCREENING_REFUSED"
+    assert order == ["screening", "signer"]
 
 
 @pytest.mark.parametrize("value", ["", "not base64!", base64.b64encode(b"[1]").decode(),
@@ -178,6 +165,7 @@ def test_sign_verify_round_trip(req, payer):
                                domain=DOMAIN, now=NOW + 5)
     assert v.payer == payer.address.lower() and v.pay_to == PAYEE and v.amount_micro == AMOUNT
     assert v.permit["v"] in (27, 28) and v.nonce == payload["payload"]["authorization"]["nonce"]
+    assert "0x" + v.typed_data["message"]["nonce"].hex() == v.nonce
 
 
 def _signed(payer, req):

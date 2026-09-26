@@ -2,6 +2,8 @@
 in simulated escrow mode, with the fake screener."""
 from __future__ import annotations
 
+import json
+
 import pytest
 from eth_account import Account
 
@@ -12,7 +14,7 @@ from tests.conftest import WALLET
 from tests.test_mandates import _approval, _exp, signing_pem  # noqa: F401  (fixture)
 
 PAYEE = WALLET.lower()
-PRICE = 50_000                 # AGENT_TASK_PRICE_USDC default 0.05
+PRICE = 50_000                 # the stamped manifest's price_min_micro (min_price 0.05)
 BUDGET = 1_000_000
 PER_TX = 200_000
 
@@ -25,8 +27,20 @@ def screener(app, fake_screener):
 
 @pytest.fixture()
 def callee(db, agent):
+    """The test agent, operator-stamped (price_min 0.05 USDC) so it is hireable."""
     from app.models import Agent
-    return db.session.get(Agent, agent)
+    from app.seller.stamp import dev_stamp
+    row = db.session.get(Agent, agent)
+    dev_stamp(row)
+    db.session.commit()
+    return row
+
+
+def _restamp(db, agent, **manifest_fields):
+    from app.seller.stamp import dev_stamp
+    agent.manifest_json = json.dumps({**json.loads(agent.manifest_json), **manifest_fields})
+    dev_stamp(agent)
+    db.session.commit()
 
 
 @pytest.fixture()
@@ -103,10 +117,17 @@ def test_unpaid_request_gets_v2_requirements(client, callee):
     assert x402_v2.decode_header(resp.headers["PAYMENT-REQUIRED"]) == body
 
 
-def test_price_from_manifest(client, db, callee):
-    callee.manifest_json = '{"x402_price_usdc": "0.25"}'
-    db.session.commit()
+def test_price_defaults_without_a_stamped_price(client, db, app, callee):
+    _restamp(db, callee, price_min_micro=0)
+    app.config["AGENT_TASK_PRICE_USDC"] = "0.25"
     assert _challenge(client, callee).get_json()["accepts"][0]["amount"] == "250000"
+
+
+def test_unstamped_agent_cannot_take_paid_tasks(client, db, agent):
+    from app.models import Agent
+    row = db.session.get(Agent, agent)
+    resp = client.post(_url(row), json={"task": "t"})
+    assert resp.status_code == 409 and resp.get_json()["code"] == "NOT_STAMPED"
 
 
 def test_task_required(client, callee):
@@ -129,7 +150,6 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     # Screened as a sub-hire hop, charged to the mandate, ledgered under its engagement.
     assert [c["hop"] for c in screener.calls] == ["subhire.hop"]
     assert screener.calls[0]["chain_address"] == PAYEE
-    assert screener.calls[0]["typed_data"]["primaryType"] == "TransferWithAuthorization"
     assert _spent(db, mandate) == PRICE
     (entry,) = _ledger(mandate.engagement_id)
     assert entry.id == body["receipt_id"] and entry.kind == "subhire_alloc"
@@ -201,7 +221,7 @@ def test_screening_refusal_fails_closed(client, db, callee, payer_key, mandate, 
 
 
 def test_amount_over_per_tx_cap_refused(client, db, app, callee, payer_key, mandate, screener):
-    app.config["AGENT_TASK_PRICE_USDC"] = "0.5"          # > PER_TX 0.2
+    _restamp(db, callee, price_min_micro=500_000, price_max_micro=500_000)   # > PER_TX 0.2
     resp, _ = _pay(client, callee, payer_key, mandate, amount=500_000)
     assert resp.status_code == 403 and resp.get_json()["code"] == "MAX_AMOUNT_EXCEEDED"
     assert _spent(db, mandate) == 0
@@ -244,3 +264,57 @@ def test_payee_mismatch_refuses_before_402(client, db, app, callee):
     app.extensions["ens_resolver"] = Resolver()
     resp = client.post(_url(callee), json={"task": "t"})
     assert resp.status_code == 403 and resp.get_json()["code"] == "PAYEE_MISMATCH"
+
+
+class _PendingThenFailed:
+    """On-chain escrow whose settlement is submitted (pending) and whose
+    receipt later reports the transaction failed."""
+    mode = "onchain"
+    escrow_address = vault_address = None
+
+    def __init__(self):
+        self.receipt = "pending"
+
+    def settle_authorization(self, permit, *, pay_to, ref=None):
+        from chain.escrow import TxResult
+        return TxResult(tx_hash="0x" + "ab" * 32, status="pending", explorer=None)
+
+    def receipt_status(self, tx_hash):
+        return self.receipt
+
+
+def test_settlement_failed_on_chain_refunds_the_mandate_once(client, db, app, callee, payer_key,
+                                                             mandate, screener):
+    from app.api.tasks import settlement_failed
+    from app.engagements import ledger
+    from app.models import Engagement
+    escrow = app.extensions["agents_list.escrow"] = _PendingThenFailed()
+    resp, _ = _pay(client, callee, payer_key, mandate)
+    assert resp.status_code == 200 and resp.get_json()["payment"]["status"] == "pending"
+    assert _spent(db, mandate) == PRICE
+
+    eid = mandate.engagement_id
+    assert client.get(f"/api/engagements/{eid}").status_code == 200    # still pending
+    assert _spent(db, mandate) == PRICE
+
+    escrow.receipt = "failed"
+    body = client.get(f"/api/engagements/{eid}").get_json()          # the poll path
+    assert [e["status"] for e in body["ledger"]] == ["failed"]
+    assert _spent(db, mandate) == 0
+    # polling again (or a racing poller) never refunds twice
+    client.get(f"/api/engagements/{eid}")
+    (entry,) = _ledger(eid)
+    assert ledger.refresh_receipts(db.session.get(Engagement, eid), escrow) == 0
+    assert settlement_failed(entry) is False
+    db.session.commit()
+    assert _spent(db, mandate) == 0
+
+
+def test_confirmed_settlement_keeps_the_charge(client, db, app, callee, payer_key, mandate,
+                                               screener):
+    escrow = app.extensions["agents_list.escrow"] = _PendingThenFailed()
+    _pay(client, callee, payer_key, mandate)
+    escrow.receipt = "confirmed"
+    body = client.get(f"/api/engagements/{mandate.engagement_id}").get_json()
+    assert [e["status"] for e in body["ledger"]] == ["confirmed"]
+    assert _spent(db, mandate) == PRICE

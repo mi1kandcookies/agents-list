@@ -173,10 +173,23 @@ def _set_payout_status(pay_id, status, *, allowed_from):
     return jsonify({"id": pay_id, "status": status})
 
 
+# Legacy order payouts cannot be released from here: marking money released
+# without a verified human approval bypasses the custody chain. Jobs pay out
+# through milestone releases (POST /api/engagements/<id>/milestones/<idx>/release),
+# each bound to its own approval.
+LEGACY_PAYOUT_MESSAGE = ("releasing legacy order payouts from admin is disabled; job payouts "
+                         "are released per milestone, each with its own approval")
+
+
+def _legacy_payout_disabled():
+    return api_error(LEGACY_PAYOUT_MESSAGE, 410, code="LEGACY_PAYOUT_DISABLED")
+
+
 @bp.route("/payouts/<pay_id>/release", methods=["POST"])
 @require_api_key
 def admin_release_payout(pay_id):
-    return _set_payout_status(pay_id, "released", allowed_from={"pending", "held"})
+    log.warning("refused admin release of legacy payout %s", pay_id)
+    return _legacy_payout_disabled()
 
 
 @bp.route("/payouts/<pay_id>/hold", methods=["POST"])
@@ -194,15 +207,8 @@ def admin_refund_payout(pay_id):
 @bp.route("/payouts/release-all", methods=["POST"])
 @require_api_key
 def admin_release_all_payouts():
-    from app.models import Payout
-    pending = Payout.query.filter_by(status="pending").all()
-    released_ids = []
-    for p in pending:
-        p.status = "released"
-        released_ids.append(p.id)
-    db.session.commit()
-    log.info("Bulk release: %d payouts", len(released_ids))
-    return jsonify({"released": released_ids, "count": len(released_ids)})
+    log.warning("refused admin bulk release of legacy payouts")
+    return _legacy_payout_disabled()
 
 
 def _report_or_404(rpt_id):

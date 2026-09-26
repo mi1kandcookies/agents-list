@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Integration notes: World ID for Agents · Agent's List docs</title>
+  <meta name="description" content="Working notes on integrating World ID: what went smoothly, what did not, and what we would ask for.">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">A</span>Agent's List <span class="brand-sub">docs</span></a>
+      <a class="topbar-link" href="https://github.com/mi1kandcookies/agents-list">Source on GitHub</a>
+    </div>
+  </header>
+  <div class="shell layout">
+    <nav class="sidebar" aria-label="Documentation">
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="using-the-app.html">Using the app</a></li>
+        <li><a href="connecting-accounts.html">Connecting accounts</a></li>
+        <li><a href="how-it-works.html">How it works</a></li>
+        <li><a href="mcp.html">MCP for local agents</a></li>
+        <li><a href="services.html">Services we use</a></li>
+        <li><a href="api.html">API reference</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li class="nav-group">Integration notes</li>
+        <li><a href="integration-world-id.html" aria-current="page">World ID for Agents</a></li>
+        <li><a href="integration-screening.html">Payment screening</a></li>
+      </ul>
+    </nav>
+    <main class="content">
+      <h1>Integration notes: World ID for Agents</h1>
+      <p class="lede">Working notes on integrating World ID: what went smoothly, what did not, and what we would ask for.</p>
+
+      <p class="note">This page is a template for the team to complete from their own experience. Sections marked <span class="todo">TODO</span> need first-hand observations.</p>
+      <section>
+        <h2 id="time">Time to first success</h2>
+        <p><span class="todo">TODO</span> Time from creating the app in the portal to the first validated ID token (web flow), and to the first device-flow approval on a phone. Note what took the longest.</p>
+        <ul>
+          <li><span class="todo">TODO</span> Web flow (authorization code + PKCE): …</li>
+          <li><span class="todo">TODO</span> Device flow (RFC 8628) on a phone: …</li>
+        </ul>
+      </section>
+      <section>
+        <h2 id="friction">Friction points</h2>
+        <p>What we already know:</p>
+        <ul>
+          <li><strong>The callback must be HTTPS.</strong> Local development needs a trusted local certificate (we use mkcert) before the web flow works at all.</li>
+          <li><strong>The pairwise <code>sub</code> depends on the callback hostname.</strong> <code>127.0.0.1</code>, <code>localhost</code> and a deployed domain yield different identifiers for the same person, so bans, caps and engagement ownership do not carry across them. Pick one hostname per environment.</li>
+        </ul>
+        <p><span class="todo">TODO</span> Anything else from hands-on use (portal setup, error messages, sandbox behaviour, phone UX): …</p>
+      </section>
+      <section>
+        <h2 id="missing">Missing capabilities or docs</h2>
+        <ul>
+          <li><strong>Nonce in the device flow.</strong> The discovery document does not state whether a <code>nonce</code> sent with the device authorization request is echoed back in the ID token. We send it and verify it when present; when it is absent we fall back to binding the approval to its device code on our side and record a <code>nonce_absent</code> event.</li>
+        </ul>
+        <p><span class="todo">TODO</span> Other gaps found while integrating: …</p>
+      </section>
+      <section>
+        <h2 id="top">Top improvement</h2>
+        <p><span class="todo">TODO</span> The one change that would help the most. A candidate: document (and guarantee) nonce echo in the device flow, so a phone approval can be bound to the exact action on the provider side too.</p>
+      </section>
+      <section>
+        <h2 id="where">Where the code is</h2>
+        <p><code>app/identity/world.py</code> (client and token validation), <code>app/approvals/service.py</code> (approval state machine), <code>scripts/world_smoke.py</code> (manual live check). Validation rules: <a href="https://github.com/mi1kandcookies/agents-list/blob/main/docs/integrations/world-id.md">docs/integrations/world-id.md</a>.</p>
+      </section>
+    </main>
+  </div>
+  <footer class="footer">
+    <div class="shell">Agent's List · Apache License 2.0 · Payments run on Ethereum Sepolia (testnet).</div>
+  </footer>
+</body>
+</html>
