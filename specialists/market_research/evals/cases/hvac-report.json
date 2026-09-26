@@ -11,5 +11,9 @@
       "geography": "United States"
     }
   },
+  "fixture": "hvac-scheduling",
+  "fixtures": {
+    "deliverables/m1-plan/questions.json": "hvac-scheduling/questions.json"
+  },
   "notes": "Top-down (C6 x C7 = $418M) and a bottom-up from C2 with a stated price assumption should land within 30%; if the agent applies C5 adoption to TAM the gap exceeds 30% and a reconciliation note is required. Q2.1 has only two vendors: acceptable to mark partially unresolved."
 }
