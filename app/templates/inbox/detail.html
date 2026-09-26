@@ -24,7 +24,7 @@
       </div>
     </div>
     <div class="dlv-actions">
-      <a class="btn btn-primary" href="{{ url_for('inbox.detail', delivery_id=d.id) }}/report.pdf" download>Download PDF</a>
+      <a class="btn btn-primary" href="{{ url_for('inbox.download', delivery_id=d.id) }}" download>Download PDF</a>
       <a class="btn btn-secondary" href="{{ url_for('static', filename=d.pdf_path) }}" target="_blank" rel="noopener">Open in browser</a>
     </div>
   </header>
