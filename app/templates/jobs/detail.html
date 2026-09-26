@@ -23,14 +23,19 @@
     <p style="color:var(--text-2); margin-bottom:10px; white-space:pre-wrap;">{{ job.outcome }}</p>
     <div class="text-sm" style="font-family:var(--font-mono); color:var(--text-3); word-break:break-all;">sow_hash {{ job.sow_hash }}</div>
     {% if job.deadline_at %}<div class="text-sm" style="color:var(--text-3); margin-top:6px;">Deadline: <span data-ts="{{ job.deadline_at }}">{{ job.deadline_at }}</span></div>{% endif %}
-    {% if job.status in ('scoped', 'awaiting_approval') %}
+    {% if job.status in ('scoped', 'awaiting_approval') and not job.parent_engagement_id %}
     <form method="post" action="/jobs/{{ job.engagement_id }}/hire" style="margin-top:16px;">
       <button type="submit" class="btn btn-gradient">Approve &amp; fund {{ job.total_micro|usdc }}</button>
       <span class="form-hint" style="margin-left:10px;">Funds escrow after you verify with World ID.</span>
     </form>
     {% endif %}
+    {% if job.parent_engagement_id %}
+    <div class="text-sm" style="margin-top:12px;">Sub-hire of <a href="/jobs/{{ job.parent_engagement_id }}" style="font-family:var(--font-mono);">{{ job.parent_engagement_id }}</a> (depth {{ job.depth }})</div>
+    {% endif %}
     {% if job.mandate %}
-    <div class="text-sm" style="margin-top:12px;">Agent mandate: <a href="{{ job.mandate.url }}" style="font-family:var(--font-mono);">{{ job.mandate.mandate_id }}</a> · <a href="{{ job.chain_url }}">custody chain</a></div>
+    <div class="text-sm" style="margin-top:12px;">Agent mandate: <a href="{{ job.mandate.url }}" style="font-family:var(--font-mono);">{{ job.mandate.mandate_id }}</a> · <a href="{{ job.chain_page_url }}">custody chain</a></div>
+    {% elif job.parent_engagement_id %}
+    <div class="text-sm" style="margin-top:6px;"><a href="{{ job.chain_page_url }}">custody chain</a></div>
     {% endif %}
   </section>
 

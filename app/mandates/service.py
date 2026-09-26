@@ -8,6 +8,11 @@ remaining allowance is ``budget − spent − reserved``, where each active chil
 reserves its full budget and each revoked or expired child keeps only what it
 already spent.
 
+A sub-hire (``allocate``) instead pays the child's whole budget out of the
+parent up front: the parent's ``spent`` grows by that amount and the child,
+which backs a sub-engagement, reserves nothing more, so the money is counted
+once.
+
 Error codes (``MandateError.code``):
 
     MANDATE_INVALID       bad signature/header, unknown mandate, token ≠ stored row,
@@ -31,8 +36,8 @@ from app.extensions import db
 from app.mandates import tokens
 from app.mandates.tokens import MandateError, check_attenuation, hum_hash, normalize_categories
 
-__all__ = ["MandateError", "issue_root", "attenuate", "verify_chain", "spend", "revoke",
-           "chain_graph", "status_of", "max_depth_limit"]
+__all__ = ["MandateError", "issue_root", "attenuate", "allocate", "verify_chain", "spend",
+           "revoke", "chain_graph", "status_of", "max_depth_limit"]
 
 ROOT_APPROVAL_KIND = "engagement.fund"
 
@@ -106,10 +111,18 @@ def _lock(mandate_id: str):
 
 
 def _reserved_by_children(row, now: int) -> int:
-    """What ``row``'s children hold against its budget."""
-    Mandate = _models()[3]
+    """What ``row``'s children hold against its budget. Children that back a
+    sub-engagement were paid for out of ``row.spent_micro`` (``allocate``)."""
+    _, Engagement, _, Mandate = _models()
     total = 0
-    for child in db.session.execute(select(Mandate).where(Mandate.parent_id == row.id)).scalars():
+    children = db.session.execute(select(Mandate).where(Mandate.parent_id == row.id)).scalars().all()
+    prepaid = set(db.session.execute(
+        select(Engagement.mandate_id).where(Engagement.mandate_id.in_([c.id for c in children]),
+                                            Engagement.parent_engagement_id.is_not(None))
+    ).scalars()) if children else set()
+    for child in children:
+        if child.id in prepaid:
+            continue
         active = child.revoked_at is None and _ts(child.expires_at) > now
         total += child.budget_micro if active else child.spent_micro
     return total
@@ -271,9 +284,33 @@ def issue_root(engagement, human, approval, grantee_agent_public_id: str, budget
 
 def attenuate(parent_token: str, child_agent_public_id: str, budget_micro: int, categories, exp,
               per_tx_max_micro: int | None = None):
-    """Issue a narrower child mandate under ``parent_token`` for a sub-hire.
-    ``per_tx_max_micro`` defaults to the parent's cap (bounded by the child's
-    budget). Returns the committed child ``Mandate`` row."""
+    """Issue a narrower child mandate under ``parent_token`` that reserves its
+    budget out of the parent. ``per_tx_max_micro`` defaults to the parent's
+    cap (bounded by the child's budget). Returns the committed child row."""
+    try:
+        child = _issue_child(parent_token, child_agent_public_id, budget_micro, categories, exp,
+                             per_tx_max_micro, charge_parent=False)
+        db.session.commit()
+        return child
+    except BaseException:
+        db.session.rollback()
+        raise
+
+
+def allocate(parent_token: str, child_agent_public_id: str, budget_micro: int, categories, exp):
+    """Sub-hire allocation: issue a child mandate (same checks as
+    ``attenuate``) and, under the same parent row lock, record its whole
+    budget as spent by the parent (within the parent's per-transaction cap).
+
+    Does NOT commit: the caller links the child to its sub-engagement
+    (``Engagement.mandate_id``, which stops it reserving budget too) and
+    commits both together; on error the caller rolls back."""
+    return _issue_child(parent_token, child_agent_public_id, budget_micro, categories, exp,
+                        None, charge_parent=True)
+
+
+def _issue_child(parent_token, child_agent_public_id, budget_micro, categories, exp,
+                 per_tx_max_micro, *, charge_parent: bool):
     Mandate = _models()[3]
     now = _now()
     parent_claims = verify_chain(parent_token)
@@ -286,43 +323,43 @@ def attenuate(parent_token: str, child_agent_public_id: str, budget_micro: int, 
         raise MandateError("MANDATE_EXPIRED", "mandate expiry must be in the future")
     grantee = _grantee(child_agent_public_id)
 
-    try:
-        parent = _lock(parent_claims["jti"])
-        chain = _check_chain(parent, now)
-        root = chain[-1]
-        parent_cap = _cap(parent)
-        per_tx = (min(parent_cap["per_tx_max_micro"], budget) if per_tx_max_micro is None
-                  else _micro(per_tx_max_micro, "per_tx_max_micro"))
-        depth = parent.depth + 1
-        if depth > root.max_depth or depth > max_depth_limit():
-            raise MandateError("DEPTH_EXCEEDED",
-                               f"depth {depth} exceeds the root's max_depth {root.max_depth}")
-        cap = {"budget_micro": budget, "categories": cats, "max_depth": root.max_depth,
-               "per_tx_max_micro": per_tx, "payees": parent_cap["payees"]}
-        check_attenuation(parent_cap, _ts(parent.expires_at), cap, exp_ts)
-        available = _available(parent, now)
-        if budget > available:
-            raise MandateError("MANDATE_EXCEEDED",
-                               f"child budget {budget} exceeds the parent's remaining {available}")
+    parent = _lock(parent_claims["jti"])
+    chain = _check_chain(parent, now)
+    root = chain[-1]
+    parent_cap = _cap(parent)
+    per_tx = (min(parent_cap["per_tx_max_micro"], budget) if per_tx_max_micro is None
+              else _micro(per_tx_max_micro, "per_tx_max_micro"))
+    depth = parent.depth + 1
+    if depth > root.max_depth or depth > max_depth_limit():
+        raise MandateError("DEPTH_EXCEEDED",
+                           f"depth {depth} exceeds the root's max_depth {root.max_depth}")
+    cap = {"budget_micro": budget, "categories": cats, "max_depth": root.max_depth,
+           "per_tx_max_micro": per_tx, "payees": parent_cap["payees"]}
+    check_attenuation(parent_cap, _ts(parent.expires_at), cap, exp_ts)
+    available = _available(parent, now)
+    if budget > available:
+        raise MandateError("MANDATE_EXCEEDED",
+                           f"child budget {budget} exceeds the parent's remaining {available}")
+    if charge_parent and budget > parent_cap["per_tx_max_micro"]:
+        raise MandateError("MANDATE_EXCEEDED", "amount exceeds the per-transaction cap")
 
-        mandate_id = new_id("MND")
-        token = tokens.encode(_claims(mandate_id=mandate_id, grantee=grantee,
-                                      hum=parent_claims["hum"], root_id=root.id,
-                                      parent_id=parent.id, depth=depth,
-                                      approval_id=root.approval_id,
-                                      engagement=_engagement(parent.engagement_id),
-                                      cap=cap, now=now, exp=exp_ts))
-        child = Mandate(id=mandate_id, parent_id=parent.id, root_id=root.id,
-                        engagement_id=parent.engagement_id, human_id=root.human_id,
-                        grantee_agent_public_id=grantee, budget_micro=budget, spent_micro=0,
-                        categories=cats, max_depth=root.max_depth, depth=depth,
-                        expires_at=_dt(exp_ts), token=token, approval_id=None)
-        db.session.add(child)
-        db.session.commit()
-        return child
-    except BaseException:
-        db.session.rollback()
-        raise
+    mandate_id = new_id("MND")
+    token = tokens.encode(_claims(mandate_id=mandate_id, grantee=grantee,
+                                  hum=parent_claims["hum"], root_id=root.id,
+                                  parent_id=parent.id, depth=depth,
+                                  approval_id=root.approval_id,
+                                  engagement=_engagement(parent.engagement_id),
+                                  cap=cap, now=now, exp=exp_ts))
+    child = Mandate(id=mandate_id, parent_id=parent.id, root_id=root.id,
+                    engagement_id=parent.engagement_id, human_id=root.human_id,
+                    grantee_agent_public_id=grantee, budget_micro=budget, spent_micro=0,
+                    categories=cats, max_depth=root.max_depth, depth=depth,
+                    expires_at=_dt(exp_ts), token=token, approval_id=None)
+    db.session.add(child)
+    if charge_parent:
+        parent.spent_micro += budget
+    db.session.flush()
+    return child
 
 
 def _engagement(engagement_id: str):

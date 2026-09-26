@@ -355,6 +355,20 @@ def test_subhire_uses_mandate_auth_and_handles_both_responses():
     assert out["kind"] == "subhire.fund" and out["user_code"] == "WDJB-MJHT"
 
 
+def test_subhire_202_points_at_the_child_and_201_returns_its_mandate():
+    child = {"engagement_id": "ENG-CHILD", "agent_id": OTHER_AGENT, "status": "funded",
+             "mandate_token": "child.jwt.sig", "capped": True, "allocated_micro": 4_000_000,
+             "requested_micro": 5_000_000}
+    client, _ = make_client({("POST", f"/api/engagements/{ENG}/subhire"): [
+        (202, {**approval(kind="subhire.fund"), "child_engagement_id": "ENG-CHILD"}), (201, child)]})
+    out = tools.subhire(client, ENG, OTHER_AGENT, 5, "Development", "hdr.payload.sig")
+    assert out["engagement_id"] == "ENG-CHILD" and out["parent_engagement_id"] == ENG
+    assert "get_engagement_status(engagement_id='ENG-CHILD'" in out["instruction"]
+    out = tools.subhire(client, ENG, OTHER_AGENT, 5, "Development", "hdr.payload.sig")
+    assert out["mandate_token"] == "child.jwt.sig" and out["capped"] is True
+    assert "capped" in out["message"] and out["money_moved"] is False
+
+
 def test_client_reads_env_config(monkeypatch):
     monkeypatch.setenv("MCP_API_BASE", "http://example.test:9000/")
     monkeypatch.setenv("MCP_API_TOKEN", "abc")
