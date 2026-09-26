@@ -214,17 +214,25 @@ def resolve_payee(agent: Agent) -> Payee:
     payout record (``chain.ens_v2.PAYOUT_RECORD_KEY``) is read. When set, it
     must equal the profile's payout address: then the payee is that address
     with source ``"ens"``; otherwise PayeeError PAYEE_MISMATCH (fail closed,
-    nothing is paid to either). A failed lookup is PAYEE_UNRESOLVED. With no
-    resolver, no active name, or no record, the profile address is used
-    (source ``"profile"``)."""
+    nothing is paid to either). A failed lookup is PAYEE_UNRESOLVED. With
+    ``ENS_RESOLVE_PAYEES=1``, an active ENS name and a non-empty record are
+    required; missing configuration is therefore not silently redirected to
+    the profile payee. With the flag off, the profile fallback remains
+    available for local development and migration."""
     from app.engagements.service import payee_address
     profile = payee_address(agent)
     resolver = get_resolver()
+    strict = bool(current_app.config.get("ENS_RESOLVE_PAYEES")) if has_app_context() else False
+    if resolver is None:
+        if strict:
+            raise PayeeError("ENS payee resolution is not configured", "PAYEE_UNRESOLVED", 503)
+        return Payee(profile, "profile")
     row = None
-    if resolver is not None:
-        row = (EnsName.query.filter_by(agent_id=agent.id, kind="agent", status="active")
-               .order_by(EnsName.updated_at.desc()).first())
+    row = (EnsName.query.filter_by(agent_id=agent.id, kind="agent", status="active")
+           .order_by(EnsName.updated_at.desc()).first())
     if row is None:
+        if strict:
+            raise PayeeError("agent has no active ENS payout name", "PAYEE_UNRESOLVED", 503)
         return Payee(profile, "profile")
     from chain.ens_v2 import ENSResolutionError
     try:
@@ -234,6 +242,9 @@ def resolve_payee(agent: Agent) -> Payee:
         raise PayeeError(f"could not resolve the payout address of {row.name}",
                          "PAYEE_UNRESOLVED", 503) from None
     if record is None:
+        if strict:
+            raise PayeeError(f"{row.name} has no x402 payout record",
+                             "PAYEE_UNRESOLVED", 503)
         return Payee(profile, "profile", row.name)
     if profile is None or record.lower() != profile:
         log.warning("names: %s payout record differs from the agent profile", row.name)

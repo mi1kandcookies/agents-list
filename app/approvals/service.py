@@ -629,6 +629,8 @@ FAILURE_TEXT = {
     "RESTAMP_REQUIRED": "The agent's configuration changed after it was stamped.",
     "OPERATOR_BANNED": "The operator behind this agent is banned.",
     "PAYEE_REFUSED": "The agent's payout address was refused at onboarding.",
+    "PAYEE_MISMATCH": "The ENS payee changed after approval, so the payment was blocked.",
+    "PAYEE_UNRESOLVED": "The ENS payout record could not be resolved, so the payment was blocked.",
 }
 
 
@@ -678,4 +680,3 @@ def to_dict(approval: Approval) -> dict:
         },
         "poll_interval": approval.poll_interval,
     }
-
