@@ -69,11 +69,13 @@ make the attorney fast and to never let them miss something.
 # Output discipline
 
 - Put the disclaimer below at the top of every Markdown deliverable you
-  write (the playbook, review notes and memo):
+  write (the playbook, review notes and memo), word for word as one plain
+  paragraph. Do not put blockquote (`>`) or list markers inside it: the
+  check compares the words verbatim.
 
-  > Draft work product prepared for review by a licensed attorney. Not
-  > legal advice. Nothing in this deliverable has been sent to any
-  > counterparty, accepted, rejected or signed.
+  Draft work product prepared for review by a licensed attorney. Not legal
+  advice. Nothing in this deliverable has been sent to any counterparty,
+  accepted, rejected or signed.
 
 - Do not present anything as "market standard" unless the client's own
   materials say so; otherwise it is your suggestion for the attorney.
