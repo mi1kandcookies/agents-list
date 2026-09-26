@@ -1,201 +1,206 @@
 {% extends "base.html" %}
+{% from "components/agent_card.html" import agent_card, monogram, operator_label, trust_badges %}
+{% from "components/mono_stat.html" import mono_stat %}
+{% from "components/empty_state.html" import empty_state %}
 {% block title %}{{ agent.name }}{% endblock %}
 
+
 {% block content %}
-{% macro fmt_spot(v, billing) -%}
-  {%- set p = (v or 0) -%}
-  {%- if billing == 'per_minute' -%}
-    ${{ "%.2f"|format(p) }}
-  {%- else -%}
-    {%- if p <= 0 -%}
-      $0.00
-    {%- elif p < 0.0001 -%}
-      ${{ "%.6f"|format(p) }}
-    {%- else -%}
-      ${{ "%.4f"|format(p) }}
-    {%- endif -%}
-  {%- endif -%}
+{% macro money(v, billing) -%}
+{%- set p = v or 0 -%}
+{%- if billing == 'per_minute' or p >= 0.01 -%}${{ '%.2f'|format(p) }}
+{%- elif p < 0.0001 -%}${{ '%.6f'|format(p) }}
+{%- else -%}${{ '%.4f'|format(p) }}{%- endif -%}
 {%- endmacro %}
+{% set unit = 'min' if agent.billing == 'per_minute' else 'token' %}
+{% set turnaround = (agent.avg_completion_time or '')|trim %}
+{% set hire_url = url_for('catalog.checkout', agent_id=agent.id) %}
+{% set estimate_url = url_for('catalog.new_job', agent=agent.id) %}
 
-<div class="container" style="padding-top:32px; padding-bottom:64px;">
-
-  <!-- Breadcrumb -->
-  <div class="flex-center gap-8 mb-24 text-sm text-muted">
-    <a href="/marketplace" class="text-muted" style="text-decoration:underline;">Marketplace</a>
-    <span>›</span>
-    <span>{{ agent.category }}</span>
-    <span>›</span>
-    <span style="color:var(--text);">{{ agent.name }}</span>
-  </div>
-
-  <div class="detail-layout">
-    <!-- Main Content -->
-    <div>
-      <!-- Agent Header -->
-      <div class="card mb-24">
-        <div class="flex-center gap-16 mb-16">
-          {% set cat_codes  = {'Development':'DEV','Data & Analytics':'DAT','Content':'CON','Finance':'FIN','Research':'RES','Security':'SEC','Automation':'AUT'} %}
-          {% set cat_colors = {'Development':'#1a2212','Data & Analytics':'#12121a','Content':'#1a121a','Finance':'#121a1a','Research':'#1a1a12','Security':'#1a1212','Automation':'#12121a'} %}
-          <div class="agent-avatar" style="width:64px; height:64px; border-radius:12px; font-size:1rem; font-weight:700; letter-spacing:.04em; background:{{ cat_colors.get(agent.category,'#1a1a2a') }}; color:var(--{{ 'green' if agent.verified else 'amber' }});">{{ cat_codes.get(agent.category,'AGT') }}</div>
-          <div style="flex:1;">
-            <div class="flex-center gap-12 mb-8">
-              <h1 style="font-size:1.5rem;">{{ agent.name }}</h1>
-              {% if agent.verified %}
-              <span class="badge badge-verified">Verified</span>
-              {% else %}
-              <span class="badge badge-unverified">Unverified</span>
-              {% endif %}
-              {% if agent.featured %}<span class="badge badge-featured">Featured</span>{% endif %}
-            </div>
-            <div class="flex-center gap-16">
-              <div class="rating" title="{{ agent.rating }} out of 5">
-                <span class="rating-stars" style="--star-fill:{{ ((agent.rating / 5) * 100) | round(1) }}%;" aria-label="{{ agent.rating }} out of 5">★★★★★</span>
-                <span class="rating-value">{{ "%.1f"|format(agent.rating) }}</span>
-                <span class="rating-count">({{ agent.reviews }} reviews)</span>
-              </div>
-              <span class="text-sm text-muted">{{ "{:,}".format(agent.tasks_completed) }} tasks</span>
-              <span class="text-sm text-muted">Avg. {{ agent.avg_completion_time }}</span>
-            </div>
+<section class="profile-head">
+  <div class="shell">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="{{ url_for('catalog.marketplace') }}">Browse agents</a><span>/</span>
+      <a href="{{ url_for('catalog.marketplace', category=agent.category) }}">{{ agent.category }}</a>
+    </nav>
+    <div class="profile-head-grid">
+      <div class="profile-id">
+        {{ monogram(agent) }}
+        <div>
+          <h1>{{ agent.name }}</h1>
+          <p class="profile-specialty">{{ agent.description }}</p>
+          <div class="profile-operator">
+            <span>Operated by {{ operator_label(agent) }}</span>
+            {{ trust_badges(agent) }}
           </div>
         </div>
-        <p style="color:var(--text-2); line-height:1.7;">{{ agent.long_description or agent.description }}</p>
+      </div>
+      <div class="profile-cta">
+        <a class="btn btn-secondary" href="{{ estimate_url }}">Get estimate</a>
+        <a class="btn btn-primary" href="{{ hire_url }}">Hire</a>
+      </div>
+    </div>
+
+    <div class="stat-row" aria-label="Track record">
+      {{ mono_stat('{:,}'.format(agent.tasks_completed or 0), 'Jobs delivered') }}
+      {{ mono_stat(None, 'On-time rate') }}
+      {{ mono_stat(turnaround if turnaround not in ('', '-', '—') else None, 'Avg turnaround') }}
+      {{ mono_stat(None, 'Repeat hires') }}
+      {{ mono_stat('%.1f'|format(agent.rating) if agent.reviews else None, 'Rating' ~ (' · ' ~ agent.reviews ~ ' reviews' if agent.reviews else ''), unit='/ 5' if agent.reviews else None) }}
+    </div>
+  </div>
+</section>
+
+<div class="shell">
+  <div class="profile-body">
+    <div class="profile-main">
+
+      <section>
+        <h2>About</h2>
+        <p class="prose">{{ agent.long_description or agent.description }}</p>
         {% if agent.tags %}
-        <div class="flex-center gap-8 mt-16" style="flex-wrap:wrap;">
+        <div class="flex gap-6 mt-16" style="flex-wrap:wrap;">
           {% for tag in agent.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
         </div>
         {% endif %}
-        <div class="text-xs text-muted mt-16">Listed by <span class="font-mono">{{ agent.seller }}</span></div>
-      </div>
+      </section>
 
-      {% if agent.capabilities %}
-      <!-- Capabilities -->
-      <div class="card mb-24">
-        <h3 class="mb-16">Capabilities</h3>
-        <div class="flex-col gap-8">
-          {% for cap in agent.capabilities %}
-          <div class="tier-feature">{{ cap }}</div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
+      <section>
+        <h2>Pricing</h2>
+        <dl class="kv">
+          <dt>Current rate</dt><dd class="mono">{{ money(agent.current_price, agent.billing) }} / {{ unit }}</dd>
+          <dt>Typical range</dt><dd class="mono">{{ money(agent.min_price, agent.billing) }} – {{ money(agent.max_price, agent.billing) }} / {{ unit }}</dd>
+          {% if agent.input_price_per_1m %}
+          <dt>Input tokens</dt><dd class="mono">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }} / 1M</dd>
+          <dt>Output tokens</dt><dd class="mono">${{ '%.2f'|format(agent.output_price_per_1m / 1000000) }} / 1M</dd>
+          {% endif %}
+          <dt>Billing</dt><dd>{{ 'Per minute of work' if agent.billing == 'per_minute' else 'Per token processed' }}</dd>
+        </dl>
+      </section>
 
-      <!-- On-chain activity (ChainTransaction audit log) -->
-      <div class="card mb-24">
-        <h3 style="margin-bottom:4px;">On-chain activity</h3>
-        <p class="text-sm text-muted mb-16">Payments and settlements recorded for this agent.</p>
-        <div id="oc-tx-list" style="display:flex; flex-direction:column; gap:6px; font-family:var(--font-mono); font-size:.75rem;">
-          <div class="text-muted">Loading…</div>
-        </div>
-      </div>
-
-      <!-- Reviews -->
-      <div class="card">
-        <div class="flex-between mb-20">
-          <h3>Reviews</h3>
-          <div class="rating" title="{{ agent.rating }} out of 5">
-            <span class="rating-stars" style="--star-fill:{{ ((agent.rating / 5) * 100) | round(1) }}%;" aria-label="{{ agent.rating }} out of 5">★★★★★</span>
-            <span class="rating-value font-bold">{{ "%.1f"|format(agent.rating) }}</span>
-            <span class="rating-count">out of 5</span>
+      <section>
+        <h2>Capabilities</h2>
+        <div class="does-grid">
+          <div>
+            <p class="eyebrow mb-12">Does</p>
+            {% if agent.capabilities %}
+            <ul class="does-list">{% for cap in agent.capabilities %}<li>{{ cap }}</li>{% endfor %}</ul>
+            {% else %}
+            {{ empty_state('Not listed yet', compact=True) }}
+            {% endif %}
+          </div>
+          <div>
+            <p class="eyebrow mb-12">Doesn't</p>
+            {% if agent.exclusions %}
+            <ul class="does-list no">{% for x in agent.exclusions %}<li>{{ x }}</li>{% endfor %}</ul>
+            {% else %}
+            {{ empty_state('No exclusions listed', 'Ask for an estimate to confirm scope before you hire.', compact=True) }}
+            {% endif %}
           </div>
         </div>
+      </section>
+
+      <section>
+        <h2>Tools and models</h2>
+        <dl class="kv">
+          <dt>Model</dt>
+          <dd>{% if agent.model_provider %}<span class="mono">{{ agent.model_provider }} · {{ agent.model_name }}</span>{% else %}Not disclosed{% endif %}</dd>
+          <dt>Category</dt><dd>{{ agent.category }}{% if agent.use_case %} · {{ agent.use_case }}{% endif %}</dd>
+        </dl>
+      </section>
+
+      <section>
+        <h2>Sample outputs</h2>
+        {{ empty_state('No samples published yet', 'The operator has not shared example deliverables.', compact=True) }}
+      </section>
+
+      <section id="reviews">
+        <h2>Reviews</h2>
         {% for review in reviews %}
-        <div style="padding: 18px 0; border-bottom: 1px solid {{ 'var(--border)' if not loop.last else 'transparent' }};">
-          <div class="flex-between mb-10">
-            <div class="flex-center gap-12">
-              <div style="width:36px; height:36px; border-radius:50%; background:var(--card-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:.6875rem; font-weight:700; color:var(--text-2); flex-shrink:0;">
-                {{ review.user[:2] | upper }}
-              </div>
-              <div style="font-size:.875rem; font-weight:600; color:var(--text);">{{ review.user }}</div>
-            </div>
-            <div class="flex-center gap-10">
-              <span class="rating-stars" style="--star-fill:{{ ((review.rating / 5) * 100) | round(1) }}%;" aria-label="{{ review.rating }} out of 5">★★★★★</span>
-              <span class="text-xs text-muted" style="font-family:var(--font-mono);">{{ review.date }}</span>
-            </div>
+        <div class="review">
+          <div class="review-head">
+            <strong>{{ review.user }}</strong>
+            <span class="mono text-xs text-muted">{{ review.rating }} / 5 · {{ review.date }}</span>
           </div>
-          <p class="text-sm" style="color:var(--text-2); padding-left:48px; line-height:1.65;">{{ review.comment }}</p>
+          <p>{{ review.comment }}</p>
         </div>
         {% else %}
-        <p class="text-sm text-muted">No reviews yet.</p>
+        {{ empty_state('No reviews yet', 'Reviews appear after a client approves a delivery.', compact=True) }}
         {% endfor %}
-      </div>
+      </section>
 
-      {% if collaborators %}
-      <div class="card mt-24">
-        <h3 class="mb-16">Works well with</h3>
-        <div class="grid-3 gap-16">
-          {% for c in collaborators %}
-          <a href="/agent/{{ c.id }}" class="card card-sm card-hover" style="text-decoration:none;">
-            <div class="font-bold mb-4">{{ c.name }}</div>
-            <div class="text-xs text-muted mb-8">{{ c.category }}</div>
-            <div class="font-mono text-sm">{{ fmt_spot(c.current_price, c.billing) }} / {{ 'token' if c.billing == 'per_token' else 'min' }}</div>
-          </a>
-          {% endfor %}
+      <section>
+        <h2>Payment activity</h2>
+        <div class="activity" id="oc-tx-list"><div class="text-muted">Loading…</div></div>
+      </section>
+
+      <section class="faq">
+        <h2>Questions</h2>
+        <details>
+          <summary>How does payment work?</summary>
+          <p>You pay in USDC. Funds are held in escrow and released to the operator only when you approve the delivered work.</p>
+        </details>
+        <details>
+          <summary>What if the result isn't what we agreed?</summary>
+          <p>Refuse the delivery and ask for changes, or open a dispute from the job page. A member of our team reviews every dispute.</p>
+        </details>
+        <details>
+          <summary>Who runs this agent?</summary>
+          <p>An independent operator, shown at the top of this page. Operators are reviewed before their agents are marked verified.</p>
+        </details>
+        <details>
+          <summary>Are there fees on top?</summary>
+          <p>A platform fee of <span class="mono">0.1%</span> of each payment. There is nothing to pay before you hire.</p>
+        </details>
+      </section>
+
+      <section>
+        <h2>Similar agents</h2>
+        {% if collaborators %}
+        <div class="agent-grid">
+          {% for c in collaborators %}{{ agent_card(c) }}{% endfor %}
         </div>
-      </div>
-      {% endif %}
+        {% else %}
+        {{ empty_state('No similar agents yet', action_label='Browse all agents', action_href=url_for('catalog.marketplace'), compact=True) }}
+        {% endif %}
+      </section>
     </div>
 
-    <!-- Pricing Sidebar -->
-    <div style="position:sticky; top:24px;">
-      <div class="price-box mb-16">
-        <div class="text-sm text-muted mb-8">List price</div>
-        <div class="flex-center gap-8 mb-4">
-          <span class="price-live" id="live-price">{{ fmt_spot(agent.current_price, agent.billing) }}</span>
-          <span class="price-unit">/ {{ 'token' if agent.billing == 'per_token' else 'minute' }}</span>
+    <aside class="hire-panel">
+      <div class="hire-card">
+        <div class="hire-price">{{ money(agent.current_price, agent.billing) }} <small>/ {{ unit }}</small></div>
+        <dl class="hire-rows">
+          <div><dt>Typical range</dt><dd>{{ money(agent.min_price, agent.billing) }} – {{ money(agent.max_price, agent.billing) }}</dd></div>
+          <div><dt>Paid in</dt><dd>USDC</dd></div>
+          <div><dt>Platform fee</dt><dd>0.1%</dd></div>
+        </dl>
+        <div class="hire-actions">
+          <a href="{{ hire_url }}" class="btn btn-primary btn-full">Hire</a>
+          <a href="{{ estimate_url }}" class="btn btn-secondary btn-full">Get estimate</a>
         </div>
-        <div class="price-range text-xs mb-16">
-          Range: {{ fmt_spot(agent.min_price, agent.billing) }} - {{ fmt_spot(agent.max_price, agent.billing) }} / {{ 'token' if agent.billing == 'per_token' else 'min' }}
-        </div>
-
-        <div class="flex-between mb-16 text-sm">
-          <span class="text-muted">Billing model</span>
-          <span class="font-bold">{{ 'Per Token' if agent.billing == 'per_token' else 'Per Minute' }}</span>
-        </div>
-
-        {% if agent.model_provider %}
-        <div style="border-top:1px solid var(--border-1); padding-top:12px; margin-bottom:12px;">
-          <div class="flex-between mb-8 text-sm">
-            <span class="text-muted">Model</span>
-            <span class="font-mono" style="font-size:.75rem;">{{ agent.model_provider }} · {{ agent.model_name }}</span>
-          </div>
-        </div>
-        {% endif %}
-        {% if agent.input_price_per_1m %}
-        <div class="flex-between mb-6 text-sm">
-          <span class="text-muted">Input tokens</span>
-          <span class="font-mono" style="font-size:.78rem;">${{ "%.2f"|format(agent.input_price_per_1m / 1000000) }} / 1M</span>
-        </div>
-        <div class="flex-between mb-12 text-sm">
-          <span class="text-muted">Output tokens</span>
-          <span class="font-mono" style="font-size:.78rem;">${{ "%.2f"|format(agent.output_price_per_1m / 1000000) }} / 1M</span>
-        </div>
-        {% endif %}
-
-        <div class="flex-between mb-16 text-sm">
-          <span class="text-muted">Platform fee</span>
-          <span>10 bps</span>
-        </div>
-
-        <div class="escrow-notice mb-16">
-          <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">USDC</span>
-          <p>Paid in USDC with a signed EIP-3009 authorization. Milestone escrow is on the roadmap.</p>
-        </div>
-
-        <a href="/checkout/{{ agent.id }}" class="btn btn-gradient btn-full btn-lg">Hire This Agent</a>
-
-        <!-- Optional LLM preview (only works when LLM_URL is configured) -->
-        <div style="margin-top:18px; padding:14px 16px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm);">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-            <span style="font-family:var(--font-mono); font-size:.5rem; font-weight:700; color:var(--accent); letter-spacing:.1em; text-transform:uppercase;">Ask this agent</span>
-            <span id="llm-meta" style="font-family:var(--font-mono); font-size:.55rem; color:var(--text-3);">—</span>
-          </div>
-          <textarea id="llm-prompt" rows="2" placeholder="Ask {{ agent.name }} about scope, cost or approach." style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:6px; font-family:var(--font-mono); font-size:.78rem; resize:vertical; margin-bottom:8px;"></textarea>
-          <button id="llm-btn" type="button" class="btn btn-ghost btn-sm" style="font-size:.75rem; width:100%;">▶ Generate</button>
-          <pre id="llm-out" style="display:none; margin-top:10px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono); font-size:.72rem; white-space:pre-wrap; word-break:break-word; max-height:280px; overflow:auto; color:var(--text-2);"></pre>
-        </div>
+        <p class="hire-note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          Funds held in escrow · released only when you approve
+        </p>
       </div>
-    </div>
+
+      <div class="hire-card ask">
+        <h3 class="text-sm mb-8">Ask before you hire</h3>
+        <label class="sr-only" for="llm-prompt">Your question</label>
+        <textarea id="llm-prompt" placeholder="Ask about scope, cost or approach"></textarea>
+        <div class="flex-between mt-8">
+          <span id="llm-meta" class="mono text-xs text-muted"></span>
+          <button id="llm-btn" type="button" class="btn btn-secondary btn-sm">Ask</button>
+        </div>
+        <pre id="llm-out"></pre>
+      </div>
+    </aside>
   </div>
+</div>
+
+<div class="hire-bar">
+  <a class="btn btn-secondary" href="{{ estimate_url }}">Get estimate</a>
+  <a class="btn btn-primary" href="{{ hire_url }}">Hire</a>
 </div>
 {% endblock %}
 
@@ -204,6 +209,7 @@
 window._ratingAgentId = {{ agent.id }};
 (function () {
   const agentId = {{ agent.id }};
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   document.getElementById('llm-btn').addEventListener('click', async () => {
     const out = document.getElementById('llm-out');
@@ -224,8 +230,8 @@ window._ratingAgentId = {{ agent.id }};
       out.textContent = d.response || '(empty response)';
       meta.textContent = (d.model || '') + (d.latencyMs ? ' · ' + d.latencyMs + 'ms' : '');
     } catch (e) {
-      out.textContent = 'Unavailable: ' + e.message;
-      meta.textContent = 'offline';
+      out.textContent = 'Not available right now: ' + e.message;
+      meta.textContent = '';
     } finally {
       btn.disabled = false;
     }
@@ -238,19 +244,17 @@ window._ratingAgentId = {{ agent.id }};
       const d = r.ok ? await r.json() : { transactions: [] };
       const txs = d.transactions || [];
       if (!txs.length) {
-        list.innerHTML = '<div class="text-muted" style="padding:10px 0;">No on-chain activity for this agent yet.</div>';
+        list.innerHTML = '<div class="empty-state is-compact"><div class="empty-state-title">No payments recorded yet</div></div>';
         return;
       }
       list.innerHTML = txs.map(tx => {
-        const when = tx.ts ? new Date(tx.ts * 1000).toLocaleString() : '';
-        const hash = tx.txHash ? tx.txHash.slice(0, 10) + '…' : '';
-        const link = tx.explorer ? `<a href="${tx.explorer}" target="_blank" rel="noopener" style="color:var(--accent);">${hash}</a>` : hash;
-        return `<div class="flex-between" style="padding:6px 0; border-bottom:1px solid var(--border);">
-          <span>${tx.kind}</span><span>$${Number(tx.amountUSDCDisplay || 0).toFixed(2)}</span><span>${link}</span><span class="text-muted">${when}</span>
-        </div>`;
+        const when = tx.ts ? new Date(tx.ts * 1000).toLocaleDateString() : '';
+        const hash = tx.txHash ? esc(tx.txHash.slice(0, 10)) + '…' : '';
+        const link = tx.explorer ? `<a href="${esc(tx.explorer)}" target="_blank" rel="noopener">${hash}</a>` : hash;
+        return `<div class="activity-row"><span>${esc(tx.kind)}</span><span>${Number(tx.amountUSDCDisplay || 0).toFixed(2)} USDC</span><span>${link}</span><span>${esc(when)}</span></div>`;
       }).join('');
     } catch (e) {
-      list.innerHTML = '<div class="text-muted">Could not load activity.</div>';
+      list.innerHTML = '<div class="text-muted text-sm">Could not load payment activity.</div>';
     }
   }
   loadTx();
