@@ -1,0 +1,176 @@
+schema_version: 1
+slug: proposal-writer
+name: Proposal & Questionnaire Writer
+version: 0.1.0
+summary: >-
+  Shreds an RFP, grant notice or security questionnaire into a compliance
+  matrix, maps every requirement to your own knowledge base, and drafts a
+  compliant response in which every company claim cites its source. Gaps
+  become questions for your experts, never invented content. You decide,
+  sign and submit.
+listing:
+  category: Business Operations
+  description: >-
+    Proposal support for commercial RFPs, public-sector tenders, small-business
+    research proposals, foundation and state grants, and security or vendor
+    questionnaires. Milestone 1 delivers the requirement shred, compliance
+    matrix, format rules and a bid/no-bid brief; milestone 2 the evidence map,
+    SME question list and an annotated outline with a page budget; milestone 3
+    a full draft grounded in your knowledge base, the completed compliance
+    matrix and a submission checklist. Works from the documents you upload;
+    it never logs into portals, signs certifications or submits.
+  tags: [rfp, proposals, grants, compliance-matrix, security-questionnaire, bid-management]
+  capabilities: [requirements-shred, compliance-matrix, format-rule-extraction, evidence-mapping,
+                 grounded-drafting, questionnaire-answers]
+  # Engagements are billed per milestone within typical_low..typical_high.
+  # task_price_usdc is a placeholder for the flat x402 per-task price the
+  # operator stamps as the platform manifest's price (at most 10 USDC).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 400, typical_high: 3000,
+            task_price_usdc: 5.0}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: docs
+prompts:
+  system: prompts/system.md
+  include: [playbook/shred-and-matrix.md, playbook/grounded-drafting.md,
+            playbook/questionnaire-mode.md]
+tools: [read_document, read_file, write_file, edit_file, list_files, search_files,
+        record_source, record_claim, ask_client, post_progress, submit_milestone,
+        shred_requirements, shred_questionnaire, extract_format_rules, extract_dates,
+        kb_search, build_evidence_map, check_page_budget, update_compliance_matrix,
+        grounding_report, init_answer_sheet, set_answer]
+shell: {allow: [], timeout_seconds: 600}
+egress: {mode: none, allow: []}
+limits: {max_steps: 120, max_tokens: 4000000, max_usd: 50, max_wall_minutes: 240}
+human_gate:
+  required: false
+  reviewer_role: customer's authorized representative
+  disclaimer: >-
+    Draft work product prepared from the documents you supplied. Your subject
+    matter experts must confirm every technical, past-performance and pricing
+    statement, and your authorized representative makes all certifications,
+    signatures and submissions. Nothing here is legal advice.
+  checklist:
+    - The bid/no-bid decision is recorded by the customer
+    - SMEs confirmed every technical claim and past-performance narrative
+    - Every price and budget figure came from the customer
+    - Certifications and forms are completed and signed by the authorized representative
+    - The funder's or buyer's policy on AI-assisted writing was checked
+intake:
+  - field: solicitation_files
+    question: >-
+      Upload the solicitation (RFP, notice of funding, tender or questionnaire) with
+      every amendment and attachment, as .md, .txt, .docx or .csv.
+    required: true
+  - field: engagement_mode
+    question: Is this a proposal/grant response (rfp) or a security/vendor questionnaire (questionnaire)?
+    required: true
+  - field: knowledge_base_files
+    question: >-
+      Upload the material the response may draw on: capability statement, past proposals,
+      past-performance write-ups, resumes, security policies, prior questionnaire answers,
+      as .md, .txt, .docx or .csv (one answer per row); convert PDFs and spreadsheets to one
+      of these first, since nothing else can be cited.
+    required: true
+  - field: submission_deadline
+    question: When is the response due, and when do you need the final draft to allow for internal review?
+    required: true
+  - field: funder_ai_policy
+    question: Does the buyer or funder restrict AI-assisted writing or require a disclosure? Paste or link the policy.
+    required: false
+  - field: win_themes
+    question: What should evaluators remember about you (differentiators, proof points, known customer priorities)?
+    required: false
+  - field: sme_contacts
+    question: Who answers technical, pricing and staffing questions, and how quickly can they respond?
+    required: false
+estimate: {usd_per_hour: 6.0}
+milestones:
+  - id: m1-shred
+    title: Requirements shred, compliance matrix and bid/no-bid brief
+    description: >-
+      Every binding statement in the solicitation becomes a numbered requirement with
+      verbatim text, section and page; format rules and dates are extracted; the
+      brief summarizes eligibility, evaluation criteria, deadlines, risks and a
+      recommendation for the customer's bid decision.
+    deliverables:
+      - deliverables/m1-shred/requirements.json
+      - deliverables/m1-shred/compliance_matrix.csv
+      - deliverables/m1-shred/format_rules.json
+      - deliverables/m1-shred/bid-brief.md
+    hours: [1, 3]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m1-shred/requirements.json,
+          deliverables/m1-shred/compliance_matrix.csv, deliverables/m1-shred/format_rules.json,
+          deliverables/m1-shred/bid-brief.md]}}
+      - {check: json_valid, params: {path: deliverables/m1-shred/requirements.json}}
+      - {check: json_valid, params: {path: deliverables/m1-shred/format_rules.json}}
+      - {check: csv_columns, params: {path: deliverables/m1-shred/compliance_matrix.csv,
+          columns: [req_id, source, section, page, type, requirement, response_section, owner, status]}}
+      - {check: shred_complete, description: Every binding statement is shredded verbatim with section and page,
+         params: {min_recall: 1.0}}
+      - {check: matrix_consistent, description: One matrix row per requirement with its verbatim text}
+      - {check: format_rules_captured, description: "Every page, word, font, margin and file rule is captured"}
+      - {check: dates_match_source, description: Brief dates exist in the solicitation and no deadline is missing,
+         params: {path: deliverables/m1-shred/bid-brief.md}}
+      - {check: markdown_sections, params: {path: deliverables/m1-shred/bid-brief.md,
+          sections: [Summary, Key dates, Evaluation criteria, Risks and open questions, Recommendation]}}
+      - {check: no_placeholders, params: {paths: [deliverables/m1-shred/bid-brief.md]}}
+      - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/bid-brief.yaml,
+          paths: [deliverables/m1-shred/bid-brief.md], threshold: 0.75}}
+      - {check: human_signoff, kind: human, description: The customer records the bid/no-bid decision}
+  - id: m2-outline
+    title: Evidence map, SME question list and annotated outline
+    description: >-
+      Each requirement is mapped to supporting passages in the customer's knowledge base
+      or listed as a gap with a question for a named expert; the annotated outline
+      mirrors the required structure, assigns every requirement to a section and fits
+      the page limits.
+    deliverables:
+      - deliverables/m2-outline/evidence_map.csv
+      - deliverables/m2-outline/gaps.md
+      - deliverables/m2-outline/outline.md
+    hours: [2, 4]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m2-outline/evidence_map.csv,
+          deliverables/m2-outline/gaps.md, deliverables/m2-outline/outline.md]}}
+      - {check: csv_columns, params: {path: deliverables/m2-outline/evidence_map.csv,
+          columns: [req_id, type, status, passages, note]}}
+      - {check: evidence_map_complete, description: Every requirement is mapped to real KB passages or listed as a gap}
+      - {check: outline_budget_ok, description: Outline covers every requirement within the page limits}
+      - {check: no_placeholders, params: {paths: [deliverables/m2-outline/gaps.md, deliverables/m2-outline/outline.md]}}
+      - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/outline.yaml,
+          paths: [deliverables/m2-outline/outline.md, deliverables/m2-outline/gaps.md], threshold: 0.75}}
+      - {check: human_signoff, kind: human, description: SMEs answer or accept the open gap questions}
+  - id: m3-draft
+    title: Grounded draft, completed compliance matrix and submission checklist
+    description: >-
+      The full response (or, for a questionnaire, the answer sheet plus a cover
+      response) with every company claim cited to the knowledge base, gaps left as
+      marked questions, the compliance matrix pointing at the section that answers
+      each requirement, and a checklist of format rules, forms and logistics for
+      the customer's submission.
+    deliverables:
+      - deliverables/m3-draft/proposal.md
+      - deliverables/m3-draft/compliance_matrix.csv
+      - deliverables/m3-draft/submission-checklist.md
+    hours: [2, 4]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m3-draft/proposal.md,
+          deliverables/m3-draft/compliance_matrix.csv, deliverables/m3-draft/submission-checklist.md]}}
+      - {check: matrix_consistent, description: Every requirement is addressed where the draft says it is,
+         params: {matrix: deliverables/m3-draft/compliance_matrix.csv, require_addressed: true}}
+      - {check: draft_within_limits, description: Volumes and sections fit the page and word limits,
+         params: {words_per_page: 500}}
+      - {check: claims_grounded, description: Every company fact is cited and supported by the cited passage,
+         params: {max_uncited: 0, min_citations: 1}}
+      - {check: questionnaire_answers_grounded, description: Questionnaire answers are grounded or abstain,
+         params: {path: deliverables/m3-draft/questionnaire_answers.csv}}
+      - {check: ledger_verified, description: Key claims recorded in the claim ledger quote their source verbatim}
+      - {check: citations_resolve, description: Every claim id cited in the draft is in the claim ledger,
+         params: {paths: [deliverables/m3-draft/proposal.md], min_citations: 0}}
+      - {check: no_placeholders, params: {paths: [deliverables/m3-draft/proposal.md,
+          deliverables/m3-draft/submission-checklist.md]}}
+      - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/draft.yaml,
+          paths: [deliverables/m3-draft/proposal.md], threshold: 0.75}}
+      - {check: human_signoff, kind: human,
+         description: SMEs approve claims and pricing; the authorized representative signs and submits}
