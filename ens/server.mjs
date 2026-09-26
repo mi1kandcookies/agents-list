@@ -1,6 +1,7 @@
 // Names sidecar: issues ENSv2 names for agents and jobs on Ethereum Sepolia.
 // Binds to 127.0.0.1 only; see README.md for setup and the live runbook.
 import { createServer } from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 import { loadConfig } from './lib/config.mjs';
 import { DryRunExecutor, LiveExecutor } from './lib/executor.mjs';
@@ -30,7 +31,8 @@ export async function start(config = loadConfig()) {
   return { server, service };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare as file URLs so the check also matches Windows paths.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   start().catch((err) => {
     console.error(`[names] failed to start: ${err.message}`);
     process.exit(1);

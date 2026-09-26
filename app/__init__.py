@@ -244,6 +244,7 @@ def _register_cli(app: Flask) -> None:
 
     app.cli.add_command(__import__("app.demo_seed", fromlist=["seed_demo"]).seed_demo)
     app.cli.add_command(__import__("app.demo_reset", fromlist=["reset_demo"]).reset_demo)
+    app.cli.add_command(__import__("app.names.cli", fromlist=["names_cli"]).names_cli)
 
 
 def _init_database(app: Flask) -> None:

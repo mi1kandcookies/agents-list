@@ -38,11 +38,11 @@ def names_available():
 @bp.post("/api/names/<path:name>/retry")
 @require_api_key
 def names_retry(name: str):
-    row = service.retry(name.strip().lower())
+    row, error = service.retry(name.strip().lower())
     if row is None:
         return jsonify({"error": "name not found", "code": "NOT_FOUND"}), 404
     return jsonify({"name": row.name, "kind": row.kind, "status": row.status,
-                    "tx_hashes": row.tx_hashes or []})
+                    "tx_hashes": row.tx_hashes or [], "error": error})
 
 
 @bp.get("/names")

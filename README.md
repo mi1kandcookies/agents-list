@@ -96,7 +96,9 @@ recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
 For ENS sidecar setup, `scripts/setup_agent_names.py` performs a read-only
 health check by default and can resume root or agent setup when explicitly
 requested. Live writes require `--confirm-live`; operator keys remain in the
-sidecar environment.
+sidecar environment. `flask names publish-agents` gives every hireable listed
+agent its name and keeps existing names up to date; `--plan` shows what it
+would send, and a live sidecar needs `--confirm-live`.
 
 `flask seed-demo` assigns `SCREENING_ADDRESS_MAP` entries to the demo agents
 as payout (Sepolia) and screening (mainnet) addresses. Without the map their

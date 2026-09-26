@@ -55,9 +55,15 @@ class SidecarClient:
     def health(self) -> dict:
         return self._request("GET", "/health")
 
-    def create_agent(self, *, agent_public_id: str, label: str, records: dict) -> dict:
+    def setup_root(self, *, register: bool = False) -> dict:
+        """Adopt the root name if this operator already holds it. Registering a
+        new root (``register``) mints MockUSDC and takes about 70 s."""
+        return self._request("POST", "/names/root/setup", json={"adopt_only": not register})
+
+    def create_agent(self, *, agent_public_id: str, label: str, records: dict,
+                     grantee: str | None = None) -> dict:
         return self._request("POST", "/names/agent", json={
-            "agent_public_id": agent_public_id, "label": label, "records": records})
+            "agent_public_id": agent_public_id, "label": label, "records": records, "grantee": grantee})
 
     def create_job(self, *, parent: str, label: str, expiry: int, records: dict,
                    grantee: str | None = None) -> dict:

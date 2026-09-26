@@ -5,7 +5,7 @@ import { decodeFunctionData, toHex } from 'viem';
 
 import { resolverAbi } from '../lib/abis.mjs';
 import { ERC8004_REGISTRY_7930, RECORD_KEYS, erc7930Address, registrationKey } from '../lib/constants.mjs';
-import { assertLabel, dnsEncode, keyResource, setterCalldata, toTextRecords } from '../lib/names.mjs';
+import { assertLabel, dnsEncode, keyResource, setAddressCall, setterCalldata, toTextRecords } from '../lib/names.mjs';
 
 test('ERC-7930 interoperable addresses', () => {
   // Worked examples from ERC-7930 and ENSIP-25 (mainnet).
@@ -55,6 +55,19 @@ test('record validation', () => {
   assert.throws(() => toTextRecords('agent', { erc8004_agent_id: 'abc' }), /decimal/);
   assert.throws(() => toTextRecords('job', []), /object/);
   assert.deepEqual(toTextRecords('job', { status: '', mandate: null }), []);
+});
+
+test('endpoint, manifest and payout records', () => {
+  const out = toTextRecords('agent', {
+    a2a: 'https://agent.example/a2a', web: 'https://app.example/agents/1', manifest_hash: '0x' + 'ab'.repeat(32),
+  });
+  assert.deepEqual(out.map((e) => e.key), ['agent-endpoint[a2a]', 'agent-endpoint[web]', 'manifest-hash']);
+  assert.throws(() => toTextRecords('agent', { web: 'http://localhost:8090' }), /https/);
+  assert.throws(() => toTextRecords('agent', { manifest_hash: '0x1234' }), /32-byte/);
+  const addr = decodeFunctionData({ abi: resolverAbi, data: setAddressCall('a.eth', '0x00000000000000000000000000000000000a11ce') });
+  assert.deepEqual([addr.functionName, addr.args[1], addr.args[2]],
+    ['setAddress', 60n, '0x00000000000000000000000000000000000a11ce']);
+  assert.equal(decodeFunctionData({ abi: resolverAbi, data: setAddressCall('a.eth', null) }).args[2], '0x');
 });
 
 test('labels are strict', () => {

@@ -118,6 +118,9 @@ class Config:
     ENS_SIDECAR_TOKEN: str = os.environ.get("ENS_SIDECAR_TOKEN", "")
     ENS_SIDECAR_TIMEOUT: float = float(os.environ.get("ENS_SIDECAR_TIMEOUT", "15") or 15)
     ENS_ROOT_NAME: str = os.environ.get("ENS_ROOT_NAME", "") or "agentslist-app.eth"
+    # Public https origin of this app. When set, agent names publish their
+    # listing page as the ENSIP-26 web endpoint.
+    PUBLIC_BASE_URL: str = os.environ.get("PUBLIC_BASE_URL", "")
     # Payee resolution (app/names/service.py resolve_payee): read the agent's
     # x402 payout record through the Universal Resolver and fail closed when it
     # disagrees with the profile. Off → payees come from the profile. When on,
