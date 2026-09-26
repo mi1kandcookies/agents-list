@@ -21,9 +21,10 @@ import yaml
 from agentkit.__main__ import main as cli
 from agentkit.evals import load_cases, run_case
 from agentkit.events import MemorySink
-from agentkit.evidence import evidence_hash, sha256_file
+from agentkit.evidence import evidence_hash, platform_evidence, sha256_file
 from agentkit.ledger import Ledger
 from agentkit.llm import ScriptedAdapter
+from agentkit.manifest import load_manifest, operator_fields, spec_hash, task_price_micro
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
 from agentkit.types import Brief, ModelResponse, Submission, ToolCall, Usage
@@ -299,6 +300,9 @@ def _assert_ready(sub: Submission, events: MemorySink, milestone: str) -> None:
     assert {a.path for a in sub.artifacts} == set(ms["deliverables"])
     assert sub.evidence_hash.startswith("0x") and len(sub.evidence_hash) == 66
     assert evidence_hash(sub) == sub.evidence_hash
+    # the evidence names the SOW milestone it is posted to (manifest order by default)
+    idx = [m["id"] for m in MANIFEST["milestones"]].index(milestone)
+    assert sub.milestone_idx == idx and json.loads(platform_evidence(sub))["milestone_idx"] == idx
 
 
 def _assert_hashed(sub: Submission, ws: Path) -> None:
@@ -317,6 +321,21 @@ def test_specialist_is_wired(spec):
     reg = spec.check_registry()
     for name in ("quotes_in_contract", "playbook_coverage", "redline_roundtrip", "hidden_content_disclosed"):
         assert reg.kind(name) == "automated"   # a brief cannot make a domain check pending
+
+
+def test_manifest_loads_strictly_and_bridges_to_the_stamped_manifest():
+    m = load_manifest(PKG)
+    assert m.listing.category == "Legal"
+    assert (m.listing.pricing.model, m.listing.pricing.typical_low, m.listing.pricing.typical_high) \
+        == ("per_milestone", 400, 2500)
+    assert task_price_micro(m) == 5_000_000
+    # production runs the stamped model: no fallback chain and no server-side fallbacks
+    assert m.models.fallbacks == [] and not m.models.options.get("anthropic", {}).get("server_fallbacks")
+    fields = operator_fields(m)
+    assert fields["model"] == "anthropic:claude-opus-5" and fields["mcp_servers"] == []
+    assert fields["tools"] == sorted(MANIFEST["tools"])
+    assert fields["skills"] == sorted(MANIFEST["listing"]["capabilities"])
+    assert fields["spec_hash"] == spec_hash(PKG)
 
 
 def test_engagement_runs_every_milestone_to_ready_for_review(spec, ws):
@@ -502,7 +521,12 @@ def test_cli_scoping_commands():
     assert code == 0 and "contract-review" in out and "human-gated" in out
     assert _cli("validate", "contract-review") == (0, "[]\n")
     code, out = _cli("show", "contract-review")
-    assert code == 0 and json.loads(out)["category"] == "Legal"
+    shown = json.loads(out)
+    assert code == 0 and shown["category"] == "Legal"
+    assert shown["pricing"] == {"model": "per_milestone", "currency": "USDC", "typical_low": 400,
+                                "typical_high": 2500, "task_price_usdc": 5.0}
+    code, out = _cli("spec-hash", "contract-review")
+    assert code == 0 and out == spec_hash(PKG) + "\n"
     code, out = _cli("milestones", "contract-review", "--intake", str(INTAKE))
     assert code == 0 and [m["id"] for m in json.loads(out)] == ["m1-playbook", "m2-issues", "m3-redline"]
     code, out = _cli("estimate", "contract-review", "--intake", str(INTAKE))
