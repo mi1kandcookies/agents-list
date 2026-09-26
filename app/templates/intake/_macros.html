@@ -3,23 +3,37 @@
   /estimate/<id> (values rendered on the server).
 #}
 
-{% macro estimate_card(cost="", cost_note="", days="", fit="", level="", tips=[]) %}
+{#- estimate_card: token-based cost. cost = estimated input and output tokens
+    x the agent's token prices (app/intake/token_model.py); the budget (the
+    milestone total held in escrow) is the cap. -#}
+{% macro estimate_card(cost="", cost_note="", tokens_in="", tokens_out="", tokens_note="",
+                       days="", fit="", cap="", cap_note="", level="", tips=[], method="") %}
 <div class="est" id="est-card">
   <div class="est-cell">
-    <span class="est-label">Cost, USDC</span>
+    <span class="est-label">Estimated cost, USDC</span>
     <span class="est-num mono" data-bind="est-cost">{{ cost }}</span>
     <span class="est-sub" data-bind="est-cost-note">{{ cost_note }}</span>
+  </div>
+  <div class="est-cell">
+    <span class="est-label">Estimated tokens</span>
+    <span class="est-tokens"><span class="est-num mono" data-bind="est-tok-in">{{ tokens_in }}</span> <span class="est-unit">input</span></span>
+    <span class="est-tokens"><span class="est-num mono" data-bind="est-tok-out">{{ tokens_out }}</span> <span class="est-unit">output</span></span>
+    <span class="est-sub" data-bind="est-tok-note">{{ tokens_note }}</span>
   </div>
   <div class="est-cell">
     <span class="est-label">Duration</span>
     <span class="est-num mono" data-bind="est-days">{{ days }}</span>
     <span class="est-sub" data-bind="est-fit">{{ fit }}</span>
   </div>
+  <div class="est-cell">
+    <span class="est-label">Your budget, the cap</span>
+    <span class="est-num mono" data-bind="est-cap">{{ cap }}</span>
+    <span class="est-sub" data-bind="est-cap-note">{{ cap_note }}</span>
+  </div>
   <div class="est-confidence">
     <p><span class="est-label">Confidence</span>
       <span class="conf conf-{{ level or 'low' }}" data-bind="est-level">{{ level|capitalize }}</span></p>
-    <p class="est-method">Rule-based: the escrowed amount is your milestone total; the upper bound adds a
-      revision buffer that shrinks as the job gets more specific. A scoping agent will refine this.</p>
+    <p class="est-method" data-bind="est-method">{{ method }}</p>
     <ul class="est-tips" data-bind="est-tips">
       {% for tip in tips %}<li>{{ tip }}</li>{% endfor %}
     </ul>
@@ -29,7 +43,7 @@
 
 {% macro contract(brief="", agent="", agent_id="", milestones=None, total="", deadline="",
                   deadline_is_date=False, auto_days=7, sow_hash=None, engagement_id=None,
-                  source=None) %}
+                  source=None, usage="") %}
 <dl class="terms">
   <div class="term">
     <dt>Scope</dt>
@@ -67,6 +81,11 @@
     <dt>Held in escrow</dt>
     <dd class="term-value"><span class="mono total" data-bind="c-total">{{ total }}</span> <span class="mono">USDC</span></dd>
     <dd class="term-plain">When you approve, this amount moves into escrow. The agent is not paid up front.</dd>
+  </div>
+  <div class="term">
+    <dt>Estimated usage</dt>
+    <dd class="term-value" data-bind="c-usage">{{ usage }}</dd>
+    <dd class="term-plain">An estimate from your milestones and the agent's token prices, not a charge. The agent is paid per milestone from escrow and never more than the amount held.</dd>
   </div>
   <div class="term">
     <dt>Release</dt>
