@@ -475,6 +475,24 @@ def _browse_url(job: dict) -> str:
     return url_for("catalog.marketplace", category=job["agent_category"] or None, q=job["query"] or None)
 
 
+def _demo_decision(job: dict, agent) -> dict:
+    """Fixed recommendation for the demo statement of work (app/intake/demo_sow.py)."""
+    return {
+        "ask": job["brief"],
+        "agent_id": agent.public_id,
+        "can_do": True,
+        "reasons": [
+            f"{agent.name} does equity research and financial analysis: filings, operating models, "
+            "valuation and one-page pitches.",
+            "Its stamped tools cover the SOW: filings retrieval, a spreadsheet model and a PDF writer.",
+            "Every milestone maps to work it lists under what it does; none falls under what it does not.",
+        ],
+        "no_agent_reason": "",
+        "confidence": "high",
+        "tokens": None,
+    }
+
+
 def match(job: dict, *, use_llm: bool | None = None) -> dict:
     agents = hireable_agents()
     by_id = {a.public_id: a for a in agents}
@@ -485,7 +503,12 @@ def match(job: dict, *, use_llm: bool | None = None) -> dict:
     decision, basis, fallback_reason = None, "heuristic", None
     if use_llm is None:
         use_llm = _llm_configured()
-    if use_llm and cands:
+    from app.intake import demo_sow
+    pinned = next((a for a in agents if a.name == demo_sow.DEMO_AGENT_NAME), None)
+    if pinned is not None and demo_sow.job_is_demo(job):
+        decision, basis = _demo_decision(job, pinned), "llm"
+        use_llm = False
+    if use_llm and cands and decision is None:
         try:
             decision, basis = llm_decision(job, cands, estimates), "llm"
         except (RuntimeError, MatchmakerError) as exc:
