@@ -8,7 +8,9 @@ report: every figure is checked against the cached SEC JSON
 (.agentkit/edgar/, falling back to inputs/edgar/), the client's market data,
 the claim ledger and the data-room files themselves. The recomputation here
 (fiscal years, debt, multiples) is written independently of tools.py so a
-bug in one does not hide in the other.
+bug in one does not hide in the other. The one shared piece is the pitch's
+DCF formula, tools.dcf_value_per_share, so a tool and its check can never
+disagree about the model itself; its inputs are re-derived here.
 
 Paths from params (which a brief may add to) and paths the agent wrote into
 a deliverable are resolved with the kit's jail_path, which rejects escapes
@@ -24,6 +26,10 @@ lexically before touching the filesystem; a rejected path fails the check.
     red_flag_checklist        checklist complete; filing-level hits not missed
     source_inventory_resolves every listed source resolves (accession / hash / ledger)
     dataroom_index_complete   the index covers 100% of data-room files
+    pitch_valuation_recompute the pitch's price ties to its source, the reverse DCF
+                              inputs to XBRL facts, and every value recomputes
+    variant_view_grounded     the variant view differs from what is priced in, is
+                              cited, falsifiable and dated, and the pitch agrees
 """
 from __future__ import annotations
 
@@ -31,16 +37,20 @@ import csv
 import functools
 import hashlib
 import json
+import math
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from agentkit.errors import PolicyViolation
 from agentkit.ledger import Ledger, normalize_text
 from agentkit.policy import jail_path
 from agentkit.tools.documents import TEXT_SUFFIXES as KIT_TEXT_SUFFIXES
+
+from .tools import dcf_value_per_share
 
 SPREADS_PATH = "deliverables/m2-spreads-comps/facts.csv"
 COMPS_PATH = "deliverables/m2-spreads-comps/comps.csv"
@@ -49,6 +59,11 @@ MEMO_PATH = "deliverables/m3-diligence-memo/memo.md"
 RED_FLAGS_PATH = "deliverables/m3-diligence-memo/red_flags.md"
 SOURCES_PATH = "deliverables/m1-plan-sources/source_inventory.csv"
 DATAROOM_INDEX_PATH = "deliverables/m1-plan-sources/dataroom_index.csv"
+PITCH_PATH = "deliverables/m4-stock-pitch/pitch.md"
+SNAPSHOT_PATH = "deliverables/m4-stock-pitch/market_snapshot.json"
+IMPLIED_PATH = "deliverables/m4-stock-pitch/market_implied.json"
+VALUATION_PATH = "deliverables/m4-stock-pitch/valuation.csv"
+VARIANT_VIEW_PATH = "deliverables/m4-stock-pitch/variant_view.json"
 ANNUAL_FORMS = ("10-K", "10-K/A")
 
 # Accepted tags per standard metric: (duration | instant, unit, tags). A row
@@ -93,6 +108,8 @@ COMPS_SOURCED = {"revenue": ("revenue", 0), "revenue_prior": ("revenue", -1),
                  "short_term_borrowings": ("short_term_borrowings", 0),
                  "shares_diluted": ("shares_diluted", 0)}
 MARKET_COLUMNS = ["price", "price_as_of", "shares_outstanding", "minority_interest", "preferred"]
+DEBT_METRICS = ("long_term_debt_noncurrent", "long_term_debt_current", "long_term_debt_total",
+                "debt_current", "short_term_borrowings")
 PERCENT_COLUMNS = {"gross_margin", "operating_margin", "ebitda_margin", "revenue_growth"}
 MULTIPLE_COLUMNS = {"ev_revenue", "ev_ebitda", "pe"}
 
@@ -561,6 +578,26 @@ def comps_tie_to_xbrl(workspace: Path, params: dict, *, run=None) -> dict:
     return _result(not failures, details, round(max(score, 0.0), 4))
 
 
+def _total_debt(values: dict[str, Any]) -> Any:
+    """Each borrowing counted once: all current debt with the noncurrent part;
+    else its pieces; else the long-term total (which already holds the
+    current portion) plus short-term borrowings. None when nothing is reported."""
+    ncur, cur = values.get("long_term_debt_noncurrent"), values.get("debt_current")
+    ltdc, stb, ltdt = (values.get("long_term_debt_current"), values.get("short_term_borrowings"),
+                       values.get("long_term_debt_total"))
+    if ncur is not None and cur is not None:
+        return ncur + cur
+    if ncur is not None:
+        return ncur + (ltdc or 0) + (stb or 0)
+    if ltdt is not None:
+        return ltdt + (stb or 0)
+    if cur is not None:
+        return cur
+    if ltdc is not None or stb is not None:
+        return (ltdc or 0) + (stb or 0)
+    return None
+
+
 def _expected_derived(row: dict[str, str]) -> dict[str, float | None]:
     def f(col: str) -> float | None:
         v = _num(row.get(col))
@@ -571,23 +608,7 @@ def _expected_derived(row: dict[str, str]) -> dict[str, float | None]:
             return None
         return a / b
 
-    # Each borrowing counted once: all current debt with the noncurrent part;
-    # else its pieces; else the long-term total (which already holds the
-    # current portion) plus short-term borrowings.
-    ncur, cur = f("long_term_debt_noncurrent"), f("debt_current")
-    ltdc, stb, ltdt = f("long_term_debt_current"), f("short_term_borrowings"), f("long_term_debt_total")
-    if ncur is not None and cur is not None:
-        debt = ncur + cur
-    elif ncur is not None:
-        debt = ncur + (ltdc or 0.0) + (stb or 0.0)
-    elif ltdt is not None:
-        debt = ltdt + (stb or 0.0)
-    elif cur is not None:
-        debt = cur
-    elif ltdc is not None or stb is not None:
-        debt = (ltdc or 0.0) + (stb or 0.0)
-    else:
-        debt = None
+    debt = _total_debt({col: f(col) for col in DEBT_METRICS})
     oi, da, rev = f("operating_income"), f("d_and_a"), f("revenue")
     ebitda = oi + da if oi is not None and da is not None else None
     price = f("price")
@@ -1160,6 +1181,473 @@ def dataroom_index_complete(workspace: Path, params: dict, *, run=None) -> dict:
     return _result(not failures, details, round(score, 4))
 
 
+# --- M4: stock pitch ----------------------------------------------------------------
+
+QUOTE_HOSTS = {"yahoo": ("query1.finance.yahoo.com", "query2.finance.yahoo.com"),
+               "nasdaq": ("api.nasdaq.com",)}
+PITCH_SCENARIOS = ["bear", "base", "bull"]
+DCF_RATES = ("operating_margin", "tax_rate", "reinvestment_rate", "discount_rate", "terminal_growth")
+# Tolerances: value_per_share within $0.01 or 0.01%, whichever is larger
+# (it is written to two decimals); upside_pct within 0.01 points; the value
+# at the implied CAGR within 0.01% of the price (the solver's stopping
+# rule); a rate copied into variant_view.json within 0.0005 (0.05 points).
+VALUE_TOLERANCE, VALUE_REL_TOLERANCE = 0.01, 1e-4
+UPSIDE_TOLERANCE = 0.01
+IMPLIED_PRICE_TOLERANCE = 1e-4
+RATE_TOLERANCE = 0.0005
+DIRECTION_RE = re.compile(r"(?i)\bdirection\b\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(long|short|pass)\b")
+PERCENT_RE = re.compile(r"(?<![\w.])[-−]?(\d+(?:\.\d+)?)\s?%")
+HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
+# A catalyst says when: a year (2026, FY2026, Q3 2026), FY26 or 3Q26.
+DATED_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)|\bFY\s?\d{2}(?!\d)|\b[1-4]Q\s?\d{2}(?!\d)", re.I)
+MIN_FALSIFIER_CHARS = 15
+
+
+def _json_doc(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _float(value: Any) -> float | None:
+    """A finite float from a JSON or CSV value, else None."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(str(value).strip().replace(",", "").replace("−", "-"))
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _tkey(ticker: Any) -> str:
+    return re.sub(r"[./]", "-", str(ticker or "").strip().upper())
+
+
+def _value_of(doc: dict, key: str) -> Any:
+    """doc[key]["value"] of a provenance block in market_implied.json."""
+    block = doc.get(key)
+    return block.get("value") if isinstance(block, dict) else None
+
+
+def _dcf_args(rates: dict, amounts: dict) -> dict[str, Any]:
+    """dcf_value_per_share keyword arguments from parsed assumptions and the
+    shared amounts; ValueError when one is missing or not a number."""
+    args: dict[str, Any] = {k: _float(rates.get(k)) for k in DCF_RATES}
+    args.update({k: _float(v) for k, v in amounts.items()})
+    years = _float(rates.get("years"))
+    bad = [k for k, v in args.items() if v is None]
+    if years is None or not years.is_integer():
+        bad.append("years")
+    if bad:
+        raise ValueError(f"missing or not a number: {', '.join(bad)}")
+    return {**args, "years": int(years)}
+
+
+def _quoted_price(source: str, text: str) -> tuple[Decimal | None, str]:
+    """(price, symbol) a raw quote response states, read here apart from the tool."""
+    try:
+        data = json.loads(text)
+        if source == "yahoo":
+            meta = data["chart"]["result"][0]["meta"]
+            return _num(meta["regularMarketPrice"]), str(meta.get("symbol") or "")
+        body = data["data"]
+        return _num(body["primaryData"]["lastSalePrice"]), str(body.get("symbol") or "")
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None, ""
+
+
+def _snapshot_problem(workspace: Path, snap: dict, market_rel: str) -> str:
+    """'' when market_snapshot.json ties to its source: the client's market
+    data row, or the quote response market_quote registered in the ledger."""
+    ticker = str(snap.get("ticker") or "").strip().upper()
+    price = _num(snap.get("price"))
+    if not ticker or price is None or price <= 0:
+        return "needs a ticker and a positive price"
+    source, url = snap.get("source"), str(snap.get("url") or "")
+    if source == "client":
+        path = _ws(workspace, market_rel)
+        rows = _read_csv(path) if path.is_file() else []
+        row = next((r for r in rows if _tkey(r.get("ticker")) == _tkey(ticker)), None)
+        if row is None:
+            return f"its source is the client's market data, but {market_rel} has no row for {ticker}"
+        if _num(row.get("price")) != price:
+            return f"price {snap.get('price')} != {row.get('price')} in {market_rel}"
+        if (row.get("price_as_of") or "").strip() != str(snap.get("as_of") or "").strip():
+            return f"as_of {snap.get('as_of')!r} != price_as_of {row.get('price_as_of')!r} in {market_rel}"
+        return ""
+    if source not in QUOTE_HOSTS:
+        return f"unknown quote source {source!r}"
+    parts = urlsplit(url)
+    if (parts.scheme != "https" or parts.hostname not in QUOTE_HOSTS[source]
+            or _tkey(ticker) not in [_tkey(p) for p in parts.path.split("/")]):
+        return f"{url or '(no url)'} is not a {source} quote URL for {ticker}"
+    ledger = _ledger(workspace)
+    src = ledger.source(str(snap.get("source_id") or "")) if ledger else None
+    if src is None or src.uri != url or src.kind != "tool":
+        src = next((s for s in reversed(ledger.sources) if s.uri == url and s.kind == "tool"),
+                   None) if ledger else None
+    if src is None:
+        return f"no ledger source for {url}: a quote must come from market_quote"
+    problem = ledger.snapshot_problem(src.id)
+    if problem:
+        return problem
+    quoted, symbol = _quoted_price(source, ledger.snapshot(src.id))
+    if quoted is None:
+        return f"source {src.id} states no price"
+    if symbol and _tkey(symbol) != _tkey(ticker):
+        return f"source {src.id} quotes {symbol}, not {ticker}"
+    if quoted != price:
+        return f"price {snap.get('price')} != {quoted} in source {src.id}"
+    return ""
+
+
+def _fact_problem(workspace: Path, fact: Any, metric: str, fiscal_year: int | None, cik: str,
+                  cache: dict, tolerance: Decimal) -> str:
+    """'' when a provenance record in market_implied.json is the XBRL fact it
+    says it is: metric, fiscal year, then tag, period, accession and value
+    through the spreads tie-out (_row_problem)."""
+    if not isinstance(fact, dict):
+        return "missing"
+    if fact.get("metric") != metric:
+        return f"metric is {fact.get('metric')!r}, not {metric}"
+    if str(fact.get("fiscal_year")) != str(fiscal_year):
+        return f"fiscal year {fact.get('fiscal_year')} is not FY{fiscal_year}"
+    row = {k: "" if v is None else v for k, v in fact.items()}
+    return _row_problem(workspace, {**row, "cik": cik, "note": ""}, cache, tolerance)
+
+
+def pitch_valuation_recompute(workspace: Path, params: dict, *, run=None) -> dict:
+    """The pitch's price, reverse DCF and scenarios tie to their sources and
+    recompute.
+
+    market_snapshot.json ties to its source: the client's market data row
+    (price and as-of date), or the quote response market_quote registered
+    in the claim ledger (snapshot intact, a quote URL for the ticker, the
+    same symbol and price). market_implied.json: same price and ticker, a
+    ticker the CIK's filing index lists; revenue and diluted shares are
+    XBRL facts (tag, period, accession, value) of the latest fiscal year the
+    SEC source reports revenue for; every cash and debt component the source
+    reports for that year is listed, each a fact, and net debt recomputes
+    from them; the value at implied_revenue_cagr is within 0.01% of the
+    price. valuation.csv: exactly one row per params.scenarios (default
+    bear, base, bull), each with market_implied.json's base revenue, net
+    debt and shares and the snapshot's price, value_per_share within $0.01
+    (or 0.01%) and upside_pct within 0.01 points of the recomputation, and
+    values ranking bear <= base <= bull.
+
+    params: snapshot, implied, valuation, market_data, scenarios, tolerance
+    (XBRL value tolerance, default 0.5).
+    """
+    rels = {"snapshot": params.get("snapshot", SNAPSHOT_PATH),
+            "implied": params.get("implied", IMPLIED_PATH),
+            "valuation": params.get("valuation", VALUATION_PATH)}
+    paths = {key: _ws(workspace, rel) for key, rel in rels.items()}
+    market_rel = params.get("market_data", MARKET_DATA_PATH)
+    _ws(workspace, market_rel)
+    missing = [rels[key] for key, p in paths.items() if not p.is_file()]
+    if missing:
+        return _result(False, f"missing: {', '.join(missing)}", 0.0)
+    snap, implied = _json_doc(paths["snapshot"]), _json_doc(paths["implied"])
+    if not isinstance(snap, dict) or not isinstance(implied, dict):
+        return _result(False, f"{rels['snapshot']} and {rels['implied']} must hold JSON objects", 0.0)
+    rows = _read_csv(paths["valuation"])
+    tolerance = Decimal(str(params.get("tolerance", "0.5")))
+    failures: list[str] = []
+    checked = 0
+
+    def check(problem: str, where: str) -> None:
+        nonlocal checked
+        checked += 1
+        if problem:
+            failures.append(f"{where}: {problem}")
+
+    check(_snapshot_problem(workspace, snap, market_rel), "market_snapshot.json")
+    price = _float(snap.get("price")) or 0.0
+    ticker = str(snap.get("ticker") or "").strip().upper()
+    implied_price = _float(implied.get("price"))
+    check("" if implied_price is not None and math.isclose(implied_price, price, rel_tol=1e-9)
+          else f"price {implied.get('price')} != market_snapshot.json {snap.get('price')}",
+          "market_implied.json")
+    check("" if _tkey(implied.get("ticker")) == _tkey(ticker)
+          else f"ticker {implied.get('ticker')!r} != market_snapshot.json {ticker!r}", "market_implied.json")
+    cik = _cik_short(implied.get("cik"))
+    listed = [str(t) for t in (_source_json(workspace, "submissions", cik) or {}).get("tickers") or []] \
+        if cik else []
+    if listed:
+        check("" if _tkey(ticker) in {_tkey(t) for t in listed}
+              else f"CIK {cik} trades as {', '.join(listed)}, not {ticker}", "market_implied.json")
+
+    cache: dict = {}
+    facts, ends = _company(workspace, cik, cache) if cik else (None, {})
+    try:
+        fiscal_year: int | None = int(implied.get("fiscal_year"))
+    except (TypeError, ValueError):
+        fiscal_year = None
+    if facts is None:
+        check(f"no companyfacts source for CIK {cik or '(none)'}", "market_implied.json")
+    else:
+        latest = max((y for y in ends if _source_reports(facts, ends, "revenue", y)), default=None)
+        check("" if fiscal_year is not None and fiscal_year == latest
+              else f"fiscal_year {implied.get('fiscal_year')} is not the latest fiscal year the SEC "
+                   f"source reports revenue for (FY{latest})", "market_implied.json")
+        for key, metric in (("base_revenue", "revenue"), ("shares", "shares_diluted")):
+            check(_fact_problem(workspace, implied.get(key), metric, fiscal_year, cik, cache,
+                                tolerance), key)
+        net = implied.get("net_debt") if isinstance(implied.get("net_debt"), dict) else {}
+        components: dict[str, Decimal] = {}
+        for comp in net.get("components") or []:
+            metric = comp.get("metric") if isinstance(comp, dict) else None
+            if metric not in ("cash", *DEBT_METRICS) or metric in components:
+                check(f"unexpected or repeated component {metric!r}", "net_debt")
+                continue
+            problem = _fact_problem(workspace, comp, metric, fiscal_year, cik, cache, tolerance)
+            check(problem, f"net_debt {metric}")
+            if not problem:
+                components[metric] = _num(comp.get("value"))
+        for metric in ("cash", *DEBT_METRICS):
+            if metric not in components and fiscal_year is not None \
+                    and _source_reports(facts, ends, metric, fiscal_year):
+                check(f"leaves out {metric}, which the SEC source reports for FY{fiscal_year}",
+                      "net_debt")
+        debt = _total_debt({m: v for m, v in components.items() if m != "cash"}) or Decimal(0)
+        cash = components.get("cash") or Decimal(0)
+        check("" if _num(net.get("value")) == debt - cash
+              else f"net debt {net.get('value')} != debt {debt} - cash {cash}", "net_debt")
+
+    amounts = {key: _value_of(implied, key) for key in ("base_revenue", "net_debt", "shares")}
+    assumptions = implied.get("assumptions") if isinstance(implied.get("assumptions"), dict) else {}
+    try:
+        value = dcf_value_per_share(revenue_cagr=_float(implied.get("implied_revenue_cagr")),
+                                    **_dcf_args(assumptions, amounts))
+    except (TypeError, ValueError) as exc:
+        check(f"cannot recompute the implied CAGR: {exc}", "market_implied.json")
+    else:
+        check("" if abs(value - price) <= IMPLIED_PRICE_TOLERANCE * price + 1e-9
+              else f"at implied_revenue_cagr {implied.get('implied_revenue_cagr')} the DCF gives "
+                   f"{value:.4f}, not the price {price:g}", "market_implied.json")
+        reported = _float(implied.get("value_per_share_at_implied"))
+        check("" if reported is not None
+              and abs(reported - value) <= max(VALUE_TOLERANCE, VALUE_REL_TOLERANCE * abs(value))
+              else f"value_per_share_at_implied {implied.get('value_per_share_at_implied')} != "
+                   f"recomputed {value:.4f}", "market_implied.json")
+
+    names = [(r.get("scenario") or "").strip().lower() for r in rows]
+    for name in [str(s).lower() for s in params.get("scenarios") or PITCH_SCENARIOS]:
+        check("" if names.count(name) == 1 else f"needs one {name} row, found {names.count(name)}",
+              "valuation.csv")
+    values: dict[str, float] = {}
+    for line, (name, row) in enumerate(zip(names, rows), start=2):
+        where = f"valuation.csv line {line} ({name or 'no scenario'})"
+        for key in ("base_revenue", "net_debt", "shares"):
+            check("" if _num(row.get(key)) is not None and _num(row.get(key)) == _num(amounts[key])
+                  else f"{key} {row.get(key)!r} != market_implied.json {amounts[key]}", where)
+        row_price = _float(row.get("price"))
+        check("" if row_price is not None and math.isclose(row_price, price, rel_tol=1e-9)
+              else f"price {row.get('price')!r} != market_snapshot.json {snap.get('price')}", where)
+        try:
+            value = dcf_value_per_share(revenue_cagr=_float(row.get("revenue_cagr")),
+                                        **_dcf_args(row, {k: row.get(k) for k in amounts}))
+        except (TypeError, ValueError) as exc:
+            check(f"cannot recompute: {exc}", where)
+            continue
+        reported = _float(row.get("value_per_share"))
+        check("" if reported is not None
+              and abs(reported - value) <= max(VALUE_TOLERANCE, VALUE_REL_TOLERANCE * abs(value))
+              else f"value_per_share {row.get('value_per_share')!r} != recomputed {value:.2f}", where)
+        upside = (value / price - 1) * 100 if price else math.nan
+        reported_upside = _float(row.get("upside_pct"))
+        check("" if reported_upside is not None and abs(reported_upside - upside) <= UPSIDE_TOLERANCE + 1e-9
+              else f"upside_pct {row.get('upside_pct')!r} != recomputed {upside:.2f}", where)
+        values[name] = reported if reported is not None else value
+    ranked = [values[n] for n in PITCH_SCENARIOS if n in values]
+    if len(ranked) == len(PITCH_SCENARIOS):
+        check("" if ranked == sorted(ranked) else
+              "values per share do not rank bear <= base <= bull", "valuation.csv")
+    score = (checked - len(failures)) / checked if checked else 0.0
+    details = f"{checked - len(failures)}/{checked} pitch figures tie out"
+    if failures:
+        details += f"; {len(failures)} failed: " + "; ".join(failures[:10])
+    return _result(not failures, details, round(max(score, 0.0), 4))
+
+
+def _view_value(value: Any) -> tuple[float | None, str]:
+    """(number, metric) of our_view: a number is a revenue CAGR, and so is an
+    object whose metric names revenue growth ("revenue_cagr", "revenue CAGR")."""
+    if not isinstance(value, dict):
+        return _float(value), "revenue_cagr"
+    metric = re.sub(r"[^a-z]+", "_", str(value.get("metric") or "revenue_cagr").lower())
+    growth = "revenue" in metric and ("cagr" in metric or "growth" in metric)
+    return _float(value.get("value")), "revenue_cagr" if growth else metric.strip("_")
+
+
+def _item_text(item: Any) -> str:
+    if isinstance(item, dict):
+        return " ".join(str(v) for v in item.values()
+                        if isinstance(v, (str, int, float)) and not isinstance(v, bool)).strip()
+    return str(item).strip() if isinstance(item, (str, int, float)) else ""
+
+
+def _evidence_claims(item: Any) -> set[str]:
+    """Claim ids an evidence item cites: [C#] in its text, or a claims list."""
+    listed: list[Any] = []
+    if isinstance(item, dict):
+        claims = item.get("claims")
+        listed = claims if isinstance(claims, list) else [item.get("claim")]
+    ids = {c for group in CLAIM_GROUP_RE.findall(_item_text(item)) for c in re.findall(r"C\d+", group)}
+    return ids | {c for x in listed if isinstance(x, str) for c in re.findall(r"\bC\d+\b", x)}
+
+
+def _section(text: str, title: str) -> str:
+    """The text under the first heading containing `title` (lowercase), up
+    to the next heading of the same or a higher level."""
+    body: list[str] | None = None
+    level = 0
+    for line in text.splitlines():
+        m = HEADING_RE.match(line)
+        if m and body is not None and len(m.group(1)) <= level:
+            break
+        if m and body is None and title in " ".join(m.group(2).lower().split()):
+            body, level = [], len(m.group(1))
+            continue
+        if body is not None:
+            body.append(line)
+    return "\n".join(body or [])
+
+
+def _states_percent(text: str, target: float) -> bool:
+    """Whether the text states `target` percent at the precision it shows
+    (11.5% or 12% for 11.55; the sign may be in words)."""
+    for m in PERCENT_RE.finditer(text):
+        shown = m.group(1)
+        places = len(shown.split(".")[1]) if "." in shown else 0
+        if abs(float(shown) - abs(target)) <= 0.5 * 10 ** -places + 1e-9:
+            return True
+    return False
+
+
+def variant_view_grounded(workspace: Path, params: dict, *, run=None) -> dict:
+    """The variant view differs from what the price implies, is evidenced
+    and falsifiable, and the pitch says the same.
+
+    variant_view.json: market_implied equals market_implied.json's
+    implied_revenue_cagr (to 0.0005); our_view, a revenue CAGR (a number or
+    {"metric": "revenue_cagr", "value": ...}), is at least params.min_delta
+    (default 0.02: two percentage points) away from it and is the base
+    scenario's revenue_cagr in valuation.csv; delta = our_view -
+    market_implied; direction is long when the base case's upside_pct is
+    above params.long_above (10), short below params.short_below (-10),
+    else pass; at least three distinct evidence items, each citing claims
+    in the ledger ([C#] in its text, or "claims": ["C#"]); at least two
+    falsifiers of 15 characters or more; at least two catalysts, each dated
+    (a year, FY26 or 3Q26). pitch.md has a "Direction: <direction>" line
+    (and no other direction) and states the implied CAGR as a percentage in
+    its What the market is pricing in section.
+
+    params: path, implied, valuation, pitch, min_delta, long_above,
+    short_below, min_evidence, min_falsifiers, min_catalysts.
+    """
+    rels = {"view": params.get("path", VARIANT_VIEW_PATH), "implied": params.get("implied", IMPLIED_PATH),
+            "valuation": params.get("valuation", VALUATION_PATH), "pitch": params.get("pitch", PITCH_PATH)}
+    paths = {key: _ws(workspace, rel) for key, rel in rels.items()}
+    missing = [rels[key] for key, p in paths.items() if not p.is_file()]
+    if missing:
+        return _result(False, f"missing: {', '.join(missing)}", 0.0)
+    view, implied = _json_doc(paths["view"]), _json_doc(paths["implied"])
+    if not isinstance(view, dict) or not isinstance(implied, dict):
+        return _result(False, f"{rels['view']} and {rels['implied']} must hold JSON objects", 0.0)
+    implied_cagr = _float(implied.get("implied_revenue_cagr"))
+    if implied_cagr is None:
+        return _result(False, f"{rels['implied']} has no implied_revenue_cagr", 0.0)
+    scenarios = {(r.get("scenario") or "").strip().lower(): r for r in _read_csv(paths["valuation"])}
+    base = scenarios.get("base") or {}
+    pitch = paths["pitch"].read_text(encoding="utf-8")
+    min_delta = float(params.get("min_delta", 0.02))
+    long_above, short_below = float(params.get("long_above", 10)), float(params.get("short_below", -10))
+    failures: list[str] = []
+    checked = 0
+
+    def check(problem: str, where: str) -> None:
+        nonlocal checked
+        checked += 1
+        if problem:
+            failures.append(f"{where}: {problem}")
+
+    market = _float(view.get("market_implied"))
+    check("" if market is not None and abs(market - implied_cagr) <= RATE_TOLERANCE
+          else f"{view.get('market_implied')!r} != market_implied.json {implied_cagr:.4f} (a fraction: "
+               "0.12 for 12%)", "market_implied")
+    ours, metric = _view_value(view.get("our_view"))
+    if ours is None or metric != "revenue_cagr":
+        check("must be a revenue CAGR: a fraction, or {\"metric\": \"revenue_cagr\", \"value\": ...}",
+              "our_view")
+    else:
+        delta = ours - implied_cagr
+        check("" if abs(delta) >= min_delta - 1e-12
+              else f"{ours:.4f} is within {min_delta * 100:g} points of the {implied_cagr:.4f} the price "
+                   "implies: that is not a variant view", "our_view")
+        reported_delta = _float(view.get("delta"))
+        check("" if reported_delta is not None and abs(reported_delta - delta) <= RATE_TOLERANCE
+              else f"{view.get('delta')!r} != our_view - market_implied = {delta:.4f}", "delta")
+        base_cagr = _float(base.get("revenue_cagr"))
+        check("" if base_cagr is not None and abs(base_cagr - ours) <= RATE_TOLERANCE
+              else f"the base scenario's revenue_cagr ({base.get('revenue_cagr') or 'none'}) is not "
+                   f"our_view {ours:.4f}", "our_view")
+    direction = str(view.get("direction") or "").strip().lower()
+    upside = _float(base.get("upside_pct"))
+    if upside is None:
+        check("valuation.csv has no base scenario upside_pct", "direction")
+    else:
+        expected = "long" if upside > long_above else "short" if upside < short_below else "pass"
+        check("" if direction == expected
+              else f"{direction or '(none)'!r}, but the base case upside of {upside:+.2f}% makes it "
+                   f"{expected}", "direction")
+    if view.get("ticker"):
+        check("" if _tkey(view["ticker"]) == _tkey(implied.get("ticker"))
+              else f"{view['ticker']!r} is not market_implied.json's {implied.get('ticker')!r}", "ticker")
+
+    ledger = _ledger(workspace)
+    known = {c.id for c in ledger.claims} if ledger else set()
+    evidence = view.get("evidence") if isinstance(view.get("evidence"), list) else []
+    need = int(params.get("min_evidence", 3))
+    distinct = {json.dumps(e, sort_keys=True) for e in evidence}
+    check("" if len(distinct) >= need else f"{len(distinct)} distinct items, need {need}", "evidence")
+    for i, item in enumerate(evidence, start=1):
+        ids = _evidence_claims(item)
+        unknown = sorted(ids - known)
+        check("cites no [C#] claim" if not ids else
+              f"cites {', '.join(unknown)}, not in the claim ledger" if unknown else "", f"evidence {i}")
+    falsifiers = view.get("falsifiers") if isinstance(view.get("falsifiers"), list) else []
+    need = int(params.get("min_falsifiers", 2))
+    stated = {t for t in map(_item_text, falsifiers) if len(t) >= MIN_FALSIFIER_CHARS}
+    check("" if len(stated) >= need else
+          f"{len(stated)} distinct falsifiers of {MIN_FALSIFIER_CHARS}+ characters, need {need}",
+          "falsifiers")
+    catalysts = view.get("catalysts") if isinstance(view.get("catalysts"), list) else []
+    need = int(params.get("min_catalysts", 2))
+    texts = [_item_text(c) for c in catalysts]
+    check("" if len({t for t in texts if t}) >= need else f"{len({t for t in texts if t})} distinct, "
+          f"need {need}", "catalysts")
+    for i, text in enumerate(texts, start=1):
+        check("" if DATED_RE.search(text) else "does not say when (a year, quarter or date)",
+              f"catalyst {i}")
+
+    directions = {d.lower() for d in DIRECTION_RE.findall(pitch)}
+    check("" if directions == {direction} else
+          "has no 'Direction: long|short|pass' line" if not directions else
+          f"states direction {', '.join(sorted(directions))}, variant_view.json {direction or '(none)'}",
+          "pitch.md")
+    check("" if _states_percent(_section(pitch, "what the market is pricing in"), implied_cagr * 100)
+          else f"its What the market is pricing in section does not state the implied revenue CAGR "
+               f"({implied_cagr * 100:.1f}%)", "pitch.md")
+    score = (checked - len(failures)) / checked if checked else 0.0
+    details = f"{checked - len(failures)}/{checked} variant-view checks pass"
+    if failures:
+        details += f"; {len(failures)} failed: " + "; ".join(failures[:10])
+    return _result(not failures, details, round(max(score, 0.0), 4))
+
+
 CHECK_DEFS = {
     "xbrl_tieout": xbrl_tieout,
     "comps_tie_to_xbrl": comps_tie_to_xbrl,
@@ -1169,4 +1657,6 @@ CHECK_DEFS = {
     "red_flag_checklist": red_flag_checklist,
     "source_inventory_resolves": source_inventory_resolves,
     "dataroom_index_complete": dataroom_index_complete,
+    "pitch_valuation_recompute": pitch_valuation_recompute,
+    "variant_view_grounded": variant_view_grounded,
 }

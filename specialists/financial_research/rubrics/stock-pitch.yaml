@@ -1,0 +1,42 @@
+# Rubric for deliverables/m4-stock-pitch/pitch.md (grader model).
+name: Stock pitch with a variant view
+criteria:
+  - id: crisp_thesis
+    description: >-
+      The summary states the thesis, its direction (long, short or pass) and
+      the reason in a few sentences a reader could repeat; the rest of the
+      pitch supports that thesis instead of surveying the company.
+    weight: 0.2
+  - id: variant_view
+    description: >-
+      The pitch shows what the price implies (the reverse DCF growth rate and
+      its assumptions), how the analyst's view differs and why, with evidence
+      cited to filings; the difference is material and argued, not a
+      restatement of what is already priced in.
+    weight: 0.25
+  - id: catalysts
+    description: >-
+      Catalysts are specific events with dates or periods (results, product
+      or contract milestones, regulatory decisions) and say which view each
+      would confirm.
+    weight: 0.15
+  - id: valuation
+    description: >-
+      Growth, margin, tax, reinvestment, discount rate, terminal growth and
+      horizon are explicit for each scenario and defensible against the
+      company's own history; bear, base and bull values and their upside or
+      downside are presented as outputs of those assumptions.
+    weight: 0.15
+  - id: risks_and_falsifiers
+    description: >-
+      Risks are specific to the thesis and ranked; falsifiers name observable
+      facts or thresholds that would prove the view wrong, stated honestly
+      rather than as risks the pitch then dismisses.
+    weight: 0.15
+  - id: professional_concise
+    description: >-
+      Concise and professional: the answer first, plain words, no hype, no
+      advice to any person to trade, the disclaimer present, and every figure
+      traceable to a cited source or the valuation files.
+    weight: 0.1
+threshold: 0.75

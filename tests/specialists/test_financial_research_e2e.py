@@ -35,7 +35,7 @@ NAMES = {"9900001": "Halvorsen Instruments Inc.", "9900002": "Brightwater Analyt
 UA = "Fixture Research " + "ops" + "@" + "example.com"
 OTHER_UA = "Other Desk " + "desk" + "@" + "example.org"
 
-M1, M2, M3 = "m1-plan-sources", "m2-spreads-comps", "m3-diligence-memo"
+M1, M2, M3, M4 = "m1-plan-sources", "m2-spreads-comps", "m3-diligence-memo", "m4-stock-pitch"
 PLAN_MD = f"deliverables/{M1}/research_plan.md"
 INVENTORY = f"deliverables/{M1}/source_inventory.csv"
 DATAROOM_INDEX = f"deliverables/{M1}/dataroom_index.csv"
@@ -96,7 +96,7 @@ def _brief(**intake) -> Brief:
                                  "does its filing history show red flags?",
             "sec_user_agent": UA, "fiscal_years": [2023, 2024],
             "market_data": "inputs/market_data.csv", "dataroom": "inputs/dataroom/ (no MNPI)",
-            "audience": "internal deal team"}
+            "audience": "internal deal team", "pitch_focus": "Coldharbor; no view to test"}
     base.update(intake)
     return Brief(engagement_id="eng-fr-1", specialist="financial-research",
                  objective="Screen Coldharbor Systems against two listed peers.",
@@ -655,13 +655,13 @@ def test_cli(spec, tmp_path):
     shown = json.loads(text)
     assert code == 0 and shown["human_review"]["required"] is False and "compute_comps" in shown["tools"]
     code, text = _cli("milestones", "financial-research")
-    assert code == 0 and [m["id"] for m in json.loads(text)] == [M1, M2, M3]
+    assert code == 0 and [m["id"] for m in json.loads(text)] == [M1, M2, M3, M4]
     intake = tmp_path / "intake.json"
     intake.write_text(json.dumps(_brief().intake), encoding="utf-8")
     code, text = _cli("estimate", "financial-research", "--intake", str(intake))
     est = json.loads(text)
-    assert code == 0 and (est["hours_low"], est["hours_high"]) == (5, 11)
-    assert (est["cost_usd_low"], est["cost_usd_high"]) == (40.0, 88.0)
+    assert code == 0 and (est["hours_low"], est["hours_high"]) == (7, 15)
+    assert (est["cost_usd_low"], est["cost_usd_high"]) == (56.0, 120.0)
     # each milestone's high estimate fits within one run's limits
     limits = spec.manifest.limits
     for m in spec.manifest.milestones:

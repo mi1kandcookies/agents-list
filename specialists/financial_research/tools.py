@@ -16,6 +16,9 @@ the model narrates numbers instead of computing them:
     compute_comps        facts.csv + customer market data -> comps.csv
     filing_red_flags     8-K item / form scan of the filing index
     index_dataroom       hash + size + readability index of inputs/dataroom/
+    market_quote         one ticker's price -> market_snapshot.json (M4)
+    reverse_dcf          the revenue CAGR the price implies -> market_implied.json
+    scenario_valuation   bear/base/bull values per share -> valuation.csv
 
 EDGAR JSON is cached under .agentkit/edgar/ (written only by these tools; the
 agent's write_file cannot touch .agentkit/). Customer-supplied offline
@@ -23,6 +26,13 @@ snapshots under inputs/edgar/ are read as a fallback, which is also how the
 tests and evals run with no network. Network goes through the injected
 `fetch` (egress-checked by the kit); SEC fair access requires a declared
 User-Agent, taken from the `user_agent` argument or SEC_USER_AGENT.
+
+A price comes from the client's inputs/market_data.csv when it lists the
+ticker; otherwise market_quote fetches an indicative, delayed public quote
+(Yahoo's chart endpoint, then Nasdaq's) with a browser-like User-Agent, and
+registers the raw response in the claim ledger so the pitch can cite it.
+dcf_value_per_share is the one DCF formula: reverse_dcf, scenario_valuation
+and the pitch_valuation_recompute check all call it.
 
 Fiscal years are anchored to 10-K filings (fiscal_year_ends), not to the
 calendar year of a period end, so 52/53-week and January year-ends keep the
@@ -42,17 +52,21 @@ from __future__ import annotations
 import csv
 import hashlib
 import html
+import io
 import json
+import math
 import os
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+from urllib.parse import quote
 
 from agentkit.errors import PolicyViolation, ToolError
 from agentkit.policy import PolicyGate
 from agentkit.tools.documents import TEXT_SUFFIXES as KIT_TEXT_SUFFIXES
+from agentkit.tools.documents import document_text
 
 CACHE_DIR = ".agentkit/edgar"
 INPUT_DIR = "inputs/edgar"
@@ -68,6 +82,9 @@ SPREADS_PATH = "deliverables/m2-spreads-comps/facts.csv"
 COMPS_PATH = "deliverables/m2-spreads-comps/comps.csv"
 DATAROOM_INDEX_PATH = "deliverables/m1-plan-sources/dataroom_index.csv"
 MARKET_DATA_PATH = "inputs/market_data.csv"
+MARKET_SNAPSHOT_PATH = "deliverables/m4-stock-pitch/market_snapshot.json"
+MARKET_IMPLIED_PATH = "deliverables/m4-stock-pitch/market_implied.json"
+VALUATION_PATH = "deliverables/m4-stock-pitch/valuation.csv"
 
 # Annual reports whose facts feed the spreads.
 ANNUAL_FORMS = ("10-K", "10-K/A")
@@ -904,6 +921,599 @@ def index_dataroom(workspace: Path, *, fetch=None, run=None, resolve_path=None,
             "unreadable": [r["path"] for r in rows if r["readable"] != "yes"]}
 
 
+# --- M4: price, reverse DCF and scenarios ----------------------------------------------
+
+# Public quote endpoints, tried in order when the client's market data has no
+# row for the ticker. Indicative and delayed; a licensed price always wins.
+QUOTE_SOURCES = (
+    ("yahoo", "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"),
+    ("yahoo", "https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"),
+    ("nasdaq", "https://api.nasdaq.com/api/quote/{ticker}/info?assetclass=stocks"),
+)
+# Both hosts turn away clients that do not look like a browser.
+BROWSER_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                   "Accept": "application/json, text/plain, */*",
+                   "Accept-Language": "en-US,en;q=0.9"}
+NASDAQ_HEADERS = {"Origin": "https://www.nasdaq.com", "Referer": "https://www.nasdaq.com/"}
+# The text in each response that states the price: what a claim quotes.
+PRICE_FIELD_RE = {"yahoo": re.compile(r'"regularMarketPrice"\s*:\s*[-+0-9.eE]+'),
+                  "nasdaq": re.compile(r'"lastSalePrice"\s*:\s*"[^"]*"')}
+TICKER_RE = re.compile(r"[A-Z0-9][A-Z0-9.\-]{0,14}")
+NASDAQ_TIME_RE = re.compile(r"\b([A-Z][a-z]{2})[a-z]*\.? (\d{1,2}), (\d{4})"
+                            r"(?:\s+(\d{1,2}):(\d{2})\s*([AP]M))?")
+MONTHS = {m: i for i, m in enumerate(("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
+                                      "Sep", "Oct", "Nov", "Dec"), start=1)}
+
+VALUATION_COLUMNS = ["scenario", "revenue_cagr", "operating_margin", "tax_rate",
+                     "reinvestment_rate", "discount_rate", "terminal_growth", "years",
+                     "base_revenue", "net_debt", "shares", "price", "value_per_share", "upside_pct"]
+ASSUMPTIONS = ("operating_margin", "tax_rate", "reinvestment_rate", "discount_rate",
+               "terminal_growth", "years")
+# Plausible ranges, inclusive (the margin must also be above 0). Rates are
+# fractions, so a 25 meant as 25% is refused here.
+ASSUMPTION_BOUNDS = {"revenue_cagr": (-0.5, 1.0), "operating_margin": (0.0, 1.0),
+                     "tax_rate": (0.0, 0.6), "reinvestment_rate": (0.0, 0.95),
+                     "discount_rate": (0.03, 0.3), "terminal_growth": (-0.02, 0.06)}
+MAX_YEARS = 30
+# reverse_dcf looks for the implied CAGR in this range, to 0.01% of the price.
+IMPLIED_CAGR_RANGE = (-0.5, 1.0)
+IMPLIED_TOLERANCE = 1e-4
+SCENARIO_RE = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+# Base-case upside, in percent, that sets the pitch direction.
+LONG_ABOVE, SHORT_BELOW = 10.0, -10.0
+DCF_METHOD = ("FCF_t = revenue_t x operating_margin x (1 - tax_rate) x (1 - reinvestment_rate), "
+              "revenue_t = base_revenue x (1 + revenue_cagr)^t for t = 1..years, discounted at "
+              "discount_rate; terminal value = FCF_years x (1 + terminal_growth) / (discount_rate - "
+              "terminal_growth), discounted from year `years`; value per share = (enterprise value "
+              "- net_debt) / shares; net_debt = total debt (debt_total) - cash")
+
+
+def dcf_value_per_share(base_revenue: float, revenue_cagr: float, operating_margin: float,
+                        tax_rate: float, reinvestment_rate: float, discount_rate: float,
+                        terminal_growth: float, years: int, net_debt: float,
+                        shares: float) -> float:
+    """Equity value per share from a revenue-driven DCF (DCF_METHOD).
+
+    Revenue grows at revenue_cagr for `years` years from base_revenue; each
+    year's free cash flow is revenue x operating_margin x (1 - tax_rate) x
+    (1 - reinvestment_rate), discounted at discount_rate. The terminal value
+    is the last year's free cash flow grown at terminal_growth and
+    capitalized at discount_rate - terminal_growth (Gordon growth). Equity
+    is enterprise value less net_debt. ValueError on inputs the formula
+    cannot take.
+    """
+    if isinstance(years, bool) or not isinstance(years, int) or years < 1:
+        raise ValueError(f"years must be a whole number of at least 1, got {years!r}")
+    numbers = (base_revenue, revenue_cagr, operating_margin, tax_rate, reinvestment_rate,
+               discount_rate, terminal_growth, net_debt, shares)
+    if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in numbers):
+        raise ValueError("every DCF input must be a finite number")
+    if shares <= 0:
+        raise ValueError("shares must be positive")
+    if discount_rate <= terminal_growth:
+        raise ValueError("discount_rate must be above terminal_growth")
+    if base_revenue <= 0 or revenue_cagr <= -1 or discount_rate <= -1:
+        raise ValueError("base_revenue must be positive and rates above -100%")
+    fcf_margin = operating_margin * (1 - tax_rate) * (1 - reinvestment_rate)
+    revenue, fcf, value = float(base_revenue), 0.0, 0.0
+    for year in range(1, years + 1):
+        revenue *= 1 + revenue_cagr
+        fcf = revenue * fcf_margin
+        value += fcf / (1 + discount_rate) ** year
+    terminal = fcf * (1 + terminal_growth) / (discount_rate - terminal_growth)
+    value += terminal / (1 + discount_rate) ** years
+    return (value - net_debt) / shares
+
+
+def solve_implied_cagr(price: float, *, base_revenue: float, operating_margin: float,
+                       tax_rate: float, reinvestment_rate: float, discount_rate: float,
+                       terminal_growth: float, years: int, net_debt: float,
+                       shares: float) -> tuple[float, int] | None:
+    """(revenue CAGR at which dcf_value_per_share equals `price`, bisection
+    steps), searched over IMPLIED_CAGR_RANGE to IMPLIED_TOLERANCE of the
+    price; None when the values at the two ends do not bracket the price."""
+    def gap(cagr: float) -> float:
+        return dcf_value_per_share(base_revenue, cagr, operating_margin, tax_rate,
+                                   reinvestment_rate, discount_rate, terminal_growth, years,
+                                   net_debt, shares) - price
+
+    tolerance = IMPLIED_TOLERANCE * abs(price)
+    lo, hi = IMPLIED_CAGR_RANGE
+    gap_lo, gap_hi = gap(lo), gap(hi)
+    for end, end_gap in ((lo, gap_lo), (hi, gap_hi)):
+        if abs(end_gap) <= tolerance:
+            return end, 0
+    if (gap_lo > 0) == (gap_hi > 0):
+        return None
+    for step in range(1, 201):
+        mid = (lo + hi) / 2
+        gap_mid = gap(mid)
+        if abs(gap_mid) <= tolerance:
+            return mid, step
+        if (gap_mid > 0) == (gap_lo > 0):
+            lo, gap_lo = mid, gap_mid
+        else:
+            hi = mid
+    return (lo + hi) / 2, 200
+
+
+def pitch_direction(upside_pct: float) -> str:
+    """The pitch direction the base-case upside sets."""
+    return "long" if upside_pct > LONG_ABOVE else "short" if upside_pct < SHORT_BELOW else "pass"
+
+
+def _number(value: Any, name: str) -> float:
+    """A finite number from a tool argument or a JSON field; ToolError otherwise."""
+    if isinstance(value, bool) or value is None:
+        raise ToolError(f"{name} must be a number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ToolError(f"{name} must be a number, got {value!r} (rates are fractions: 0.25 "
+                        "for 25%)") from None
+    if not math.isfinite(number):
+        raise ToolError(f"{name} must be a finite number")
+    return number
+
+
+def _rate(value: Any, name: str) -> float:
+    number = _number(value, name)
+    lo, hi = ASSUMPTION_BOUNDS[name]
+    if not lo <= number <= hi or (name == "operating_margin" and number <= 0):
+        raise ToolError(f"{name} {number:g} is outside {lo:g} to {hi:g}"
+                        f"{' (and must be above 0)' if name == 'operating_margin' else ''}; "
+                        "rates are fractions: 0.25 means 25%")
+    return number
+
+
+def _assumptions(given: Mapping[str, Any], defaults: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The DCF assumptions, each given or else defaulted, within ASSUMPTION_BOUNDS."""
+    out: dict[str, Any] = {}
+    for name in ASSUMPTIONS:
+        value = given.get(name)
+        if value is None and defaults:
+            value = defaults.get(name)
+        if value is None:
+            raise ToolError(f"give {name}")
+        if name == "years":
+            years = _number(value, name)
+            if not years.is_integer() or not 1 <= years <= MAX_YEARS:
+                raise ToolError(f"years must be a whole number from 1 to {MAX_YEARS}")
+            out[name] = int(years)
+        else:
+            out[name] = _rate(value, name)
+    if out["discount_rate"] <= out["terminal_growth"]:
+        raise ToolError("discount_rate must be above terminal_growth")
+    return out
+
+
+def _json_number(value: Any) -> int | float:
+    """An amount for JSON: an int when it is whole, else a float."""
+    number = Decimal(str(value))
+    return int(number) if number == number.to_integral_value() else float(number)
+
+
+def _plain(value: Any) -> str:
+    """A number for a CSV cell: whole numbers without a decimal point."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    number = float(value)
+    return str(int(number)) if number.is_integer() and abs(number) < 1e15 else repr(number)
+
+
+def _json_object(path: Path, rel: str, hint: str) -> dict:
+    if not path.is_file():
+        raise ToolError(f"{rel} not found; {hint}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ToolError(f"{rel} is not valid JSON: {exc}") from None
+    if not isinstance(data, dict):
+        raise ToolError(f"{rel} must hold a JSON object")
+    return data
+
+
+def _ticker_key(ticker: str) -> str:
+    """BRK.B, BRK-B and brk/b compare equal."""
+    return re.sub(r"[./]", "-", str(ticker).strip().upper())
+
+
+def _eastern_offset(day: date) -> timedelta:
+    """US Eastern time's UTC offset: -4h from the second Sunday of March to
+    the first Sunday of November, else -5h."""
+    start = date(day.year, 3, 8)
+    start += timedelta(days=(6 - start.weekday()) % 7)
+    end = date(day.year, 11, 1)
+    end += timedelta(days=(6 - end.weekday()) % 7)
+    return timedelta(hours=-4 if start <= day < end else -5)
+
+
+def _nasdaq_time(text: Any) -> str:
+    """'Sep 26, 2025 4:00 PM ET' -> '2025-09-26T16:00:00-04:00'; a date
+    alone -> '2025-09-26'; '' when there is none."""
+    m = NASDAQ_TIME_RE.search(str(text or ""))
+    if not m or m.group(1) not in MONTHS:
+        return ""
+    try:
+        day = date(int(m.group(3)), MONTHS[m.group(1)], int(m.group(2)))
+        if not m.group(4):
+            return day.isoformat()
+        hour = int(m.group(4)) % 12 + (12 if m.group(6) == "PM" else 0)
+        return datetime(day.year, day.month, day.day, hour, int(m.group(5)),
+                        tzinfo=timezone(_eastern_offset(day))).isoformat()
+    except ValueError:
+        return ""
+
+
+def parse_yahoo_chart(text: str) -> dict[str, Any]:
+    """Price, time, currency and symbol from a Yahoo v8 chart response."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise ToolError("the chart response is not JSON") from None
+    chart = data.get("chart") if isinstance(data, dict) else None
+    result = chart.get("result") if isinstance(chart, dict) else None
+    if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+        error = chart.get("error") if isinstance(chart, dict) else None
+        detail = error.get("description") if isinstance(error, dict) else ""
+        raise ToolError(f"no chart data{': ' + str(detail) if detail else ''}")
+    meta = result[0].get("meta") if isinstance(result[0].get("meta"), dict) else {}
+    price = meta.get("regularMarketPrice")
+    if isinstance(price, bool) or not isinstance(price, (int, float)) or not 0 < price < math.inf:
+        raise ToolError("the chart response has no regularMarketPrice")
+    stamp = meta.get("regularMarketTime")
+    try:
+        as_of = datetime.fromtimestamp(stamp, timezone.utc).isoformat() \
+            if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) else ""
+    except (OverflowError, OSError, ValueError):
+        as_of = ""
+    return {"price": float(price), "as_of": as_of, "currency": str(meta.get("currency") or ""),
+            "symbol": str(meta.get("symbol") or "")}
+
+
+def parse_nasdaq_info(text: str) -> dict[str, Any]:
+    """Price, time, currency and symbol from a Nasdaq quote-info response."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise ToolError("the quote response is not JSON") from None
+    body = data.get("data") if isinstance(data, dict) else None
+    primary = body.get("primaryData") if isinstance(body, dict) else None
+    if not isinstance(primary, dict):
+        status = data.get("status") if isinstance(data, dict) else None
+        messages = status.get("bCodeMessage") if isinstance(status, dict) else None
+        detail = "; ".join(str(m.get("errorMessage", "")) for m in messages
+                           if isinstance(m, dict)) if isinstance(messages, list) else ""
+        raise ToolError(f"no quote data{': ' + detail if detail else ''}")
+    try:
+        price = _dec(primary.get("lastSalePrice"))
+    except ToolError:
+        price = None
+    if price is None or price <= 0:
+        raise ToolError(f"no last sale price ({primary.get('lastSalePrice')!r})")
+    return {"price": float(price), "as_of": _nasdaq_time(primary.get("lastTradeTimestamp")),
+            "currency": str(primary.get("currency") or "USD"), "symbol": str(body.get("symbol") or "")}
+
+
+def _client_quote(workspace: Path, path: Path, symbol: str, ledger) -> dict | None:
+    """The client's market data row for `symbol` as a snapshot, or None."""
+    text = document_text(path)
+    row = next((r for r in csv.DictReader(io.StringIO(text))
+                if (r.get("ticker") or "").strip().upper() == symbol), None)
+    if row is None:
+        return None
+    price = _dec(row.get("price"))
+    if price is None or price <= 0:
+        raise ToolError(f"the client's market data has no price for {symbol}")
+    rel = path.resolve().relative_to(Path(workspace).resolve()).as_posix()
+    line = next((ln for ln in text.splitlines()[1:]
+                 if symbol in {c.strip().upper() for c in next(csv.reader([ln]), [])}), "")
+    snap = {"ticker": symbol, "price": float(price),
+            "currency": (row.get("currency") or "USD").strip().upper(),
+            "as_of": (row.get("price_as_of") or "").strip(), "source": "client",
+            "url": f"workspace:{rel}", "price_text": line}
+    if re.fullmatch(r"\s*\d{1,10}\s*", row.get("cik") or ""):
+        snap["cik"] = str(int(row["cik"]))
+    if ledger is not None and not ledger.is_authored(rel):
+        snap["source_id"] = ledger.add_source(snap["url"], "Client market data", text,
+                                              kind="customer").id
+    return snap
+
+
+def _public_quote(symbol: str, fetch, ledger) -> dict:
+    """The first public quote that answers, registered in the claim ledger."""
+    if fetch is None:
+        raise ToolError(f"no price for {symbol} in the client's market data and network fetch "
+                        "is not available in this run")
+    failures: list[tuple[str, Exception]] = []
+    for name, template in QUOTE_SOURCES:
+        url = template.format(ticker=quote(symbol, safe=""))
+        try:
+            res = fetch(url, headers=BROWSER_HEADERS | (NASDAQ_HEADERS if name == "nasdaq" else {}))
+            if res.status != 200:
+                raise ToolError(f"HTTP {res.status}")
+            parsed = (parse_yahoo_chart if name == "yahoo" else parse_nasdaq_info)(res.text)
+            if parsed["symbol"] and _ticker_key(parsed["symbol"]) != _ticker_key(symbol):
+                raise ToolError(f"answered with a quote for {parsed['symbol']}")
+        except (ToolError, PolicyViolation) as exc:
+            failures.append((url, exc))
+            continue
+        field = PRICE_FIELD_RE[name].search(res.text)
+        snap = {"ticker": symbol, "price": parsed["price"],
+                "currency": (parsed["currency"] or "USD").upper(), "as_of": parsed["as_of"],
+                "source": name, "url": res.url, "price_text": field.group(0) if field else "",
+                "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "note": "Indicative, delayed public quote; a licensed price in "
+                        "inputs/market_data.csv takes precedence."}
+        if ledger is not None:
+            snap["source_id"] = ledger.add_source(res.url, f"{name} quote for {symbol}", res.text,
+                                                  kind="tool").id
+        return snap
+    if all(isinstance(exc, PolicyViolation) for _, exc in failures):
+        raise failures[0][1]
+    tried = "; ".join(f"{url.split('/')[2]}: {exc}" for url, exc in failures)
+    raise ToolError(f"no quote for {symbol} ({tried}). Upload inputs/market_data.csv (cik, ticker, "
+                    "price, price_as_of) from a licensed source, or try again later.")
+
+
+def market_quote(workspace: Path, *, fetch=None, run=None, resolve_path=None, ledger=None,
+                 ticker: str = "", market_data: str = MARKET_DATA_PATH,
+                 output: str = MARKET_SNAPSHOT_PATH) -> dict:
+    """One ticker's price, saved as the pitch's market snapshot.
+
+    The client's market data file wins when it has a row for the ticker
+    (source "client", registered as a customer source). Otherwise the first
+    public quote that answers: Yahoo's chart endpoint (query1, then query2),
+    then Nasdaq's quote info, each asked with a browser-like User-Agent;
+    the raw response is registered as a ledger source. `price_text` is the
+    text in that source stating the price, for record_claim.
+    """
+    symbol = str(ticker).strip().upper()
+    if not TICKER_RE.fullmatch(symbol):
+        raise ToolError(f"not a ticker: {ticker!r}")
+    resolve = _resolver(workspace, resolve_path)
+    market_path = resolve(market_data)
+    target = resolve(output, write=True)
+    snap = _client_quote(workspace, market_path, symbol, ledger) if market_path.is_file() else None
+    if snap is None:
+        snap = _public_quote(symbol, fetch, ledger)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(snap, indent=2) + "\n", encoding="utf-8")
+    out = {"path": output, **snap}
+    if snap.get("source_id") and snap.get("price_text"):
+        out["cite"] = (f"record_claim with source {snap['source_id']} and quote "
+                       f"{snap['price_text']!r} to cite the price as [C#]")
+    return out
+
+
+def _cover_shares(companyfacts: dict) -> tuple[float, str] | None:
+    """(shares outstanding on the latest cover page, its date): the
+    dei:EntityCommonStockSharesOutstanding values of one filing and date,
+    summed across share classes."""
+    records = [r for r in ((((companyfacts.get("facts") or {}).get("dei") or {})
+                            .get("EntityCommonStockSharesOutstanding") or {}).get("units") or {})
+               .get("shares") or []
+               if isinstance(r.get("val"), (int, float)) and r.get("end")]
+    if not records:
+        return None
+    latest = max(records, key=lambda r: (str(r["end"]), str(r.get("filed", ""))))
+    same = [r for r in records if r["end"] == latest["end"] and r.get("accn") == latest.get("accn")]
+    return float(sum(r["val"] for r in same)), str(latest["end"])
+
+
+def _history(companyfacts: dict, ends: dict[int, str], last: int, span: int = 5) -> dict:
+    """Revenue and operating margin for up to `span` fiscal years to `last`,
+    and the revenue CAGR across them (context for the analyst's own view)."""
+    rows = []
+    for year in range(last - span + 1, last + 1):
+        rev = annual_fact(companyfacts, "revenue", year, year_ends=ends)
+        if rev is None or not rev["value"]:
+            continue
+        oi = annual_fact(companyfacts, "operating_income", year, year_ends=ends)
+        rows.append({"fiscal_year": year, "revenue": rev["value"],
+                     "operating_margin": round(oi["value"] / rev["value"], 4) if oi else None})
+    cagr = None
+    if len(rows) >= 2 and rows[0]["revenue"] > 0 and rows[-1]["revenue"] > 0:
+        years = rows[-1]["fiscal_year"] - rows[0]["fiscal_year"]
+        cagr = round((rows[-1]["revenue"] / rows[0]["revenue"]) ** (1 / years) - 1, 4)
+    return {"rows": rows, "revenue_cagr": cagr,
+            "span": f"FY{rows[0]['fiscal_year']}-FY{rows[-1]['fiscal_year']}" if rows else ""}
+
+
+def pitch_inputs(workspace: Path, cik: Any) -> dict:
+    """The reverse DCF's XBRL inputs for the latest fiscal year with revenue:
+    revenue, diluted weighted-average shares and every reported cash and debt
+    component, each an annual_fact record (tag, period, form, accession);
+    net debt = debt_total() of the debt components less cash."""
+    data = load_cached_json(workspace, "companyfacts", cik)
+    if data is None:
+        raise ToolError("no companyfacts cached for this CIK; call edgar_companyfacts first")
+    ends = fiscal_year_ends(data)
+    year = next((y for y in sorted(ends, reverse=True)
+                 if annual_fact(data, "revenue", y, year_ends=ends)), None)
+    if year is None:
+        raise ToolError("no annual revenue in this company's XBRL facts (a foreign filer or a "
+                        "non-standard tag?); the pitch needs a 10-K revenue figure")
+    facts = {m: annual_fact(data, m, year, year_ends=ends)
+             for m in ("revenue", "shares_diluted", "cash", *DEBT_COLUMNS)}
+    if facts["shares_diluted"] is None:
+        raise ToolError(f"no diluted share count (WeightedAverageNumberOfDilutedSharesOutstanding) "
+                        f"for FY{year}")
+    components = [facts[m] for m in ("cash", *DEBT_COLUMNS) if facts[m] is not None]
+    values = {f["metric"]: _dec(f["value"]) for f in components}
+    debt, basis = debt_total(values)
+    cash = values.get("cash") or Decimal(0)
+    warnings = []
+    if facts["cash"] is None:
+        warnings.append(f"no cash balance tagged for FY{year}: net debt counts none")
+    if debt is None:
+        warnings.append(f"no debt reported for FY{year}: net debt counts none")
+    diluted = float(facts["shares_diluted"]["value"])
+    cover = _cover_shares(data)
+    if cover and diluted > 0 and abs(cover[0] / diluted - 1) > 0.2:
+        warnings.append(f"FY{year} diluted weighted-average shares ({diluted:,.0f}) differ from the "
+                        f"{cover[0]:,.0f} shares on the cover page dated {cover[1]} by "
+                        f"{abs(cover[0] / diluted - 1):.0%}: check for a split, a large buyback or "
+                        "issuance, or another share class")
+    subs = load_cached_json(workspace, "submissions", cik) or {}
+    return {"company": data.get("entityName", ""), "cik": str(int(normalize_cik(cik))),
+            "fiscal_year": year, "base_revenue": facts["revenue"], "shares": facts["shares_diluted"],
+            "net_debt": {"value": _json_number((debt or 0) - cash),
+                         "total_debt": _json_number(debt or 0), "cash": _json_number(cash),
+                         "debt_basis": basis, "components": components},
+            "tickers": [str(t) for t in subs.get("tickers") or []], "warnings": warnings,
+            "history": _history(data, ends, year)}
+
+
+def reverse_dcf(workspace: Path, *, fetch=None, run=None, resolve_path=None, cik: Any = "",
+                operating_margin: Any = None, tax_rate: Any = None, reinvestment_rate: Any = None,
+                discount_rate: Any = None, terminal_growth: Any = None, years: Any = 10,
+                snapshot: str = MARKET_SNAPSHOT_PATH, output: str = MARKET_IMPLIED_PATH) -> dict:
+    """The revenue CAGR the market price implies (a reverse DCF).
+
+    The price comes from market_snapshot.json; revenue, diluted shares and
+    net debt from the latest fiscal year in the cached XBRL facts
+    (pitch_inputs), each with its tag, period and accession. Under the
+    stated operating margin, tax rate, reinvestment rate, discount rate,
+    terminal growth and horizon, bisection finds the CAGR in [-50%, 100%]
+    at which dcf_value_per_share equals the price (to 0.01%). Writes
+    market_implied.json; when no CAGR in that range explains the price it
+    writes nothing and says so.
+    """
+    resolve = _resolver(workspace, resolve_path)
+    snap_path, target = resolve(snapshot), resolve(output, write=True)
+    snap = _json_object(snap_path, snapshot, "call market_quote first")
+    price = _number(snap.get("price"), f"price in {snapshot}")
+    if price <= 0:
+        raise ToolError(f"{snapshot} has no positive price")
+    currency = str(snap.get("currency") or "USD").upper()
+    if currency != "USD":
+        raise ToolError(f"the quote is in {currency}, but the XBRL figures are in USD")
+    assumptions = _assumptions({"operating_margin": operating_margin, "tax_rate": tax_rate,
+                                "reinvestment_rate": reinvestment_rate,
+                                "discount_rate": discount_rate,
+                                "terminal_growth": terminal_growth, "years": years})
+    inputs = pitch_inputs(workspace, cik)
+    ticker = str(snap.get("ticker") or "").upper()
+    listed = inputs.pop("tickers")
+    if listed and _ticker_key(ticker) not in {_ticker_key(t) for t in listed}:
+        raise ToolError(f"{snapshot} is for {ticker or '(no ticker)'}, but CIK {inputs['cik']} "
+                        f"trades as {', '.join(listed)}; call market_quote for the pitch company")
+    if not listed:
+        inputs["warnings"].append("no cached filing index lists this CIK's tickers "
+                                  "(edgar_submissions), so the quote's ticker is unconfirmed")
+    args = {"base_revenue": float(inputs["base_revenue"]["value"]),
+            "net_debt": float(inputs["net_debt"]["value"]),
+            "shares": float(inputs["shares"]["value"]), **assumptions}
+    try:
+        solved = solve_implied_cagr(price, **args)
+        if solved is None:
+            lo, hi = IMPLIED_CAGR_RANGE
+            at_lo, at_hi = (dcf_value_per_share(revenue_cagr=g, **args) for g in (lo, hi))
+            side = "above" if price > max(at_lo, at_hi) else "below"
+            raise ToolError(
+                f"no revenue CAGR from {lo:.0%} to {hi:.0%} a year gives the price {price:,.2f}: "
+                f"under these assumptions the value per share runs from {at_lo:,.2f} (at {lo:.0%}) "
+                f"to {at_hi:,.2f} (at {hi:.0%}), so the price is {side} what that growth range "
+                "can explain. Revisit the assumptions (usually the operating margin or the discount "
+                "rate) and say in the pitch what the price would require. Nothing was written.")
+        cagr, steps = solved
+        value = dcf_value_per_share(revenue_cagr=cagr, **args)
+    except ValueError as exc:
+        raise ToolError(f"cannot value these inputs: {exc}") from None
+    history = inputs.pop("history")
+    out = {"company": inputs["company"], "cik": inputs["cik"], "ticker": ticker,
+           "fiscal_year": inputs["fiscal_year"], "price": price,
+           "price_source": {"path": snapshot, **{k: snap.get(k, "") for k in
+                                                 ("source", "as_of", "url", "source_id")}},
+           "base_revenue": inputs["base_revenue"], "shares": inputs["shares"],
+           "net_debt": inputs["net_debt"], "assumptions": assumptions,
+           "implied_revenue_cagr": cagr, "value_per_share_at_implied": round(value, 4),
+           "solver": {"method": "bisection", "range": list(IMPLIED_CAGR_RANGE),
+                      "tolerance": "0.01% of the price", "steps": steps},
+           "method": DCF_METHOD, "warnings": inputs["warnings"]}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+    return {"path": output, "ticker": ticker, "fiscal_year": inputs["fiscal_year"], "price": price,
+            "implied_revenue_cagr": round(cagr, 6), "implied_revenue_cagr_pct": round(cagr * 100, 2),
+            "base_revenue": inputs["base_revenue"]["value"], "shares": inputs["shares"]["value"],
+            "net_debt": inputs["net_debt"]["value"], "debt_basis": inputs["net_debt"]["debt_basis"],
+            "assumptions": assumptions, "history": history, "warnings": inputs["warnings"]}
+
+
+def scenario_valuation(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                       scenarios: list[dict] | None = None, implied: str = MARKET_IMPLIED_PATH,
+                       output: str = VALUATION_PATH) -> dict:
+    """Bear/base/bull DCF values per share against the price.
+
+    Each scenario gives its revenue_cagr and may change operating_margin,
+    discount_rate, terminal_growth, tax_rate, reinvestment_rate or years;
+    what it leaves out, and the shared inputs (base revenue, net debt,
+    diluted shares, price), come from market_implied.json. Writes
+    valuation.csv, one row per scenario, with value_per_share and upside_pct
+    = (value / price - 1) x 100, both to two decimals. The base case sets
+    the direction: upside above +10% long, below -10% short, else pass.
+    """
+    resolve = _resolver(workspace, resolve_path)
+    mi = _json_object(resolve(implied), implied, "run reverse_dcf first")
+    target = resolve(output, write=True)
+
+    def shared(key: str) -> Any:
+        block = mi.get(key)
+        value = block.get("value") if isinstance(block, dict) else None
+        _number(value, f"{key} in {implied}")
+        return value
+
+    inputs = {key: shared(key) for key in ("base_revenue", "net_debt", "shares")}
+    price = _number(mi.get("price"), f"price in {implied}")
+    defaults = mi.get("assumptions") if isinstance(mi.get("assumptions"), dict) else {}
+    if not isinstance(scenarios, list) or not scenarios:
+        raise ToolError("give scenarios: bear, base (your view) and bull")
+    rows, names = [], []
+    for s in scenarios:
+        if not isinstance(s, dict):
+            raise ToolError("each scenario is an object with a name and a revenue_cagr")
+        name = str(s.get("name", "")).strip().lower()
+        if not SCENARIO_RE.fullmatch(name) or name in names:
+            raise ToolError(f"scenario names must be distinct short words, got {s.get('name')!r}")
+        names.append(name)
+        if s.get("revenue_cagr") is None:
+            raise ToolError(f"give revenue_cagr for scenario {name}")
+        cagr = _rate(s["revenue_cagr"], "revenue_cagr")
+        a = _assumptions({k: s.get(k) for k in ASSUMPTIONS}, defaults)
+        try:
+            value = dcf_value_per_share(float(inputs["base_revenue"]), cagr, a["operating_margin"],
+                                        a["tax_rate"], a["reinvestment_rate"], a["discount_rate"],
+                                        a["terminal_growth"], a["years"], float(inputs["net_debt"]),
+                                        float(inputs["shares"]))
+        except ValueError as exc:
+            raise ToolError(f"scenario {name}: {exc}") from None
+        rows.append({"scenario": name, "revenue_cagr": _plain(cagr),
+                     **{k: _plain(a[k]) for k in ASSUMPTIONS},
+                     **{k: _plain(v) for k, v in inputs.items()}, "price": _plain(price),
+                     "value_per_share": f"{value:.2f}",
+                     "upside_pct": f"{(value / price - 1) * 100:.2f}"})
+    if "base" not in names:
+        raise ToolError("include a scenario named base: your view")
+    _write_csv(target, VALUATION_COLUMNS, rows)
+    by_name = {r["scenario"]: r for r in rows}
+    notes = []
+    missing = [n for n in ("bear", "bull") if n not in by_name]
+    if missing:
+        notes.append(f"add {' and '.join(missing)}: the pitch needs bear, base and bull")
+    ranked = [float(by_name[n]["value_per_share"]) for n in ("bear", "base", "bull") if n in by_name]
+    if ranked != sorted(ranked):
+        notes.append("values do not rank bear <= base <= bull; check the scenario inputs")
+    base_upside = float(by_name["base"]["upside_pct"])
+    return {"path": output, "price": price, "implied_revenue_cagr": mi.get("implied_revenue_cagr"),
+            "scenarios": [{k: r[k] for k in ("scenario", "revenue_cagr", "operating_margin",
+                                               "value_per_share", "upside_pct")} for r in rows],
+            "direction": pitch_direction(base_upside),
+            "direction_rule": f"base-case upside above +{LONG_ABOVE:g}% long, below "
+                              f"{SHORT_BELOW:g}% short, else pass", "notes": notes}
+
+
 # --- tool table -------------------------------------------------------------------------
 
 _CIK = {"type": ["string", "integer"], "description": "SEC CIK, with or without leading zeros"}
@@ -978,4 +1588,53 @@ TOOL_DEFS: list[dict[str, Any]] = [
                     "count, readable yes/no/unknown with a note) into the M1 data-room index CSV.",
      "input_schema": {"type": "object", "properties": {
          "root": {"type": "string"}, "output": {"type": "string"}}}},
+    {"name": "market_quote", "risk": "network", "function": market_quote,
+     "description": "Price of the pitch company's ticker, saved as market_snapshot.json: the "
+                    "client's inputs/market_data.csv row when it has one, else an indicative, "
+                    "delayed public quote (Yahoo chart, then Nasdaq). The quote is registered as "
+                    "a ledger source; record_claim its price_text to cite the price. Quote a "
+                    "peer, if at all, with another output path.",
+     "input_schema": {"type": "object", "required": ["ticker"], "properties": {
+         "ticker": {"type": "string", "description": "exchange ticker, e.g. NVDA (share classes "
+                                                     "as BRK-B)"},
+         "market_data": {"type": "string"}, "output": {"type": "string"}}}},
+    {"name": "reverse_dcf", "risk": "write", "function": reverse_dcf,
+     "description": "Reverse DCF: the revenue CAGR the market price implies. Takes the price from "
+                    "market_snapshot.json and the latest fiscal year's revenue, diluted shares and "
+                    "net debt from the cached XBRL facts (each with tag, period and accession); "
+                    "you state the operating margin, tax rate, reinvestment rate, discount rate, "
+                    "terminal growth and horizon. Writes market_implied.json and returns the "
+                    "revenue and margin history. Rates are fractions (0.25 = 25%).",
+     "input_schema": {"type": "object", "required": ["cik", "operating_margin", "tax_rate",
+                                                     "reinvestment_rate", "discount_rate",
+                                                     "terminal_growth"], "properties": {
+         "cik": _CIK,
+         "operating_margin": {"type": "number", "minimum": 0, "maximum": 1,
+                              "description": "steady-state operating (EBIT) margin, above 0"},
+         "tax_rate": {"type": "number", "minimum": 0, "maximum": 0.6},
+         "reinvestment_rate": {"type": "number", "minimum": 0, "maximum": 0.95,
+                               "description": "share of after-tax operating income reinvested "
+                                              "(capex - D&A + working capital)"},
+         "discount_rate": {"type": "number", "minimum": 0.03, "maximum": 0.3,
+                           "description": "cost of capital"},
+         "terminal_growth": {"type": "number", "minimum": -0.02, "maximum": 0.06,
+                             "description": "growth after the explicit years, below discount_rate"},
+         "years": {"type": "integer", "minimum": 1, "maximum": MAX_YEARS,
+                   "description": "explicit forecast years (default 10)"},
+         "snapshot": {"type": "string"}, "output": {"type": "string"}}}},
+    {"name": "scenario_valuation", "risk": "write", "function": scenario_valuation,
+     "description": "Bear/base/bull DCF values per share and upside versus the price, from the "
+                    "shared inputs in market_implied.json. Each scenario gives revenue_cagr and may "
+                    "change operating_margin, discount_rate, terminal_growth, tax_rate, "
+                    "reinvestment_rate or years (else the reverse-DCF assumptions apply). The base "
+                    "scenario is your view. Writes valuation.csv and returns the direction.",
+     "input_schema": {"type": "object", "required": ["scenarios"], "properties": {
+         "scenarios": {"type": "array", "minItems": 1, "items": {
+             "type": "object", "required": ["name", "revenue_cagr"], "properties": {
+                 "name": {"type": "string", "description": "bear, base or bull"},
+                 "revenue_cagr": {"type": "number"}, "operating_margin": {"type": "number"},
+                 "discount_rate": {"type": "number"}, "terminal_growth": {"type": "number"},
+                 "tax_rate": {"type": "number"}, "reinvestment_rate": {"type": "number"},
+                 "years": {"type": "integer"}}}},
+         "implied": {"type": "string"}, "output": {"type": "string"}}}},
 ]

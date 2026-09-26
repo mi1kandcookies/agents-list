@@ -54,7 +54,8 @@ The debt components are separate metrics (`long_term_debt_noncurrent`,
 combination it used per company (`debt_basis`) for the Definitions section.
 
 Price, price date, the current share count, minority interest and preferred
-come only from the client's `inputs/market_data.csv`. We do not fetch quotes.
+come only from the client's `inputs/market_data.csv`; comps never use the
+indicative quotes `market_quote` fetches for the M4 pitch.
 Numbers there may use thousands separators or a `$`. Without the file, or for
 a company missing from it, the price and valuation columns stay blank and the
 operating metrics are still delivered; say so in the notes. Multiples and

@@ -6,8 +6,9 @@ name: Financial Research & Diligence Analyst
 version: 0.1.0
 summary: >-
   Public-company research, XBRL-tied financial spreads, trading comps, filing
-  red flags and a cited diligence memo built from SEC EDGAR data and your data
-  room. Every figure is computed in code and ties back to a reported XBRL fact.
+  red flags, a cited diligence memo and a stock pitch with a variant view,
+  built from SEC EDGAR data and your data room. Every figure is computed in
+  code and ties back to a reported XBRL fact or a recorded price quote.
 
 listing:
   category: Finance
@@ -18,9 +19,13 @@ listing:
     comps table where each input traces to a tag, period and accession number,
     scans filing histories for red flags (auditor changes, restatements, late
     filings, debt triggers) and writes an IC-style memo in which every number
-    is cited and re-verified. Analysis for professional users; not investment
-    advice.
-  tags: [finance, due-diligence, equity-research, comps, sec-edgar, xbrl]
+    is cited and re-verified. It also writes a stock pitch with a variant
+    view: a reverse DCF of the revenue growth the share price implies, the
+    filings-based view where it differs, dated catalysts, what would prove it
+    wrong, and bear, base and bull DCF scenarios. Analysis for professional
+    users; not investment advice.
+  tags: [finance, due-diligence, equity-research, comps, sec-edgar, xbrl, stock-pitch,
+         variant-view, valuation]
   capabilities:
     - research plan, peer set and source inventory
     - data-room index with hashes and unreadable-file list
@@ -28,6 +33,8 @@ listing:
     - trading comps with EV bridge (EV/Revenue, EV/EBITDA, P/E, margins, growth)
     - filing-index red-flag scan and checklist
     - cited diligence memo and management question list
+    - "stock pitch with a variant view: what the market is pricing in versus a filings-based view"
+    - reverse DCF of market-implied growth and bear/base/bull DCF scenarios
   # typical_low/high: the engagement range, billed per milestone through the
   # SOW. task_price_usdc: the flat x402 price of one agent-to-agent task that
   # the operator stamps (a placeholder until the operator sets it).
@@ -44,6 +51,7 @@ prompts:
     - playbook/xbrl-spreads.md
     - playbook/red-flags.md
     - playbook/memo-style.md
+    - playbook/stock-pitch.md
 
 tools:
   # kit tools
@@ -68,10 +76,17 @@ tools:
   - compute_comps
   - filing_red_flags
   - index_dataroom
+  - market_quote
+  - reverse_dcf
+  - scenario_valuation
 
 shell: {allow: [], timeout_seconds: 600}
-# SEC EDGAR only. Market prices and licensed data come from the client as files.
-egress: {mode: allowlist, allow: [data.sec.gov, www.sec.gov]}
+# SEC EDGAR plus indicative public quotes; licensed prices still come from the
+# client as inputs/market_data.csv and take precedence.
+egress:
+  mode: allowlist
+  allow: [data.sec.gov, www.sec.gov, query1.finance.yahoo.com, query2.finance.yahoo.com,
+          api.nasdaq.com]
 limits: {max_steps: 150, max_tokens: 5000000, max_usd: 60, max_wall_minutes: 240}
 
 human_gate:
@@ -89,7 +104,10 @@ human_gate:
     - Peer set and key questions match the mandate
     - Spot-check a sample of spreads rows against the cited filings
     - Every red flag marked found has been read in the source filing
-    - Memo conclusions are the reviewer's own; no rating or price target was added by the agent
+    - >-
+      Memo conclusions are the reviewer's own and the memo carries no rating or
+      price target; a stock pitch states a thesis direction and bear/base/bull
+      scenario values that the reviewer adopts or rejects
     - Material non-public information stays within the engagement
 
 intake:
@@ -132,6 +150,12 @@ intake:
       Who will read the memo: the internal deal team only, or investors, LPs
       or the public? External distribution needs review by an appropriately
       licensed person before it goes out.
+    required: false
+  - field: pitch_focus
+    question: >-
+      Which company should the stock pitch be on, and is there a view you want
+      tested (long or short)? Default: the first company listed; the direction
+      follows from the analysis.
     required: false
 
 # Each milestone's high estimate fits one run: 4 hours x $8 is under both
@@ -304,3 +328,79 @@ milestones:
             - deliverables/m3-diligence-memo/memo.md
             - deliverables/m3-diligence-memo/questions.md
           threshold: 0.8
+
+  - id: m4-stock-pitch
+    title: Stock pitch with a variant view
+    description: >-
+      A stock pitch on one company that runs on its own (no earlier
+      milestone needed): what the share price implies, as the revenue CAGR a
+      reverse DCF solves for from the price and the latest fiscal year's XBRL
+      revenue, diluted shares and net debt; the analyst's own view from the
+      filings (growth and margin history, segment and guidance language); the
+      variant view where the two differ, with cited evidence, dated catalysts
+      and what would prove it wrong; and bear, base and bull DCF scenarios
+      whose base-case upside sets the direction.
+    deliverables:
+      - deliverables/m4-stock-pitch/pitch.md
+      - deliverables/m4-stock-pitch/market_snapshot.json
+      - deliverables/m4-stock-pitch/market_implied.json
+      - deliverables/m4-stock-pitch/valuation.csv
+      - deliverables/m4-stock-pitch/variant_view.json
+    hours: [2, 4]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m4-stock-pitch/pitch.md
+            - deliverables/m4-stock-pitch/market_snapshot.json
+            - deliverables/m4-stock-pitch/market_implied.json
+            - deliverables/m4-stock-pitch/valuation.csv
+            - deliverables/m4-stock-pitch/variant_view.json
+      - check: markdown_sections
+        params:
+          path: deliverables/m4-stock-pitch/pitch.md
+          sections: [Summary, Thesis, What the market is pricing in, Variant view, Catalysts,
+                     Valuation, Risks and what would change our mind, Sources]
+      - check: disclaimer_present
+        description: The human_gate disclaimer, verbatim
+        params: {paths: [deliverables/m4-stock-pitch/pitch.md]}
+      - check: no_placeholders
+        params:
+          paths:
+            - deliverables/m4-stock-pitch/pitch.md
+            - deliverables/m4-stock-pitch/variant_view.json
+      - check: pitch_valuation_recompute
+        description: >-
+          The price ties to the client's market data or the recorded quote; the
+          reverse DCF uses the latest fiscal year's XBRL revenue, diluted shares
+          and every reported cash and debt component; the implied CAGR and every
+          bear/base/bull row recompute
+        params:
+          snapshot: deliverables/m4-stock-pitch/market_snapshot.json
+          implied: deliverables/m4-stock-pitch/market_implied.json
+          valuation: deliverables/m4-stock-pitch/valuation.csv
+          market_data: inputs/market_data.csv
+      - check: variant_view_grounded
+        description: >-
+          The view differs from the implied CAGR by 2+ points, is the base case,
+          cites 3+ ledger claims, names 2+ falsifiers and 2+ dated catalysts; the
+          direction follows the base-case upside and pitch.md states it and the
+          implied CAGR
+        params:
+          path: deliverables/m4-stock-pitch/variant_view.json
+          implied: deliverables/m4-stock-pitch/market_implied.json
+          valuation: deliverables/m4-stock-pitch/valuation.csv
+          pitch: deliverables/m4-stock-pitch/pitch.md
+      - check: ledger_verified
+        description: Every recorded claim quotes its source snapshot verbatim
+      - check: citations_resolve
+        params: {paths: [deliverables/m4-stock-pitch/pitch.md]}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/stock-pitch.yaml
+          paths: [deliverables/m4-stock-pitch/pitch.md]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Client's investment professional reviews the thesis direction and scenarios before any use

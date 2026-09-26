@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
 from specialists.financial_research import checks as C
 from specialists.financial_research import tools as T
 
@@ -1003,7 +1003,9 @@ def test_check_param_paths_stay_in_the_workspace(built):
                        (C.comps_tie_to_xbrl, {"market_data": "../market_data.csv"}),
                        (C.memo_figures_match, {"path": "//fileserver/share/memo.md"}),
                        (C.no_recommendation_language, {"paths": ["../../memo.md"]}),
-                       (C.dataroom_index_complete, {"root": "../"})):
+                       (C.dataroom_index_complete, {"root": "../"}),
+                       (C.pitch_valuation_recompute, {"market_data": "../market_data.csv"}),
+                       (C.variant_view_grounded, {"pitch": "//fileserver/share/pitch.md"})):
         with pytest.raises(PolicyViolation):
             fn(built, params)
 
@@ -1012,15 +1014,403 @@ def test_check_defs_signature(built):
     assert set(C.CHECK_DEFS) == {"xbrl_tieout", "comps_tie_to_xbrl", "comps_recompute",
                                  "memo_figures_match", "no_recommendation_language",
                                  "red_flag_checklist", "source_inventory_resolves",
-                                 "dataroom_index_complete"}
+                                 "dataroom_index_complete", "pitch_valuation_recompute",
+                                 "variant_view_grounded"}
     for fn in C.CHECK_DEFS.values():
         res = fn(built, {}, run=None)
         assert set(res) == {"passed", "details", "score"}
 
 
+# --- M4: stock pitch ----------------------------------------------------------------
+
+YAHOO_URL, YAHOO_URL_2, NASDAQ_URL = (url.format(ticker="HLVI") for _, url in T.QUOTE_SOURCES)
+QUOTE_TIME = 1759262400          # 2025-09-30 20:00 UTC, the 4 pm New York close
+
+
+def _yahoo(symbol: str = "HLVI", price: float = 41.37) -> str:
+    """A v8 chart response shaped like Yahoo's (trimmed, compact JSON)."""
+    return json.dumps({"chart": {"result": [{
+        "meta": {"currency": "USD", "symbol": symbol, "exchangeName": "NMS",
+                 "instrumentType": "EQUITY", "regularMarketTime": QUOTE_TIME, "gmtoffset": -14400,
+                 "timezone": "EDT", "exchangeTimezoneName": "America/New_York",
+                 "regularMarketPrice": price, "chartPreviousClose": 40.95, "priceHint": 2,
+                 "dataGranularity": "1d", "range": "5d"},
+        "timestamp": [QUOTE_TIME - 86400, QUOTE_TIME],
+        "indicators": {"quote": [{"close": [40.95, price], "volume": [812300, 905100]}]}}],
+        "error": None}}, separators=(",", ":"))
+
+
+def _nasdaq(symbol: str = "HLVI", price: str = "$41.37",
+            stamp: str = "Sep 30, 2025 4:00 PM ET") -> str:
+    """A quote-info response shaped like Nasdaq's (trimmed)."""
+    return json.dumps({"data": {
+        "symbol": symbol, "companyName": "Halvorsen Instruments Inc. Common Stock",
+        "stockType": "Common Stock", "exchange": "NASDAQ-GS",
+        "primaryData": {"lastSalePrice": price, "netChange": "+0.42", "percentageChange": "+1.03%",
+                        "deltaIndicator": "up", "lastTradeTimestamp": stamp, "isRealTime": False,
+                        "bidPrice": "N/A", "askPrice": "N/A", "volume": "905,100", "currency": None},
+        "secondaryData": None, "marketStatus": "Closed", "assetClass": "STOCKS"},
+        "message": None, "status": {"rCode": 200, "bCodeMessage": None, "developerMessage": None}})
+
+
+ASSUME = {"operating_margin": 0.17, "tax_rate": 0.21, "reinvestment_rate": 0.35,
+          "discount_rate": 0.09, "terminal_growth": 0.025, "years": 10}
+SCENARIOS = [{"name": "bear", "revenue_cagr": 0.06, "operating_margin": 0.15},
+             {"name": "base", "revenue_cagr": 0.14},
+             {"name": "bull", "revenue_cagr": 0.18, "operating_margin": 0.19}]
+# Halvorsen FY2024 from the fixture 10-K: revenue, net debt (360m debt - 214.6m cash), shares
+HLVI = {"base_revenue": 1_121_900_000, "net_debt": 145_400_000, "shares": 60_400_000}
+
+
+@pytest.fixture()
+def priced(ws):
+    """The fixture workspace with the pitch's price (the client's HLVI row),
+    reverse DCF and scenarios built by the tools."""
+    from agentkit.ledger import Ledger
+    T.market_quote(ws, ledger=Ledger(ws), ticker="HLVI")
+    T.reverse_dcf(ws, cik=9900001, **ASSUME)
+    T.scenario_valuation(ws, scenarios=SCENARIOS)
+    return ws
+
+
+def _edit_json(path: Path, change) -> None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    change(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _edit_row(path: Path, scenario: str, **values) -> None:
+    rows = _rows(path)
+    next(r for r in rows if r["scenario"] == scenario).update(values)
+    _write_rows(path, rows)
+
+
+def test_dcf_value_per_share_matches_a_hand_computation():
+    # FCF margin 0.20 x 0.75 x 0.60 = 0.09: revenue 1,100 then 1,210 gives FCF 99.0 and
+    # 108.9, each worth 90.0 today at 10%; terminal value 108.9 x 1.02 / 0.08 = 1,388.475,
+    # worth 1,147.5 today; EV 1,327.5 less net debt 100, over 10 shares = 122.75
+    args = dict(base_revenue=1000, revenue_cagr=0.10, operating_margin=0.20, tax_rate=0.25,
+                reinvestment_rate=0.40, discount_rate=0.10, terminal_growth=0.02, years=2,
+                net_debt=100, shares=10)
+    assert T.dcf_value_per_share(**args) == pytest.approx(122.75, abs=1e-9)
+    for bad in ({"discount_rate": 0.02}, {"shares": 0}, {"years": 0}, {"years": 2.5},
+                {"base_revenue": -5}, {"net_debt": float("nan")}):
+        with pytest.raises(ValueError):
+            T.dcf_value_per_share(**(args | bad))
+
+
+def test_reverse_dcf_round_trips_to_the_price(priced):
+    implied = json.loads((priced / T.MARKET_IMPLIED_PATH).read_text(encoding="utf-8"))
+    assert (implied["ticker"], implied["cik"], implied["fiscal_year"], implied["price"]) == \
+        ("HLVI", "9900001", 2024, 48.25)
+    assert implied["price_source"]["source"] == "client" and implied["assumptions"] == ASSUME
+    revenue, shares, net = implied["base_revenue"], implied["shares"], implied["net_debt"]
+    assert (revenue["value"], revenue["accession"], revenue["period_end"]) == \
+        (1_121_900_000, "0009900001-25-000027", "2024-12-31")
+    assert (shares["tag"], shares["value"]) == ("WeightedAverageNumberOfDilutedSharesOutstanding",
+                                                60_400_000)
+    assert (net["total_debt"], net["cash"], net["value"]) == (360_000_000, 214_600_000, 145_400_000)
+    assert {c["metric"] for c in net["components"]} == {"cash", "long_term_debt_noncurrent",
+                                                        "long_term_debt_current"}
+    cagr = implied["implied_revenue_cagr"]
+    value = T.dcf_value_per_share(revenue_cagr=cagr, **HLVI, **ASSUME)
+    assert abs(value - 48.25) <= 48.25 * T.IMPLIED_TOLERANCE
+    assert 0.10 < cagr < 0.13 and implied["value_per_share_at_implied"] == pytest.approx(48.25, abs=0.01)
+    # the tool also returns the record the analyst argues against
+    out = T.reverse_dcf(priced, cik=9900001, **ASSUME)
+    assert out["history"]["span"] == "FY2021-FY2024" and out["history"]["revenue_cagr"] == 0.1136
+
+
+def test_reverse_dcf_says_so_when_no_growth_explains_the_price(ws):
+    T.market_quote(ws, ticker="HLVI")
+    _edit_json(ws / T.MARKET_SNAPSHOT_PATH, lambda d: d.update(price=100_000.0))
+    with pytest.raises(ToolError, match="no revenue CAGR from -50% to 100%") as err:
+        T.reverse_dcf(ws, cik=9900001, **ASSUME)
+    assert "price is above" in str(err.value) and "Nothing was written" in str(err.value)
+    assert not (ws / T.MARKET_IMPLIED_PATH).exists()
+
+
+def test_reverse_dcf_checks_its_inputs(ws, tmp_path):
+    with pytest.raises(ToolError, match="call market_quote first"):
+        T.reverse_dcf(tmp_path, cik=9900001, **ASSUME)
+    T.market_quote(ws, ticker="HLVI")
+    with pytest.raises(ToolError, match="rates are fractions"):
+        T.reverse_dcf(ws, cik=9900001, **(ASSUME | {"operating_margin": 17}))
+    with pytest.raises(ToolError, match="above terminal_growth"):
+        T.reverse_dcf(ws, cik=9900001, **(ASSUME | {"discount_rate": 0.05, "terminal_growth": 0.05}))
+    with pytest.raises(ToolError, match="give tax_rate"):
+        T.reverse_dcf(ws, cik=9900001, **(ASSUME | {"tax_rate": None}))
+    # Halvorsen's price on Brightwater's figures
+    with pytest.raises(ToolError, match="trades as BWAC"):
+        T.reverse_dcf(ws, cik=9900002, **ASSUME)
+    _edit_json(ws / T.MARKET_SNAPSHOT_PATH, lambda d: d.update(currency="EUR"))
+    with pytest.raises(ToolError, match="in EUR"):
+        T.reverse_dcf(ws, cik=9900001, **ASSUME)
+
+
+def test_scenario_valuation_values_each_case(priced):
+    rows = _rows(priced / T.VALUATION_PATH)
+    assert [r["scenario"] for r in rows] == ["bear", "base", "bull"]
+    assert list(rows[0]) == T.VALUATION_COLUMNS
+    base = rows[1]
+    assert (base["operating_margin"], base["years"], base["price"], base["net_debt"]) == \
+        ("0.17", "10", "48.25", "145400000")
+    value = T.dcf_value_per_share(revenue_cagr=0.14, **HLVI, **ASSUME)
+    assert base["value_per_share"] == f"{value:.2f}"
+    assert base["upside_pct"] == f"{(value / 48.25 - 1) * 100:.2f}"
+    assert [float(r["value_per_share"]) for r in rows] == sorted(float(r["value_per_share"]) for r in rows)
+    out = T.scenario_valuation(priced, scenarios=SCENARIOS)
+    assert out["direction"] == "long" and out["notes"] == []      # base-case upside above +10%
+    assert T.pitch_direction(10.0) == "pass" and T.pitch_direction(-10.01) == "short"
+    for scenarios, reason in (([SCENARIOS[0], SCENARIOS[2]], "named base"),
+                              ([SCENARIOS[1], SCENARIOS[1]], "distinct"),
+                              ([{"name": "base", "revenue_cagr": 14}], "rates are fractions"),
+                              ([{"name": "base"}], "give revenue_cagr")):
+        with pytest.raises(ToolError, match=reason):
+            T.scenario_valuation(priced, scenarios=scenarios)
+
+
+def test_market_quote_reads_a_yahoo_chart_response(tmp_path):
+    from agentkit.ledger import Ledger
+    fetch, ledger = FakeFetch({YAHOO_URL: _yahoo()}), Ledger(tmp_path)
+    out = T.market_quote(tmp_path, fetch=fetch, ledger=ledger, ticker="hlvi")
+    assert (out["ticker"], out["price"], out["currency"], out["source"], out["url"]) == \
+        ("HLVI", 41.37, "USD", "yahoo", YAHOO_URL)
+    assert out["as_of"] == "2025-09-30T20:00:00+00:00"
+    assert len(fetch.calls) == 1 and fetch.calls[0][1]["User-Agent"].startswith("Mozilla/5.0")
+    snap = json.loads((tmp_path / T.MARKET_SNAPSHOT_PATH).read_text(encoding="utf-8"))
+    assert snap["source_id"] == "S1" and ledger.source("S1").kind == "tool"
+    # the price is citable: a claim quotes the recorded response verbatim
+    assert snap["price_text"] == '"regularMarketPrice":41.37'
+    assert ledger.add_claim("HLVI last price", "S1", snap["price_text"]).id == "C1"
+
+
+def test_market_quote_falls_back_to_nasdaq(tmp_path):
+    from agentkit.ledger import Ledger
+    no_data = '{"chart":{"result":null,"error":{"code":"Not Found","description":"No data found"}}}'
+    fetch = FakeFetch({YAHOO_URL: no_data, NASDAQ_URL: _nasdaq()})       # query2 answers 404
+    out = T.market_quote(tmp_path, fetch=fetch, ledger=Ledger(tmp_path), ticker="HLVI")
+    assert (out["source"], out["price"], out["url"]) == ("nasdaq", 41.37, NASDAQ_URL)
+    assert out["as_of"] == "2025-09-30T16:00:00-04:00"
+    assert [url for url, _ in fetch.calls] == [YAHOO_URL, YAHOO_URL_2, NASDAQ_URL]
+    assert fetch.calls[2][1]["Referer"] == "https://www.nasdaq.com/"
+    assert out["price_text"] == '"lastSalePrice": "$41.37"'
+    # New York time: EST in winter; a bare date stays a date
+    assert T._nasdaq_time("Jan 15, 2026 4:00 PM ET") == "2026-01-15T16:00:00-05:00"
+    assert T._nasdaq_time("DATA AS OF Jan 15, 2026") == "2026-01-15"
+
+
+def test_market_quote_prefers_the_clients_price(ws):
+    from agentkit.ledger import Ledger
+    fetch, ledger = FakeFetch({YAHOO_URL: _yahoo()}), Ledger(ws)
+    out = T.market_quote(ws, fetch=fetch, ledger=ledger, ticker="HLVI")
+    assert (out["source"], out["price"], out["as_of"], out["cik"]) == ("client", 48.25, "2025-06-30",
+                                                                       "9900001")
+    assert fetch.calls == [] and ledger.source(out["source_id"]).kind == "customer"
+    assert ledger.add_claim("HLVI price", out["source_id"], out["price_text"]).id == "C1"
+    # a ticker the client's file does not list gets a public quote
+    acme = T.QUOTE_SOURCES[0][1].format(ticker="ACME")
+    assert T.market_quote(ws, fetch=FakeFetch({acme: _yahoo("ACME", 12.5)}),
+                          ticker="ACME")["source"] == "yahoo"
+
+
+def test_market_quote_failures(tmp_path):
+    with pytest.raises(ToolError, match="Upload inputs/market_data.csv"):
+        T.market_quote(tmp_path, fetch=FakeFetch({}), ticker="HLVI")        # every host 404
+    with pytest.raises(ToolError, match="not available"):
+        T.market_quote(tmp_path, fetch=None, ticker="HLVI")
+    with pytest.raises(ToolError, match="not a ticker"):
+        T.market_quote(tmp_path, fetch=FakeFetch({}), ticker="../etc/passwd")
+    with pytest.raises(ToolError, match="answered with a quote for AMD"):
+        T.market_quote(tmp_path, fetch=FakeFetch({YAHOO_URL: _yahoo("AMD")}), ticker="HLVI")
+    with pytest.raises(ToolError, match="no last sale price"):
+        T.market_quote(tmp_path, fetch=FakeFetch({NASDAQ_URL: _nasdaq(price="N/A")}), ticker="HLVI")
+
+    def denied(url, **kwargs):
+        raise PolicyViolation(f"host {url.split('/')[2]!r} is not on the egress allowlist")
+
+    with pytest.raises(PolicyViolation):             # policy, not a network failure
+        T.market_quote(tmp_path, fetch=denied, ticker="HLVI")
+    assert not (tmp_path / T.MARKET_SNAPSHOT_PATH).exists()
+
+
+def test_pitch_valuation_recompute_passes_on_tool_output(priced):
+    res = C.pitch_valuation_recompute(priced, {})
+    assert res["passed"] is True and res["score"] == 1.0, res["details"]
+
+
+def _drop_debt(data: dict) -> None:
+    """Leave the noncurrent debt out of the bridge and restate net debt to match."""
+    net = data["net_debt"]
+    net["components"] = [c for c in net["components"] if c["metric"] != "long_term_debt_noncurrent"]
+    net["value"] = 20_000_000 - 214_600_000
+
+
+@pytest.mark.parametrize("tamper,reason", [
+    # a flattering base case typed over the tool's output
+    (lambda ws: _edit_row(ws / T.VALUATION_PATH, "base", value_per_share="75.00"),
+     "base): value_per_share '75.00' != recomputed"),
+    (lambda ws: _edit_row(ws / T.VALUATION_PATH, "base", upside_pct="55.44"), "upside_pct '55.44'"),
+    (lambda ws: _edit_row(ws / T.VALUATION_PATH, "bull", shares="50000000"), "shares '50000000' !="),
+    (lambda ws: _edit_json(ws / T.MARKET_IMPLIED_PATH,
+                           lambda d: d.update(implied_revenue_cagr=d["implied_revenue_cagr"] - 0.02)),
+     "not the price 48.25"),
+    (lambda ws: _edit_json(ws / T.MARKET_SNAPSHOT_PATH, lambda d: d.update(price=39.5)),
+     "market_snapshot.json: price 39.5 != 48.25 in inputs/market_data.csv"),
+    (lambda ws: _edit_json(ws / T.MARKET_IMPLIED_PATH, _drop_debt),
+     "leaves out long_term_debt_noncurrent, which the SEC source reports for FY2024"),
+    (lambda ws: _write_rows(ws / T.VALUATION_PATH, _rows(ws / T.VALUATION_PATH)[:2]),
+     "needs one bull row, found 0"),
+])
+def test_pitch_valuation_recompute_catches_tampering(priced, tamper, reason):
+    tamper(priced)
+    res = C.pitch_valuation_recompute(priced, {})
+    assert res["passed"] is False and reason in res["details"], res["details"]
+
+
+def test_pitch_inputs_must_be_xbrl_facts_even_when_consistent(priced):
+    """A revenue base 50m too high, with the implied CAGR and every scenario
+    recomputed to match it, still fails against the SEC source."""
+    path = priced / T.MARKET_IMPLIED_PATH
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["base_revenue"]["value"] += 50_000_000
+    inputs = HLVI | {"base_revenue": data["base_revenue"]["value"]}
+    data["implied_revenue_cagr"] = T.solve_implied_cagr(48.25, **inputs, **ASSUME)[0]
+    data["value_per_share_at_implied"] = T.dcf_value_per_share(
+        revenue_cagr=data["implied_revenue_cagr"], **inputs, **ASSUME)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    T.scenario_valuation(priced, scenarios=SCENARIOS)
+    res = C.pitch_valuation_recompute(priced, {})
+    assert res["passed"] is False and "; 1 failed: " in res["details"], res["details"]
+    assert "base_revenue: value 1171900000 != reported 1121900000" in res["details"]
+
+
+def test_pitch_scenarios_must_rank(priced):
+    out = T.scenario_valuation(priced, scenarios=SCENARIOS[:2] + [{"name": "bull", "revenue_cagr": 0.1}])
+    assert "rank" in out["notes"][0]
+    res = C.pitch_valuation_recompute(priced, {})
+    assert res["passed"] is False and "do not rank bear <= base <= bull" in res["details"]
+
+
+def test_pitch_quote_ties_to_the_recorded_response(ws):
+    from agentkit.ledger import Ledger
+    (ws / T.MARKET_DATA_PATH).unlink()                  # no upload: the public quote
+    T.market_quote(ws, fetch=FakeFetch({YAHOO_URL: _yahoo()}), ledger=Ledger(ws), ticker="HLVI")
+    T.reverse_dcf(ws, cik=9900001, **ASSUME)
+    T.scenario_valuation(ws, scenarios=SCENARIOS)
+    assert C.pitch_valuation_recompute(ws, {})["passed"] is True
+    snap = ws / T.MARKET_SNAPSHOT_PATH
+    _edit_json(snap, lambda d: d.update(price=45.0))     # a price typed over the recorded quote
+    assert "price 45.0 != 41.37 in source S1" in C.pitch_valuation_recompute(ws, {})["details"]
+    _edit_json(snap, lambda d: d.update(price=41.37, source_id="", url=YAHOO_URL_2))
+    assert "no ledger source for" in C.pitch_valuation_recompute(ws, {})["details"]
+    _edit_json(snap, lambda d: d.update(source_id="S1", url=YAHOO_URL))
+    recorded = ws / ".agentkit/sources/S1.txt"
+    recorded.write_text(recorded.read_text(encoding="utf-8").replace("41.37", "45.0"), encoding="utf-8")
+    assert "changed after it was recorded" in C.pitch_valuation_recompute(ws, {})["details"]
+
+
+FILING_10K = T.filing_url("9900001", "0009900001-25-000027", "hlvi-20241231.htm")
+FILING_10K_TEXT = ("Revenue increased 11.8% to $1,121.9 million, driven by a 19% increase in process "
+                   "analyzer shipments. Backlog at December 31, 2024 was $612.0 million, up 24% from a "
+                   "year earlier. For 2025 we expect revenue growth in the low double digits.")
+EVIDENCE_QUOTES = ["Revenue increased 11.8% to $1,121.9 million",
+                   "Backlog at December 31, 2024 was $612.0 million, up 24%",
+                   "For 2025 we expect revenue growth in the low double digits"]
+
+
+def _view(ws: Path) -> dict:
+    implied = json.loads((ws / T.MARKET_IMPLIED_PATH).read_text(encoding="utf-8"))
+    cagr = implied["implied_revenue_cagr"]
+    return {"ticker": "HLVI", "metric": "revenue_cagr", "horizon_years": 10,
+            "market_implied": round(cagr, 4), "our_view": 0.14, "delta": round(0.14 - cagr, 4),
+            "direction": "long",
+            "thesis": "The price pays for growth below the company's own record and backlog.",
+            "evidence": [{"point": "Revenue grew 11.8% in FY2024", "claims": ["C1"]},
+                         "Backlog rose 24% to $612.0 million [C2]",
+                         {"point": "Management expects low double-digit growth in 2025 [C3]"}],
+            "falsifiers": ["Backlog below $500 million at any 2025 quarter-end",
+                           "FY2025 revenue growth under 8% with stable pricing"],
+            "catalysts": [{"event": "Q3 2025 results", "date": "2025-11-04"},
+                          "FY2025 10-K and outlook, February 2026"]}
+
+
+def _pitch(ws: Path, direction: str = "long", implied_text: str | None = None) -> str:
+    cagr = json.loads((ws / T.MARKET_IMPLIED_PATH).read_text(encoding="utf-8"))["implied_revenue_cagr"]
+    implied_text = implied_text or f"{cagr * 100:.1f}%"
+    return (f"# Halvorsen Instruments (HLVI)\n\nDirection: {direction}\n\n## Summary\nText.\n\n"
+            f"## What the market is pricing in\nAt $48.25 the price implies revenue growth of "
+            f"{implied_text} a year for ten years, at a 17.0% operating margin.\n\n"
+            "## Variant view\nThe backlog supports 14% [C2].\n")
+
+
+def _variant(ws: Path, view: dict | None = None, pitch: str | None = None) -> None:
+    """Claims C1-C3 from Halvorsen's 10-K, then variant_view.json and pitch.md."""
+    from agentkit.ledger import Ledger
+    ledger = Ledger(ws)
+    if not ledger.claims:
+        src = ledger.add_source(FILING_10K, "Halvorsen FY2024 10-K", FILING_10K_TEXT, kind="tool")
+        for quote in EVIDENCE_QUOTES:
+            ledger.add_claim(quote, src.id, quote)
+    folder = ws / T.MARKET_IMPLIED_PATH.rsplit("/", 1)[0]
+    (folder / "variant_view.json").write_text(json.dumps(view or _view(ws)), encoding="utf-8")
+    (folder / "pitch.md").write_text(pitch or _pitch(ws), encoding="utf-8")
+
+
+def test_variant_view_grounded_passes(priced):
+    _variant(priced)
+    res = C.variant_view_grounded(priced, {})
+    assert res["passed"] is True and res["score"] == 1.0, res["details"]
+    # our_view as an object, and the implied CAGR rounded to a whole percent, pass too
+    view = _view(priced) | {"our_view": {"metric": "revenue CAGR", "value": 0.14}}
+    _variant(priced, view, _pitch(priced, implied_text="12%"))
+    assert C.variant_view_grounded(priced, {})["passed"] is True
+
+
+@pytest.mark.parametrize("change,reason", [
+    (lambda v: v.update(our_view=v["market_implied"], delta=0.0), "that is not a variant view"),
+    (lambda v: v.update(market_implied=0.09), "market_implied: 0.09 != market_implied.json"),
+    (lambda v: v.update(delta=0.05), "delta: 0.05 != our_view - market_implied"),
+    (lambda v: v.update(direction="short"), "makes it long"),
+    (lambda v: v.update(our_view=0.17, delta=round(v["delta"] + 0.03, 4)),
+     "the base scenario's revenue_cagr (0.14) is not our_view 0.1700"),
+    (lambda v: v.update(our_view={"metric": "operating_margin", "value": 0.2}),
+     "our_view: must be a revenue CAGR"),
+    (lambda v: v.update(falsifiers=v["falsifiers"][:1]), "falsifiers: 1 distinct"),
+    (lambda v: v.update(falsifiers=["n/a", "none"]), "falsifiers: 0 distinct"),
+    (lambda v: v["evidence"].append("Pricing held through 2024"), "evidence 4: cites no [C#] claim"),
+    (lambda v: v["evidence"].__setitem__(1, "Backlog rose 24% [C9]"), "cites C9, not in the claim ledger"),
+    (lambda v: v.update(evidence=v["evidence"][:2]), "evidence: 2 distinct items, need 3"),
+    (lambda v: v["catalysts"].__setitem__(0, "Next results"), "catalyst 1: does not say when"),
+    (lambda v: v.update(catalysts=[v["catalysts"][0]]), "catalysts: 1 distinct, need 2"),
+])
+def test_variant_view_grounded_rejects(priced, change, reason):
+    view = _view(priced)
+    change(view)
+    _variant(priced, view)
+    res = C.variant_view_grounded(priced, {})
+    assert res["passed"] is False and reason in res["details"], res["details"]
+
+
+def test_variant_view_grounded_reads_the_pitch(priced):
+    _variant(priced, pitch=_pitch(priced, direction="short"))
+    assert "pitch.md: states direction short" in C.variant_view_grounded(priced, {})["details"]
+    _variant(priced, pitch=_pitch(priced).replace("Direction: long\n", ""))
+    assert "has no 'Direction: long|short|pass' line" in C.variant_view_grounded(priced, {})["details"]
+    _variant(priced, pitch=_pitch(priced, implied_text="9.9%"))
+    res = C.variant_view_grounded(priced, {})
+    assert res["passed"] is False and "does not state the implied revenue CAGR" in res["details"]
+
+
+def test_pitch_checks_fail_without_their_files(ws):
+    for fn in (C.pitch_valuation_recompute, C.variant_view_grounded):
+        res = fn(ws, {})
+        assert res["passed"] is False and res["details"].startswith("missing: "), res["details"]
+
+
 # --- manifest ----------------------------------------------------------------------
 
-KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+KIT_TOOLS ={"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
              "http_fetch", "web_search", "read_document", "record_source", "record_claim",
              "ask_client", "post_progress", "submit_milestone"}
 KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
@@ -1063,7 +1453,12 @@ def test_manifest_prompt_files_exist_and_keep_boundaries(manifest):
 
 
 def test_manifest_policy_and_listing(manifest):
-    assert manifest["egress"] == {"mode": "allowlist", "allow": ["data.sec.gov", "www.sec.gov"]}
+    # SEC EDGAR plus the three hosts market_quote reads indicative prices from
+    assert manifest["egress"] == {"mode": "allowlist", "allow": [
+        "data.sec.gov", "www.sec.gov", "query1.finance.yahoo.com", "query2.finance.yahoo.com",
+        "api.nasdaq.com"]}
+    quote_hosts = {url.split("/")[2] for _, url in T.QUOTE_SOURCES}
+    assert quote_hosts == set(manifest["egress"]["allow"]) - {"data.sec.gov", "www.sec.gov"}
     assert manifest["shell"]["allow"] == []
     assert manifest["human_gate"]["required"] is False
     assert "Not investment advice" in manifest["human_gate"]["disclaimer"]
@@ -1073,9 +1468,25 @@ def test_manifest_policy_and_listing(manifest):
     assert 0 < pricing["typical_low"] < pricing["typical_high"]
     assert manifest["models"]["primary"] == "anthropic:claude-opus-5"
     assert [m["id"] for m in manifest["milestones"]] == ["m1-plan-sources", "m2-spreads-comps",
-                                                         "m3-diligence-memo"]
+                                                         "m3-diligence-memo", "m4-stock-pitch"]
     required = {i["field"] for i in manifest["intake"] if i["required"]}
     assert {"companies", "research_question", "sec_user_agent"} <= required
+    assert "pitch_focus" in {i["field"] for i in manifest["intake"] if not i["required"]}
+
+
+def test_m4_stands_alone_and_keeps_the_disclaimer(manifest):
+    m4 = next(m for m in manifest["milestones"] if m["id"] == "m4-stock-pitch")
+    checks = [c["check"] for c in m4["acceptance"]]
+    assert checks == ["files_exist", "markdown_sections", "disclaimer_present", "no_placeholders",
+                      "pitch_valuation_recompute", "variant_view_grounded", "ledger_verified",
+                      "citations_resolve", "rubric_grader", "human_signoff"]
+    # a pitch states a direction, so the memo's no-rating check is not applied to it
+    assert "no_recommendation_language" not in checks
+    # nothing it checks or delivers belongs to an earlier milestone
+    assert "deliverables/m2" not in json.dumps(m4) and "deliverables/m3" not in json.dumps(m4)
+    assert set(m4["acceptance"][0]["params"]["paths"]) == set(m4["deliverables"])
+    assert m4["hours"] == [2, 4]
+    assert manifest["human_gate"]["disclaimer"].startswith("Not investment advice.")
 
 
 def test_manifest_loads_strictly_with_a_small_stamped_task_price():
