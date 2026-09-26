@@ -1,0 +1,18 @@
+name: Proposal draft
+criteria:
+  - id: responsive
+    description: Each section answers its requirements directly, in the evaluator's terms, before adding context.
+    weight: 0.3
+  - id: evaluation_alignment
+    description: The strongest evidence sits where the evaluation criteria award the most points; discriminators are explicit.
+    weight: 0.2
+  - id: grounded
+    description: Company facts are specific and supported by the cited passages; nothing reads as an unsupported boast.
+    weight: 0.25
+  - id: clarity
+    description: Plain, active, concise prose; consistent terminology with the solicitation; no filler or placeholders.
+    weight: 0.15
+  - id: open_items_honest
+    description: Gaps and customer inputs (pricing, signatures, expert confirmations) are listed rather than papered over.
+    weight: 0.1
+threshold: 0.75

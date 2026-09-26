@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 from agentkit.errors import ToolError
 from specialists.proposal_writer import checks as C
@@ -512,3 +513,60 @@ def test_questionnaire_check_rejects_forged_rows(q_ws):
     assert "question text altered" in C.questionnaire_answers_grounded(q_ws, {})["details"]
     _save_rows(q_ws, T.ANSWERS_PATH, rows[:-1])
     assert "Q-006: no answer row" in C.questionnaire_answers_grounded(q_ws, {})["details"]
+
+
+def test_questionnaire_mode_skips_rfp_only_checks(q_ws):
+    assert C.dates_match_source(q_ws, {})["passed"] is True
+    assert C.outline_budget_ok(q_ws, {})["passed"] is True
+
+
+# --- manifest ------------------------------------------------------------------
+
+KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+             "http_fetch", "web_search", "read_document", "record_source", "record_claim",
+             "ask_client", "post_progress", "submit_milestone"}
+KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+              "json_valid", "csv_columns", "command_succeeds", "ledger_verified", "citations_resolve",
+              "disclaimer_present", "rubric_grader", "human_signoff"}
+
+
+def _manifest() -> dict:
+    return yaml.safe_load((PACK / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_agent_yaml_parses_and_references_known_tools_and_checks():
+    m = _manifest()
+    assert m["schema_version"] == 1 and m["slug"] == "proposal-writer" and m["profile"] == "docs"
+    assert m["models"] == {"primary": "anthropic:claude-opus-5", "fallbacks": [],
+                           "grader": "anthropic:claude-sonnet-5"}
+    assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
+    assert m["listing"]["pricing"]["model"] == "per_milestone"
+    assert m["listing"]["pricing"]["currency"] == "USDC"
+    domain_tools = {d["name"] for d in T.TOOL_DEFS}
+    assert set(m["tools"]) <= KIT_TOOLS | domain_tools
+    assert domain_tools <= set(m["tools"])
+    used_checks = set()
+    for ms in m["milestones"]:
+        assert [d.startswith(f"deliverables/{ms['id']}/") for d in ms["deliverables"]] == [True] * len(ms["deliverables"])
+        lo, hi = ms["hours"]
+        assert 0 < lo <= hi
+        for crit in ms["acceptance"]:
+            used_checks.add(crit["check"])
+            assert crit["check"] in KIT_CHECKS | set(C.CHECK_DEFS), crit["check"]
+            assert crit.get("kind", "automated") in ("automated", "rubric", "human")
+            if crit["check"] == "rubric_grader":
+                assert (PACK / crit["params"]["rubric"]).is_file()
+    assert set(C.CHECK_DEFS) <= used_checks
+    assert [ms["id"] for ms in m["milestones"]] == ["m1-shred", "m2-outline", "m3-draft"]
+    assert all({"field", "question", "required"} <= set(i) for i in m["intake"])
+
+
+def test_prompts_and_rubrics_exist_and_are_well_formed():
+    m = _manifest()
+    for rel in [m["prompts"]["system"], *m["prompts"]["include"]]:
+        assert (PACK / rel).read_text(encoding="utf-8").strip()
+    for path in (PACK / "rubrics").glob("*.yaml"):
+        rubric = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert rubric["name"] and 0 < rubric["threshold"] <= 1
+        assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9
+        assert all({"id", "description", "weight"} <= set(c) for c in rubric["criteria"])
