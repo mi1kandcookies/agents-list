@@ -1,0 +1,93 @@
+{#- agent_card and helpers: the catalog card plus the small pieces the agent
+    profile reuses (price, operator, trust badges, monogram).
+
+    Usage:
+      {% from "components/agent_card.html" import agent_card %}
+      <div class="agent-grid">
+        {% for a in agents %}{{ agent_card(a) }}{% endfor %}
+      </div>
+
+      {% from "components/agent_card.html" import trust_badges, price, operator_label, monogram %}
+      {{ price(agent) }}           typical price, mono, with unit
+      {{ operator_label(agent) }}  operator name or shortened wallet
+      {{ trust_badges(agent) }}    only the badges the data supports
+
+    Every macro takes an agent dict as produced by Agent.to_dict().
+
+    Trust badges render only when the listing carries the signal:
+      Operator-stamped        agent.operator_stamped is true
+      Screened payout         agent.screened_payout is true
+      Human-verified operator agent.human_verified_operator is true, or the
+                              listing passed human review in the admin
+                              verification queue (agent.verified)
+-#}
+{% set CATEGORY_CODES = {
+  'Development': 'ENG', 'Data & Analytics': 'DAT', 'Content': 'CON',
+  'Finance': 'FIN', 'Research': 'RES', 'Security': 'SEC', 'Automation': 'OPS',
+} %}
+
+{% macro monogram(agent) -%}
+<span class="agent-avatar" aria-hidden="true">{{ CATEGORY_CODES.get(agent.category, 'AGT') }}</span>
+{%- endmacro %}
+
+{% macro operator_label(agent) -%}
+{%- set s = agent.seller or '' -%}
+{%- if s.startswith('0x') and s|length == 42 -%}
+<span class="mono" title="{{ s }}">{{ s[:6] }}…{{ s[-4:] }}</span>
+{%- elif s -%}{{ s }}{%- else -%}Unknown operator{%- endif -%}
+{%- endmacro %}
+
+{#- price(agent): the amount with its unit, e.g. "$0.10 / min" or
+    "$1.25 / 1M tokens". -#}
+{% macro price(agent, with_unit=True) -%}
+{%- if agent.billing == 'per_minute' -%}
+<span class="amount">${{ '%.2f'|format(agent.current_price or 0) }}</span>{% if with_unit %} <span class="meta">/ min</span>{% endif %}
+{%- elif agent.input_price_per_1m -%}
+<span class="amount">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }}</span>{% if with_unit %} <span class="meta">/ 1M tokens in</span>{% endif %}
+{%- else -%}
+{%- set p = agent.current_price or 0 -%}
+<span class="amount">${{ ('%.6f' if p < 0.0001 else '%.4f')|format(p) }}</span>{% if with_unit %} <span class="meta">/ token</span>{% endif %}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro _badge(text) -%}
+<span class="trust-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{{ text }}</span>
+{%- endmacro %}
+
+{% macro trust_badges(agent) -%}
+{%- if agent.operator_stamped %}{{ _badge('Operator-stamped') }}{% endif -%}
+{%- if agent.screened_payout %}{{ _badge('Screened payout') }}{% endif -%}
+{%- if agent.human_verified_operator or agent.verified %}{{ _badge('Human-verified operator') }}{% endif -%}
+{%- endmacro %}
+
+{% macro track_record(agent) -%}
+{%- if agent.reviews -%}
+{{ '%.1f'|format(agent.rating) }} / 5 · {{ agent.reviews }} review{{ 's' if agent.reviews != 1 }}
+{%- else -%}
+No ratings yet
+{%- endif %} · {{ '{:,}'.format(agent.tasks_completed or 0) }} job{{ 's' if agent.tasks_completed != 1 }}
+{%- endmacro %}
+
+{% macro agent_card(agent) -%}
+{%- set badges = trust_badges(agent)|trim -%}
+<article class="agent-card">
+  <div class="agent-card-top">
+    {{ monogram(agent) }}
+    <div class="agent-card-title">
+      <h3 class="agent-card-name"><a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a></h3>
+      <div class="agent-card-operator">by {{ operator_label(agent) }} · {{ agent.category }}</div>
+    </div>
+  </div>
+  <p class="agent-card-specialty">{{ agent.description }}</p>
+  {%- if badges %}
+  <div class="agent-card-badges">{{ badges }}</div>
+  {%- endif %}
+  <div class="agent-card-foot">
+    <div class="agent-card-price">
+      <div>{{ price(agent) }}</div>
+      <div class="agent-card-stats">{{ track_record(agent) }}</div>
+    </div>
+    <a class="btn btn-secondary btn-sm agent-card-cta" href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}" aria-label="View {{ agent.name }}">View</a>
+  </div>
+</article>
+{%- endmacro %}

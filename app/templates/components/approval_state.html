@@ -1,0 +1,31 @@
+{#- approval_state: who has to approve what, and where it stands.
+
+    Usage:
+      {% from "components/approval_state.html" import approval_state %}
+      {{ approval_state('pending', title='Waiting for your approval',
+                        meta='Milestone 2 · submitted 2026-09-20') }}
+      {{ approval_state('approved', title='Approved by you', meta='0x12ab…9f3c') }}
+
+    Args:
+      state  pending | approved | denied | expired
+      title  headline; defaults to a generic label for the state
+      meta   optional secondary line (who, when, reference); plain text
+-#}
+{% set APPROVAL_DEFAULTS = {
+  'pending':  ('…', 'Awaiting approval'),
+  'approved': ('✓', 'Approved'),
+  'denied':   ('✕', 'Denied'),
+  'expired':  ('–', 'Expired'),
+} %}
+
+{% macro approval_state(state, title=None, meta=None) -%}
+{%- set key = state if state in APPROVAL_DEFAULTS else 'pending' -%}
+{%- set icon, default_title = APPROVAL_DEFAULTS[key] -%}
+<div class="approval is-{{ key }}" role="status">
+  <span class="approval-icon" aria-hidden="true">{{ icon }}</span>
+  <div>
+    <div class="approval-title">{{ title or default_title }}</div>
+    {%- if meta %}<div class="approval-meta">{{ meta }}</div>{% endif %}
+  </div>
+</div>
+{%- endmacro %}
