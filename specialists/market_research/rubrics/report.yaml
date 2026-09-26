@@ -1,0 +1,18 @@
+name: market-research-report
+threshold: 0.8
+criteria:
+  - id: grounding
+    description: Every factual sentence (numbers, dates, prices, named facts) carries a [C#] citation and the cited claim supports exactly what the sentence says.
+    weight: 0.3
+  - id: insight
+    description: The report draws decision-relevant conclusions ("so what") for the stated objective instead of only summarising sources.
+    weight: 0.2
+  - id: comprehensiveness
+    description: Every planned question is answered or explicitly marked unresolved, and the competitor set is complete for the defined market.
+    weight: 0.2
+  - id: honesty
+    description: Contradictions, stale data, assumptions and gaps are surfaced plainly; estimates carry their method and uncertainty.
+    weight: 0.15
+  - id: clarity
+    description: Clear structure, concise writing, tables where they help; an executive can act on the summary alone.
+    weight: 0.15

@@ -1,0 +1,18 @@
+name: research-plan
+threshold: 0.75
+criteria:
+  - id: decision-framing
+    description: The plan states the client decision the research informs and every key question clearly serves it.
+    weight: 0.2
+  - id: leaf-answerability
+    description: Leaf questions are specific and answerable with evidence (a fact, a number or a short finding), not broad topics.
+    weight: 0.25
+  - id: coverage
+    description: The tree covers the market from several vantage points (buyer, competitor, entrant, regulator, investor) with no obvious gaps for the stated objective.
+    weight: 0.2
+  - id: source-strategy
+    description: Each leaf names realistic source types, including primary sources; the source map names the concrete sites behind them; and the plan explains how hard-to-find data will be approached.
+    weight: 0.2
+  - id: scope-discipline
+    description: Scope, exclusions, geography, glossary and evidence cutoff are explicit, so the client can approve or change them.
+    weight: 0.15
