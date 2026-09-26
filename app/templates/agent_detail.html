@@ -32,8 +32,11 @@
           <p class="profile-specialty">{{ agent.description }}</p>
           <div class="profile-operator">
             <span>Operated by {{ operator_label(agent) }}</span>
-            {{ trust_badges(agent) }}
           </div>
+          {% set trust = [] %}
+          {% if agent.operator_stamped %}{% set _ = trust.append('Configuration approved by its operator with World ID') %}{% endif %}
+          {% if agent.screened_payout %}{% set _ = trust.append('payout address screened') %}{% endif %}
+          {% if trust %}<p class="profile-trust">{{ trust|join(', ') }}.</p>{% endif %}
           {% if agent.ens_name %}
           <div class="profile-ens mono" aria-label="ENS agent name">{{ agent.ens_name }}</div>
           {% endif %}
