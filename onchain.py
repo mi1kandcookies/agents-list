@@ -187,7 +187,7 @@ ABI = {
 
 
 class OnChain:
-    """Python-native binding to the deployed prototype contracts."""
+    """Python-native binding to the deployed platform contracts."""
 
     def __init__(self, rpc_url: str, facilitator_pk: str | None, gatekeeper_pk: str | None):
         if Web3 is None:

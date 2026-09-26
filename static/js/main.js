@@ -29,12 +29,12 @@
   }
 })();
 
-// ── Agent's ListAPI - shared fetch utility ──────────────────────────────────────
+// ── AgentsListAPI - shared fetch utility ──────────────────────────────────────
 // Usage:
-//   Agent's ListAPI.get('/api/agents')           → Promise<Object>
-//   Agent's ListAPI.post('/api/x402/pay', body)  → Promise<Object>
+//   AgentsListAPI.get('/api/agents')           → Promise<Object>
+//   AgentsListAPI.post('/api/x402/pay', body)  → Promise<Object>
 // Errors are thrown with a readable message so callers can showToast on catch.
-const Agent's ListAPI = (() => {
+const AgentsListAPI = (() => {
   async function request(method, url, body) {
     const opts = {
       method,
@@ -58,7 +58,7 @@ const Agent's ListAPI = (() => {
   };
 })();
 // Expose globally so inline <script> blocks can use it.
-window.Agent's ListAPI = Agent's ListAPI;
+window.AgentsListAPI = AgentsListAPI;
 
 // ── Toasts ───────────────────────────────────────────────────────────────────
 function showToast(message, type = 'info', duration = 3500) {
@@ -140,11 +140,11 @@ document.querySelectorAll('.role-btn').forEach(btn => {
   });
 });
 
-// ── Wallet Connect (delegates to web3.js Agent's List object) ───────────────────
+// ── Wallet Connect (delegates to web3.js AgentsList object) ───────────────────
 // web3.js already handles the wallet-btn click via its own DOMContentLoaded
 // listener. This block syncs the nav button state when the wallet connects
 // through OTHER means (e.g. checkout page, auto-reconnect).
-window.addEventListener('agents-list:connected', (e) => {
+window.addEventListener('agentslist:connected', (e) => {
   const btn = document.getElementById('wallet-btn');
   if (btn && e.detail && e.detail.address) {
     const short = e.detail.address.slice(0, 6) + '\u2026' + e.detail.address.slice(-4);
@@ -243,7 +243,7 @@ async function _adminAction(btn, url, successMsg, errorMsg, onSuccess) {
   btn.disabled = true;
   btn.innerHTML = 'Working...';
   try {
-    const res = await Agent's ListAPI.post(url, {});
+    const res = await AgentsListAPI.post(url, {});
     showToast(successMsg, 'success');
     if (typeof onSuccess === 'function') onSuccess(btn, res);
   } catch (err) {

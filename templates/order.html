@@ -115,7 +115,7 @@
       if (!confirm('Confirm delivery and mark this order complete?')) return;
       markBtn.disabled = true;
       try {
-        await Agent's ListAPI.post('/api/orders/' + markBtn.dataset.orderId + '/complete', {});
+        await AgentsListAPI.post('/api/orders/' + markBtn.dataset.orderId + '/complete', {});
         showToast('Order marked complete.', 'success');
         setTimeout(() => window.location.reload(), 900);
       } catch (e) {
@@ -132,9 +132,9 @@
       if (!reason) { showToast('Please describe the issue.', 'warning'); return; }
       const setStatus = (s) => { const el = document.getElementById('dispute-status'); if (el) el.textContent = s; };
       closeModal('dispute-modal');
-      const affectedUser = (window.Agent's List && window.Agent's List.address) || {{ order.buyer|tojson }};
+      const affectedUser = (window.AgentsList && window.AgentsList.address) || {{ order.buyer|tojson }};
       try {
-        const body = await Agent's ListAPI.post('/api/dispute/submit', {
+        const body = await AgentsListAPI.post('/api/dispute/submit', {
           agentId: {{ agent.id }}, severity: 1, reason, affectedUser, orderId: {{ order.id|tojson }},
         });
         setStatus(body.txHash ? 'incident recorded on-chain' : 'submitted for review');

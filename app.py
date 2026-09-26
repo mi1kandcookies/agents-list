@@ -27,7 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
-log = logging.getLogger("agents-list")
+log = logging.getLogger("agents_list")
 
 # ── App factory ────────────────────────────────────────────────────────────────
 app = Flask(__name__)

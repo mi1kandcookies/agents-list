@@ -1,9 +1,15 @@
 """
-llm.py — thin client for the Akash-hosted vLLM / Ollama instance.
+llm.py - thin client for an OpenAI-compatible chat-completions endpoint.
 
-Speaks the OpenAI-compatible /v1/chat/completions surface vLLM exposes.
-Every Agent's List agent gets a per-agent system prompt so the same model
-answers as 125 different agents without any fine-tuning.
+Speaks the /v1/chat/completions surface exposed by vLLM, Ollama and most
+hosted providers. Used for the optional "ask this agent" preview on agent
+pages. The scoping agent (roadmap Phase 2) will use a frontier model via the
+Anthropic API / Agent SDK instead.
+
+Env:
+    LLM_URL      base URL of the endpoint (feature disabled when unset)
+    LLM_MODEL    model id to request
+    LLM_API_KEY  optional bearer token
 """
 from __future__ import annotations
 import os
@@ -13,39 +19,17 @@ import urllib.error
 
 LLM_URL   = os.environ.get("LLM_URL", "").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct")
-LLM_KEY   = os.environ.get("LLM_API_KEY", "")   # optional, vLLM --api-key
-
-# Global marketplace context — injected into every system prompt so every
-# response is Agent's List-aware without extra work at call sites.
-MARKETPLACE_CONTEXT = """You are operating inside Agent's List, an on-chain
-marketplace for autonomous AI agents on Avalanche Fuji.
-
-Protocol facts you can rely on:
-  - Identity via ERC-8004 AgentRegistry at 0x6B71b84F...
-  - Reputation via ReputationContract at 0x40ef89Ce... (score 0-1000, tiers T1-T3)
-  - Stake via StakingSlashing at 0xfc942b4d...
-  - Payments via x402 (HTTP 402) settling in MockUSDC (6 decimals)
-  - Escrow via EscrowPayment at 0xD19990C7...
-  - Gasless buyer flow via EIP-3009 transferWithAuthorization
-
-"""
+LLM_KEY   = os.environ.get("LLM_API_KEY", "")
 
 
 def _agent_system(agent_name: str, agent_category: str, agent_bio: str = "") -> str:
     return (
-        f"{MARKETPLACE_CONTEXT}\n\n"
-        f"You are {agent_name}, one of 125+ autonomous agents listed on Agent's List. "
-        f"Your specialty within the marketplace is {agent_category}. {agent_bio}\n\n"
-        f"IMPORTANT rules for every response:\n"
-        f"  1. When asked who you are, ALWAYS introduce yourself as an agent on "
-        f"     the Agent's List marketplace first, then mention your specialty.\n"
-        f"  2. Never describe yourself as a standalone product or company. You "
-        f"     are one agent among many on Agent's List, discoverable by buyers via "
-        f"     x402 payments and scored on-chain via ERC-8004.\n"
-        f"  3. Stay focused on answering the buyer's actual task — hand back "
-        f"     concise, implementation-ready output (code when code is asked for).\n"
-        f"  4. Reference marketplace primitives (escrow, stake, reputation) when "
-        f"     a buyer asks how payment or dispute flow works."
+        f"You are {agent_name}, a specialist agent listed on Agent's List, a "
+        f"marketplace where buyers hire agents for scoped, long-running work. "
+        f"Your specialty is {agent_category}. {agent_bio}\n\n"
+        "Answer the buyer's question directly and concisely. When asked about "
+        "cost or timeline, give ranges and state your assumptions. Do not "
+        "promise outcomes you cannot verify."
     )
 
 

@@ -507,7 +507,7 @@
         set('review-range', `$${minV.toFixed(5)} - $${maxV.toFixed(5)}`);
         set('review-verification', `${verifyKind} ($${verifyFee} USDC)`);
         // Show the seller wallet
-        const w = (window.Agent's List && window.Agent's List.address) || null;
+        const w = (window.AgentsList && window.AgentsList.address) || null;
         const wEl = document.getElementById('review-wallet');
         if (wEl) {
           if (w) {
@@ -523,7 +523,7 @@
   })();
 
   // Keep the review-wallet in sync with connect events
-  window.addEventListener('agents-list:connected', (e) => {
+  window.addEventListener('agentslist:connected', (e) => {
     const w = e.detail && e.detail.address;
     const el = document.getElementById('review-wallet');
     if (el && w) {
@@ -544,7 +544,7 @@
     const billingEl = step2 ? step2.querySelector('[data-tier].selected') : null;
     const verifyEl = step3 ? step3.querySelector('.tier-card[data-tier].selected') : null;
 
-    const walletAddr = (window.Agent's List && window.Agent's List.address)
+    const walletAddr = (window.AgentsList && window.AgentsList.address)
       || (document.cookie.match(/(?:^|;\s*)seller_wallet=(0x[a-fA-F0-9]{40})/) || [])[1] || '';
     if (!walletAddr) {
       showToast('Connect a wallet first — listings are owned by your wallet address.', 'warning');
@@ -582,7 +582,7 @@
     }
 
     try {
-      const res = await Agent's ListAPI.post('/seller/create', payload);
+      const res = await AgentsListAPI.post('/seller/create', payload);
       if (res.agentId) {
         showToast('Listed! Your agent is queued for verification.', 'success');
         // Route straight to the buyer-facing detail page so the seller sees

@@ -132,7 +132,7 @@
     const btn = document.getElementById('save-btn');
     btn.disabled = true; btn.textContent = 'Saving...';
     try {
-      const res = await Agent's ListAPI.post('/seller/agents/{{ agent.id }}', {
+      const res = await AgentsListAPI.post('/seller/agents/{{ agent.id }}', {
         action: 'update',
         name:      document.getElementById('edit-name').value,
         description: document.getElementById('edit-desc').value,
@@ -148,7 +148,7 @@
   async function pauseAgent() {
     if (!confirm('Pause this listing? It will be hidden from the marketplace.')) return;
     try {
-      await Agent's ListAPI.post('/seller/agents/{{ agent.id }}', { action: 'pause' });
+      await AgentsListAPI.post('/seller/agents/{{ agent.id }}', { action: 'pause' });
       showToast('Listing paused.', 'warning');
       document.getElementById('pause-btn').textContent = 'Paused';
       document.getElementById('pause-btn').disabled = true;
@@ -157,7 +157,7 @@
 
   async function reactivateAgent() {
     try {
-      await Agent's ListAPI.post('/seller/agents/{{ agent.id }}', { action: 'reactivate' });
+      await AgentsListAPI.post('/seller/agents/{{ agent.id }}', { action: 'reactivate' });
       showToast('Listing reactivated.', 'success');
     } catch (e) { showToast('Error: ' + e.message, 'error'); }
   }

@@ -7,7 +7,7 @@
   const ABI = window.AGENTSLIST_ABIS;
 
   // ── STATE ────────────────────────────────────────────────────────────────
-  window.Agent's List = {
+  window.AgentsList = {
     provider: null,
     signer: null,
     address: null,
@@ -51,9 +51,9 @@
   function activateDemoMode() {
     // Valid 0x-prefixed 40-hex address so backend address validation passes.
     const DEMO_ADDRESS = '0xDeAD0000000000000000000000000000D3Mo0001';
-    window.Agent's List.address = DEMO_ADDRESS;
-    window.Agent's List.connected = true; // visual only - no signing capability
-    window.Agent's List._demoMode = true;
+    window.AgentsList.address = DEMO_ADDRESS;
+    window.AgentsList.connected = true; // visual only - no signing capability
+    window.AgentsList._demoMode = true;
     const btn = document.getElementById('wallet-btn');
     if (btn) {
       btn.innerHTML = `<span style="font-family:var(--font-mono); color:var(--amber);">Demo Mode</span>`;
@@ -61,7 +61,7 @@
       btn.title = 'Demo mode - no real wallet connected. Payments will use mock responses.';
     }
     if (window.showToast) showToast('Demo mode active - no wallet required', 'info');
-    window.dispatchEvent(new CustomEvent('agents-list:connected', { detail: { address: DEMO_ADDRESS, demo: true } }));
+    window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address: DEMO_ADDRESS, demo: true } }));
   }
 
   // ── CONNECT ──────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@
         showToast('No wallet detected - switching to Demo Mode', 'warning');
       }
       activateDemoMode();
-      return window.Agent's List.address;
+      return window.AgentsList.address;
     }
     await window.ethereum.request({ method: 'eth_requestAccounts' });
     await ensureFuji();
@@ -81,19 +81,19 @@
     const signer = await provider.getSigner();
     const address = await signer.getAddress();
 
-    window.Agent's List.provider = provider;
-    window.Agent's List.signer = signer;
-    window.Agent's List.address = address;
-    window.Agent's List.connected = true;
+    window.AgentsList.provider = provider;
+    window.AgentsList.signer = signer;
+    window.AgentsList.address = address;
+    window.AgentsList.connected = true;
 
     // Instantiate all contracts
     for (const name of Object.keys(ADDR)) {
-      window.Agent's List.contracts[name] = new ethers.Contract(ADDR[name], ABI[name], signer);
+      window.AgentsList.contracts[name] = new ethers.Contract(ADDR[name], ABI[name], signer);
     }
 
     updateWalletButton();
     if (window.showToast) showToast(`Connected: ${short(address)}`, 'success');
-    window.dispatchEvent(new CustomEvent('agents-list:connected', { detail: { address } }));
+    window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address } }));
 
     // Persist address so buyer/seller pages load this wallet's on-chain activity.
     // /active-jobs, /past-jobs, /seller/earnings all read the buyer_wallet/seller_wallet
@@ -115,8 +115,8 @@
   function updateWalletButton() {
     const btn = document.getElementById('wallet-btn');
     if (!btn) return;
-    if (window.Agent's List.connected) {
-      btn.innerHTML = `<span style="font-family:var(--font-mono)">${short(window.Agent's List.address)}</span>`;
+    if (window.AgentsList.connected) {
+      btn.innerHTML = `<span style="font-family:var(--font-mono)">${short(window.AgentsList.address)}</span>`;
       btn.setAttribute('data-connected', 'true');
     } else {
       btn.innerHTML = '<span>Connect Wallet</span>';
@@ -126,23 +126,23 @@
 
   // ── READS ────────────────────────────────────────────────────────────────
   async function getUsdcBalance() {
-    if (!window.Agent's List.connected) return 0n;
+    if (!window.AgentsList.connected) return 0n;
     // If we're in demo-wallet mode (connected via inline handler, no ethers
     // contract bound), instantiate a read-only contract against the public RPC
     // so balance reads still work without a browser wallet extension.
-    if (!window.Agent's List.contracts || !window.Agent's List.contracts.MockUSDC) {
+    if (!window.AgentsList.contracts || !window.AgentsList.contracts.MockUSDC) {
       try {
         const provider = new ethers.JsonRpcProvider(CHAIN.rpcUrl);
         const c = new ethers.Contract(ADDR.MockUSDC, ABI.MockUSDC, provider);
-        return await c.balanceOf(window.Agent's List.address);
+        return await c.balanceOf(window.AgentsList.address);
       } catch (e) { return 0n; }
     }
-    return window.Agent's List.contracts.MockUSDC.balanceOf(window.Agent's List.address);
+    return window.AgentsList.contracts.MockUSDC.balanceOf(window.AgentsList.address);
   }
 
   async function getAgentProfile(agentId) {
     // Read-only - works without connect via public RPC
-    const provider = window.Agent's List.provider || new ethers.JsonRpcProvider(CHAIN.rpcUrl);
+    const provider = window.AgentsList.provider || new ethers.JsonRpcProvider(CHAIN.rpcUrl);
     const reg = new ethers.Contract(ADDR.AgentRegistry, ABI.AgentRegistry, provider);
     const rep = new ethers.Contract(ADDR.ReputationContract, ABI.ReputationContract, provider);
     const stake = new ethers.Contract(ADDR.StakingSlashing, ABI.StakingSlashing, provider);
@@ -182,9 +182,9 @@
 
   // ── MINT USDC (testnet only) ─────────────────────────────────────────────
   async function mintUSDC(amountUSDC = 1000) {
-    if (!window.Agent's List.connected) await connectWallet();
+    if (!window.AgentsList.connected) await connectWallet();
     const amt = fromUSDC(amountUSDC);
-    const tx = await window.Agent's List.contracts.MockUSDC.mint(window.Agent's List.address, amt);
+    const tx = await window.AgentsList.contracts.MockUSDC.mint(window.AgentsList.address, amt);
     if (window.showToast) showToast(`Minting ${amountUSDC} USDC...`, 'info');
     await tx.wait();
     if (window.showToast) showToast(`+${amountUSDC} USDC`, 'success');
@@ -193,8 +193,8 @@
 
   // ── x402 PAYMENT - sign EIP-3009, call backend, open escrow ──────────────
   async function payWithX402({ agentId, depositUSDC, tokenBudget, categoryId = 0, facilitator }) {
-    if (!window.Agent's List.connected) await connectWallet();
-    const { signer, address } = window.Agent's List;
+    if (!window.AgentsList.connected) await connectWallet();
+    const { signer, address } = window.AgentsList;
     const value = fromUSDC(depositUSDC);
     const now = Math.floor(Date.now() / 1000);
     const validBefore = now + 3600;
@@ -255,14 +255,14 @@
 
   // ── DIRECT ESCROW DEPOSIT (non-x402 fallback) ────────────────────────────
   async function depositDirect({ agentId, depositUSDC, tokenBudget, categoryId = 0 }) {
-    if (!window.Agent's List.connected) await connectWallet();
+    if (!window.AgentsList.connected) await connectWallet();
     const amt = fromUSDC(depositUSDC);
     const expiresAt = Math.floor(Date.now() / 1000) + 3600;
     if (window.showToast) showToast('Approving USDC spend...', 'info');
-    const tx1 = await window.Agent's List.contracts.MockUSDC.approve(ADDR.EscrowPayment, amt);
+    const tx1 = await window.AgentsList.contracts.MockUSDC.approve(ADDR.EscrowPayment, amt);
     await tx1.wait();
     if (window.showToast) showToast('Opening escrow session...', 'info');
-    const tx2 = await window.Agent's List.contracts.EscrowPayment.depositFunds(
+    const tx2 = await window.AgentsList.contracts.EscrowPayment.depositFunds(
       agentId, amt, BigInt(tokenBudget), categoryId, expiresAt
     );
     const rc = await tx2.wait();
@@ -279,7 +279,7 @@
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
       console.log('[agents-list] wallet-btn clicked');
-      if (window.Agent's List.connected) { console.log('[agents-list] already connected, ignoring click'); return; }
+      if (window.AgentsList.connected) { console.log('[agents-list] already connected, ignoring click'); return; }
       if (!window.ethereum) {
         const msg = 'No wallet extension detected. Install MetaMask, Rabby, or Coinbase Wallet and refresh.';
         console.error('[agents-list]', msg);
@@ -326,14 +326,14 @@
   })();
 
   // Expose API
-  window.Agent's List.connectWallet = connectWallet;
-  window.Agent's List.activateDemoMode = activateDemoMode;
-  window.Agent's List.getUsdcBalance = getUsdcBalance;
-  window.Agent's List.getAgentProfile = getAgentProfile;
-  window.Agent's List.mintUSDC = mintUSDC;
-  window.Agent's List.payWithX402 = payWithX402;
-  window.Agent's List.depositDirect = depositDirect;
-  window.Agent's List.short = short;
-  window.Agent's List.toUSDC = toUSDC;
-  window.Agent's List.fromUSDC = fromUSDC;
+  window.AgentsList.connectWallet = connectWallet;
+  window.AgentsList.activateDemoMode = activateDemoMode;
+  window.AgentsList.getUsdcBalance = getUsdcBalance;
+  window.AgentsList.getAgentProfile = getAgentProfile;
+  window.AgentsList.mintUSDC = mintUSDC;
+  window.AgentsList.payWithX402 = payWithX402;
+  window.AgentsList.depositDirect = depositDirect;
+  window.AgentsList.short = short;
+  window.AgentsList.toUSDC = toUSDC;
+  window.AgentsList.fromUSDC = fromUSDC;
 })();
