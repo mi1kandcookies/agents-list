@@ -537,3 +537,13 @@ def test_fixture_playbook_passes_its_own_check():
 def test_injection_fixture_is_flagged():
     res = t.scan_hidden_content(FIX, path="lumenfield_mutual_nda.txt")
     assert [f["kind"] for f in res["findings"]] == ["embedded_instruction"]
+
+
+def test_quotes_in_contract_requires_recorded_hash(ws):
+    _record(ws)
+    path = ws / "deliverables/m2-issues/issues.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    del doc["contract_sha256"]
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    res = c.quotes_in_contract(ws, {"issues": "deliverables/m2-issues/issues.json"})
+    assert res["passed"] is False and "sha256" in res["details"]

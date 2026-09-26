@@ -52,7 +52,7 @@ def _issue_doc(workspace: Path, path: str) -> tuple[dict, list[str]]:
     if not contract.startswith("inputs/"):
         raise ValueError("issue list must name a contract under inputs/")
     src = t.resolve(workspace, contract)
-    if doc.get("contract_sha256") and doc["contract_sha256"] != t.sha256_file(src):
+    if doc.get("contract_sha256") != t.sha256_file(src):
         raise ValueError(f"{contract} changed since the issue list was recorded (sha256 mismatch)")
     return doc, t.load_paragraphs(src)
 
