@@ -32,8 +32,9 @@ A requirement is any statement the evaluator can hold the response to:
 `req_id, source, section, page, type, requirement, response_section, owner, status`
 
 - `requirement` is the verbatim text; never paraphrase in the matrix.
-- `status` is `open` at m1, `addressed` (or `needs_review` for abstained
-  questionnaire items) at m3.
+- `status` is `open` at m1; at m3 it is `addressed`, `open_item` (listed
+  under the checklist's Open items), or `needs_review` for abstained
+  questionnaire items.
 - `owner` is the customer's person for the item when known (intake
   `sme_contacts`), otherwise blank.
 
@@ -47,7 +48,9 @@ which one governs.
 
 1. **Summary**: what is being bought, by whom, contract type and term.
 2. **Key dates**: every deadline in the solicitation (questions, intent to
-   bid, proposal due), copied exactly; the check compares them to the source.
+   bid, proposal due), copied exactly; the check compares this section to
+   the source, so put the customer's own dates (internal review, SME
+   turnaround) in a separate **Internal schedule** section.
 3. **Evaluation criteria**: factors, weights or points, and the award basis.
 4. **Risks and open questions**: eligibility doubts, mandatory experience
    the knowledge base may not show, tight page limits, funder AI-use policy,

@@ -318,7 +318,7 @@ def test_cli_commands(spec, tmp_path):
     code, out = run("milestones", "proposal-writer", "--intake", str(intake))
     assert code == 0 and [m["id"] for m in json.loads(out)] == ["m1-shred", "m2-outline", "m3-draft"]
     code, out = run("estimate", "proposal-writer", "--intake", str(intake))
-    assert code == 0 and json.loads(out)["hours_low"] == 11
+    assert code == 0 and json.loads(out)["hours_low"] == 5
     code, out = run("validate-intake", "proposal-writer", "--intake", str(intake))
     assert code == 0 and not any(m["blocking"] for m in json.loads(out))
 
@@ -354,7 +354,12 @@ def test_rfp_engagement_all_milestones(spec, tmp_path):
     _assert_ready(sub3, ws, "m3-draft", M3_FILES, spec)
     results = _results(sub3)
     assert results["ledger_verified"].passed is True
-    assert results["matrix_consistent"].score == 1.0
+    # R-011 (support desk) has no evidence: the checklist lists it as an open
+    # item, which the matrix shows instead of calling it addressed
+    assert results["matrix_consistent"].score == pytest.approx(22 / 23)
+    final = {r["req_id"]: r for r in T.read_csv_rows(ws, T.FINAL_MATRIX_PATH)}
+    assert final["R-011"]["status"] == "open_item"
+    assert final["R-011"]["response_section"] == "Checklist: Open items"
     assert "not a questionnaire" in results["questionnaire_answers_grounded"].details
     assert (ws / RFP).read_bytes() == solicitation          # inputs/ never changed
     # three milestones, three distinct evidence hashes
@@ -400,6 +405,11 @@ def test_questionnaire_engagement_answers_or_abstains(spec, tmp_path):
                          "answer": "Within 48 hours of discovery.", "citations": [kb.format(2)]}),
          ("set_answer", {"question_id": "Q-004", "status": "answered",      # a fabrication: refused
                          "answer": "Yes, we hold a SOC 2 Type II report.", "citations": [kb.format(1)]}),
+         # a bare yes cited to a passage that never names the attestation: refused
+         ("set_answer", {"question_id": "Q-004", "status": "answered", "answer": "Yes.",
+                         "citations": [kb.format(1)]}),
+         ("set_answer", {"question_id": "Q-005", "status": "answered", "answer": "Yes, we are authorized.",
+                         "citations": [kb.format(3)]}),
          ("set_answer", {"question_id": "Q-004", "status": "needs_review",
                          "answer": "No attestation report in the knowledge base; ask the security lead."}),
          ("set_answer", {"question_id": "Q-005", "status": "needs_review",
@@ -411,7 +421,7 @@ def test_questionnaire_engagement_answers_or_abstains(spec, tmp_path):
                           "quote": "at rest with AES-256"}),
         [("write_file", {"path": T.DRAFT_PATH, "content": Q_COVER_MD}),
          ("write_file", {"path": T.CHECKLIST_PATH, "content": Q_CHECKLIST_MD})],
-        ("update_compliance_matrix", {"answers": T.ANSWERS_PATH}),
+        ("update_compliance_matrix", {}),              # reads the answer sheet by default
         # the answer sheet is not listed: finalize adds it to the hashed artifacts
         ("submit_milestone", {"summary": "4 answered, 2 need review", "artifacts": M3_FILES}),
     ]
@@ -419,7 +429,8 @@ def test_questionnaire_engagement_answers_or_abstains(spec, tmp_path):
     # declare the answer sheet
     sub, _, events = _run(spec, ws, "m3-draft", plan, brief=_brief(spec, Q_INTAKE, milestones=False))
     errors = _tool_errors(events)
-    assert [name for name, _ in errors] == ["set_answer"] and "SOC 2" in errors[0][1]
+    assert [name for name, _ in errors] == ["set_answer"] * 3
+    assert "SOC 2" in errors[0][1] and "SOC 2 Type II" in errors[1][1] and "FedRAMP" in errors[2][1]
     _assert_ready(sub, ws, "m3-draft", M3_FILES + [T.ANSWERS_PATH], spec)
     grounded = _results(sub)["questionnaire_answers_grounded"]
     assert grounded.details.startswith("4 answered, 2 abstained of 6")

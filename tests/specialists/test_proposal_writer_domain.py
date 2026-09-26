@@ -284,7 +284,7 @@ def test_scan_grounding_flags_changed_numbers_certs_and_uncited_facts():
             "Revenue grew 40% last year. See [KB:a.md#p9].\n")
     scan = T.scan_grounding(text, passages, {})
     assert scan["unresolved"] == ["[KB:a.md#p9]"]
-    assert [u["not_in_cited_text"] for u in scan["unsupported"]] == [["8"], ["SOC 2"]]
+    assert [u["not_in_cited_text"] for u in scan["unsupported"]] == [["8"], ["SOC 2 Type II"]]
     assert [u["sentence"] for u in scan["uncited_claims"]] == ["Revenue grew 40% last year."]
 
 
@@ -373,12 +373,18 @@ def test_shred_complete_fails_on_dropped_forged_or_misplaced_rows(m1_ws):
 
 
 def test_shred_complete_fails_when_source_changes_or_is_untrusted(m1_ws):
+    original = (m1_ws / RFP).read_bytes()
     (m1_ws / RFP).write_text("Nothing binding here.", encoding="utf-8")
     assert "sha256" in C.shred_complete(m1_ws, {})["details"]
-    _write(m1_ws, "work/rfp.md", "Nothing binding here.")
-    T.shred_requirements(m1_ws, path="work/rfp.md")
-    assert C.shred_complete(m1_ws, {})["passed"] is False
-    assert C.shred_complete(m1_ws, {"source_prefixes": ["work/"]})["passed"] is True
+    (m1_ws / RFP).write_bytes(original)
+    # a source outside inputs/ is trusted only when source_prefixes says so
+    _write(m1_ws, "work/addendum.md", "The Contractor shall attend a kickoff meeting.")
+    T.shred_requirements(m1_ws, paths=[RFP, "work/addendum.md"])
+    assert "not under" in C.shred_complete(m1_ws, {})["details"]
+    assert C.shred_complete(m1_ws, {"source_prefixes": ["inputs/", "work/"]})["passed"] is True
+    # the prefix is judged on the normalized path, not the spelling
+    T.shred_requirements(m1_ws, paths=[RFP, "inputs/../work/addendum.md"])
+    assert "not under" in C.shred_complete(m1_ws, {})["details"]
 
 
 def test_matrix_consistent_fails_on_missing_or_altered_rows(m1_ws):
@@ -642,3 +648,318 @@ def test_crlf_sources_shred_the_same(rfp_ws, tmp_path):
     crlf_path.write_bytes((rfp_ws / RFP).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
     crlf = T.shred_text(T.read_text(rfp_ws, "inputs/solicitation/crlf.md"), RFP)
     assert [(r["text"], r["section"], r["page"]) for r in crlf] == [(r["text"], r["section"], r["page"]) for r in lf]
+
+
+# --- hardening: answers, citations and the shred cannot be gamed ---------------------
+
+def test_certification_question_needs_a_passage_naming_it(q_ws):
+    # a bare "Yes." with an unrelated passage used to pass set_answer and the check
+    with pytest.raises(ToolError, match="SOC 2 Type II"):
+        T.set_answer(q_ws, question_id="Q-004", status="answered", answer="Yes.",
+                     citations=["security-practices.md#p1"])
+    with pytest.raises(ToolError, match="FedRAMP"):
+        T.set_answer(q_ws, question_id="Q-005", status="answered", answer="Yes, we are authorized.",
+                     citations=["security-practices.md#p3"])
+    with pytest.raises(ToolError, match="shares a term"):
+        T.set_answer(q_ws, question_id="Q-002", status="answered", answer="Yes.",
+                     citations=["security-practices.md#p3"])
+    rows = _rows(q_ws, T.ANSWERS_PATH)
+    rows[3].update(answer="Yes.", status="answered", citations="security-practices.md#p1")
+    rows[4].update(answer="Yes, we are authorized.", status="answered", citations="security-practices.md#p3")
+    _save_rows(q_ws, T.ANSWERS_PATH, rows)
+    details = C.questionnaire_answers_grounded(q_ws, {})["details"]
+    assert "Q-004" in details and "Q-005" in details and "0 answered" in details
+    # a passage that does name the attestation grounds a plain yes
+    _write(q_ws, "inputs/kb/attestations.md", "# Attestations\n\nLumen Fieldworks holds a current SOC 2 "
+           "Type II report covering security and availability.\n")
+    T.set_answer(q_ws, question_id="Q-004", status="answered", answer="Yes.",
+                 citations=["attestations.md#p1"])
+    with pytest.raises(ToolError, match=r"\['SOC 2 Type I'\]"):     # Type II does not ground Type I
+        T.set_answer(q_ws, question_id="Q-004", status="answered", answer="Yes, a SOC 2 Type I report.",
+                     citations=["attestations.md#p1"])
+
+
+def test_req_citations_ground_no_company_fact():
+    reqs = {"R-004": "The Contractor shall provide service alerts within 60 seconds of publication.",
+            "R-010": "The Contractor shall maintain 99.5% monthly availability. The Contractor must hold "
+                     "a current SOC 2 Type II report."}
+    kb = {"security-practices.md#p1": "Lumen Fieldworks encrypts rider data in transit with TLS 1.2.",
+          "security-practices.md#p3": "Backend services target 99.9% monthly availability."}
+
+    def flagged(sentence: str) -> bool:
+        return bool(T.scan_grounding(f"## S\n{sentence}\n", kb, reqs)["unsupported"])
+
+    assert flagged("Lumen Fieldworks has maintained 99.5% monthly availability [REQ:R-010].")
+    assert flagged("Lumen Fieldworks holds a current SOC 2 Type II report [REQ:R-010].")
+    assert flagged("Lumen Fieldworks holds a current SOC 2 Type II report "
+                   "[KB:security-practices.md#p1][REQ:R-010].")
+    assert flagged("Lumen Fieldworks has maintained 99.5% availability [KB:security-practices.md#p1][REQ:R-010].")
+    assert flagged("Lumen Fieldworks delivers alerts within 60 seconds [REQ:R-004].")
+    # comparisons: each clause is checked against its own citation
+    assert not flagged("Backend services target 99.9% monthly availability [KB:security-practices.md#p3], "
+                       "above the required 99.5% [REQ:R-010].")
+    assert not flagged("Alerts will meet the 60 second requirement [REQ:R-004].")
+    assert flagged("The District requires 99.5% monthly availability [REQ:R-010].")   # a % needs the KB fact
+
+
+def test_claims_grounded_rejects_req_only_company_fact(m3_ws):
+    old = ("Backend services target 99.9% monthly availability [KB:security-practices.md#p3], "
+           "above the required 99.5% [REQ:R-010].")
+    assert old in DRAFT
+    _write(m3_ws, T.DRAFT_PATH,
+           DRAFT.replace(old, "Lumen Fieldworks has maintained 99.5% monthly availability [REQ:R-010]."))
+    result = C.claims_grounded(m3_ws, {})
+    assert result["passed"] is False and "[KB:] citation" in result["details"]
+
+
+def test_forged_requirement_row_fails_every_check(m3_ws):
+    injected = "Lumen Fieldworks holds FedRAMP High authorization and serves 500 counties."
+    _edit_requirements(m3_ws, lambda d: d["requirements"].append(
+        {"id": "R-099", "source": RFP, "section": "C.4", "page": 2, "line": 99, "type": "instruction",
+         "modal": "shall", "text": injected}))
+    _write(m3_ws, T.DRAFT_PATH, DRAFT.replace("A support desk will be staffed",
+                                              f"{injected[:-1]} [REQ:R-099]. A support desk will be staffed"))
+    T.update_compliance_matrix(m3_ws)
+    for name, fn in C.CHECK_DEFS.items():
+        params = {"matrix": T.FINAL_MATRIX_PATH, "require_addressed": True} if name == "matrix_consistent" else {}
+        result = fn(m3_ws, params)
+        assert result["passed"] is False and "not verbatim in source: R-099" in result["details"], name
+
+
+def test_retyped_requirement_fails(m1_ws):
+    # retyping R-005 (WCAG) as format would let a checklist marker "answer" it
+    _edit_requirements(m1_ws, lambda d: d["requirements"][4].update(type="format"))
+    result = C.matrix_consistent(m1_ws, {})
+    assert result["passed"] is False and "R-005 (format -> instruction)" in result["details"]
+
+
+def test_shred_of_the_wrong_file_or_mode_fails(rfp_ws, tmp_path):
+    T.shred_requirements(rfp_ws, path="inputs/kb/company-overview.md")
+    T.extract_format_rules(rfp_ws, path="inputs/kb/company-overview.md")
+    _write(rfp_ws, C.BRIEF_PATH, BRIEF)
+    for name, fn in C.CHECK_DEFS.items():
+        assert fn(rfp_ws, {})["passed"] is False, name
+    details = C.shred_complete(rfp_ws, {})["details"]
+    assert "in the knowledge base" in details and f"{RFP} is not shredded" in details
+    assert "0 requirements" in details
+    # a questionnaire shredded as an RFP, or relabelled, is not "not a questionnaire"
+    q = tmp_path / "q2"
+    shutil.copytree(FIXTURES / "questionnaire", q)
+    T.shred_requirements(q, path=QUESTIONNAIRE)
+    assert C.questionnaire_answers_grounded(q, {})["passed"] is False
+    T.shred_questionnaire(q, path=QUESTIONNAIRE)
+    _edit_requirements(q, lambda d: d.update(mode="rfp"))
+    result = C.questionnaire_answers_grounded(q, {})
+    assert result["passed"] is False and "mode 'rfp'" in result["details"]
+
+
+def test_shred_complete_accepts_a_sentence_repeated_in_two_sections(rfp_ws):
+    text = (rfp_ws / RFP).read_text(encoding="utf-8")
+    law = "The Contractor shall comply with all applicable laws."
+    text = text.replace("before launch.", f"before launch. {law}").replace(
+        "District service hours.", f"District service hours. {law}")
+    (rfp_ws / RFP).write_text(text, encoding="utf-8")
+    T.shred_requirements(rfp_ws, path=RFP)
+    assert _passes(C.shred_complete(rfp_ws, {}))
+    rows = [r for r in T.load_requirements(rfp_ws)["requirements"] if r["text"] == law]
+    assert [r["section"] for r in rows] == ["C.2", "C.4"]
+    _edit_requirements(rfp_ws, lambda d: [r.update(section="C.2") for r in d["requirements"] if r["text"] == law])
+    assert "wrong section/page" in C.shred_complete(rfp_ws, {})["details"]
+
+
+def test_numbered_requirement_lines_without_a_period_are_requirements():
+    text = ("C.3 Operations\n\nC.3.1 The Contractor shall provide 24x7 monitoring\n"
+            "C.3.2 The Contractor shall patch servers monthly.\n\nL.3 Required Content\n\n"
+            "3.4 Items the Contractor Shall Provide\n\nOfferors shall describe the plan.\n")
+    rows = T.shred_text(text, "x")
+    assert [(r["section"], r["text"]) for r in rows] == [
+        ("C.3", "C.3.1 The Contractor shall provide 24x7 monitoring"),
+        ("C.3", "C.3.2 The Contractor shall patch servers monthly."),
+        ("3.4", "Offerors shall describe the plan.")]
+
+
+@pytest.mark.parametrize("header,question_column", [
+    ("Question ID,Domain,Question Text,Answer", None),
+    ("#,Section,Questions,Response", None),
+    ("Ref,Control Area,Description,Vendor Response", None),
+    ("Key,Area,Ask,Reply", "Ask"),
+])
+def test_questionnaire_column_choice_is_recorded_for_the_checks(tmp_path, header, question_column):
+    ws = tmp_path / "ws"
+    shutil.copytree(FIXTURES / "questionnaire" / "inputs" / "kb", ws / "inputs" / "kb")
+    _write(ws, "inputs/vendor.csv", f"{header}\nV-1,Security,Is customer data encrypted at rest?,\n"
+                                    "V-2,Security,Are you FedRAMP authorized?,\n")
+    args = {"question_column": question_column} if question_column else {}
+    T.shred_questionnaire(ws, path="inputs/vendor.csv", **args)
+    T.init_answer_sheet(ws)
+    T.set_answer(ws, question_id="Q-001", status="answered", answer="Yes, with AES-256.",
+                 citations=["security-practices.md#p1"])
+    T.set_answer(ws, question_id="Q-002", status="needs_review", answer="Not in the knowledge base.")
+    assert _passes(C.shred_complete(ws, {}))
+    assert _passes(C.questionnaire_answers_grounded(ws, {}))
+    T.update_compliance_matrix(ws)                  # reads the answer sheet by default
+    assert {r["req_id"]: r["status"] for r in _rows(ws, T.FINAL_MATRIX_PATH)} == {
+        "Q-001": "addressed", "Q-002": "needs_review"}
+    assert _passes(C.matrix_consistent(ws, {"matrix": T.FINAL_MATRIX_PATH, "require_addressed": True}))
+
+
+# --- hardening: the matrix, page limits, dates and evidence ------------------------------
+
+def test_checklist_markers_answer_only_format_submission_and_form_rows(m3_ws):
+    everything = ", ".join(f"R-{n:03d}" for n in range(1, 24))
+    _write(m3_ws, T.DRAFT_PATH, "# Volume I Technical\n\n## Response\nLumen Fieldworks will deliver the "
+                                "app described in the solicitation on schedule.\n")
+    _write(m3_ws, T.CHECKLIST_PATH, f"# Submission Checklist\n\n## Everything\n<!-- {everything} -->\n- All.\n")
+    out = T.update_compliance_matrix(m3_ws)
+    assert out["status"] == {"addressed": 8, "open": 15}
+    assert "marked only in the checklist" in out["notes"]["R-002"]
+    result = C.matrix_consistent(m3_ws, {"matrix": T.FINAL_MATRIX_PATH, "require_addressed": True})
+    assert result["passed"] is False and "R-002: not addressed" in result["details"]
+    # a marker on a section with almost no prose answers nothing
+    _write(m3_ws, T.DRAFT_PATH, DRAFT.replace(
+        "<!-- R-021 -->\nDana Okafor will serve as project manager and has 11 years",
+        "<!-- R-021 -->\nSee resume.\n\n## Resume\nDana has 11 years"))
+    _write(m3_ws, T.CHECKLIST_PATH, CHECKLIST)
+    out = T.update_compliance_matrix(m3_ws)
+    assert out["open"] == ["R-021"] and "under 10 words" in out["notes"]["R-021"]
+
+
+def test_open_items_are_an_honest_status_not_addressed(m3_ws):
+    _write(m3_ws, T.DRAFT_PATH, DRAFT.replace("<!-- R-007, R-008, R-009, R-010, R-011 -->",
+                                              "<!-- R-007, R-008, R-009, R-010 -->").replace(
+        " A support desk will be staffed during District service hours.", ""))
+    _write(m3_ws, T.CHECKLIST_PATH, CHECKLIST + "\n## Open items\n- R-011: the operations lead confirms "
+                                                "support desk hours.\n")
+    T.update_compliance_matrix(m3_ws)
+    rows = {r["req_id"]: r for r in _rows(m3_ws, T.FINAL_MATRIX_PATH)}
+    assert (rows["R-011"]["status"], rows["R-011"]["response_section"]) == ("open_item", "Checklist: Open items")
+    params = {"matrix": T.FINAL_MATRIX_PATH, "require_addressed": True}
+    result = C.matrix_consistent(m3_ws, params)
+    assert _passes(result) and result["score"] == pytest.approx(22 / 23)
+    rows["R-011"].update(status="addressed", response_section="Security and Hosting")
+    _save_rows(m3_ws, T.FINAL_MATRIX_PATH, list(rows.values()))
+    assert "R-011: matrix says 'addressed'" in C.matrix_consistent(m3_ws, params)["details"]
+
+
+PADDING = " ".join(["word"] * 8400)       # ~16.8 pages at 500 words per page
+
+
+@pytest.mark.parametrize("draft,expect", [
+    (f"# Proposal\n\n## Volume I Technical\n{PADDING}\n", "Volume I Technical is 16.8 pages; limit 10"),
+    (f"# Our Solution\n{PADDING}\n\n# Volume II Price\nPricing comes from the customer.\n",
+     "outside every page-limited"),
+    (f"# Volume I Technical\n{PADDING}\n", "Volume I Technical is 16.8 pages; limit 10"),
+], ids=["nested-volume", "unnamed-volume", "named-volume"])
+def test_page_limits_follow_the_heading_the_limit_names(m3_ws, draft, expect):
+    _write(m3_ws, T.DRAFT_PATH, draft)
+    result = C.draft_within_limits(m3_ws, {})
+    assert result["passed"] is False and expect in result["details"]
+
+
+def test_a_short_unlimited_cover_letter_is_allowed(m3_ws):
+    _write(m3_ws, T.DRAFT_PATH, "# Cover Letter\n" + " ".join(["word"] * 200) + "\n\n" + DRAFT)
+    assert _passes(C.draft_within_limits(m3_ws, {}))
+    _write(m3_ws, T.OUTLINE_PATH, "# Our Solution [pages: 12]\n" + OUTLINE)
+    result = C.outline_budget_ok(m3_ws, {})
+    assert result["passed"] is False and "outside every page-limited" in result["details"]
+
+
+def _reshred(ws: Path, old: str, new: str) -> None:
+    text = (ws / RFP).read_text(encoding="utf-8")
+    assert old in text
+    (ws / RFP).write_text(text.replace(old, new), encoding="utf-8")
+    T.shred_requirements(ws, path=RFP)
+    T.extract_format_rules(ws, path=RFP)
+
+
+def test_draft_page_estimate_follows_double_spacing(m1_ws):
+    technical = "# Volume I Technical\n" + " ".join(["word"] * 4620) + "\n"
+    _write(m1_ws, T.DRAFT_PATH, technical)
+    assert _passes(C.draft_within_limits(m1_ws, {}))                # ~9.2 pages single-spaced
+    _reshred(m1_ws, "Text shall use a font size", "Text shall be double-spaced and use a font size")
+    result = C.draft_within_limits(m1_ws, {})
+    assert result["passed"] is False and "Volume I Technical is 18.48 pages; limit 10" in result["details"]
+
+
+def test_per_item_page_limit_does_not_bind_the_volume(m1_ws):
+    _reshred(m1_ws, "The Price Volume is limited to 3 pages.",
+             "The Price Volume is limited to 3 pages. Resumes are limited to 2 pages each and do not "
+             "count toward the Technical Volume page limit.")
+    resume = " ".join(["word"] * 600)
+    draft = ("# Volume I Technical\n" + " ".join(["word"] * 3500) + "\n\n# Resumes\n\n## Dana Okafor\n"
+             f"{resume}\n\n## Second Resume\n{resume}\n")
+    _write(m1_ws, T.DRAFT_PATH, draft)
+    result = C.draft_within_limits(m1_ws, {})
+    assert _passes(result) and "Volume I Technical: ~7.0/10 pages" in result["details"]
+    _write(m1_ws, T.DRAFT_PATH, draft.replace(f"## Second Resume\n{resume}", "## Second Resume\n"
+                                              + " ".join(["word"] * 1500)))
+    result = C.draft_within_limits(m1_ws, {})
+    assert result["passed"] is False and "Second Resume is 3 pages; limit 2" in result["details"]
+
+
+def test_dates_match_source_reads_only_the_key_dates_section(m1_ws):
+    internal = "\n## Internal schedule\n\n- Internal final draft needed: October 12, 2026\n"
+    _write(m1_ws, C.BRIEF_PATH, BRIEF + internal)
+    assert _passes(C.dates_match_source(m1_ws, {}))
+    _write(m1_ws, C.BRIEF_PATH, BRIEF + "- Internal final draft needed: October 12, 2026\n")
+    assert "2026-10-12" in C.dates_match_source(m1_ws, {})["details"]
+
+
+def test_evidence_map_rejects_passages_unrelated_to_the_requirement(m2_ws):
+    rows = _rows(m2_ws, T.EVIDENCE_MAP_PATH)
+    for row in rows:
+        if row["status"] == "mapped":
+            row["passages"] = "key-personnel.md#p1"
+    _save_rows(m2_ws, T.EVIDENCE_MAP_PATH, rows)
+    result = C.evidence_map_complete(m2_ws, {})
+    assert result["passed"] is False and "R-011: no mapped passage shares a term" in result["details"]
+
+
+def test_uncited_fact_detector_catches_counts_magnitudes_awards_and_tables():
+    text = ("## Profile\nLumen Fieldworks has launched 45 mobile apps. Our apps have been downloaded 2 million "
+            "times. Lumen Fieldworks won the 2024 Transit Innovation Award.\n\n"
+            "| Metric | Value |\n|---|---|\n| Monthly active riders | 250,000 |\n\n"
+            "We will ship 4 updates a year. The app will support 3 languages.\n")
+    flagged = [u["sentence"] for u in T.scan_grounding(text, {}, {})["uncited_claims"]]
+    assert flagged == ["Lumen Fieldworks has launched 45 mobile apps.",
+                       "Our apps have been downloaded 2 million times.",
+                       "Lumen Fieldworks won the 2024 Transit Innovation Award.",
+                       "Monthly active riders | 250,000"]
+
+
+def test_kb_reads_csv_rows_and_reports_skipped_files(q_ws):
+    _write(q_ws, "inputs/kb/prior-answers.csv", "Question,Answer\nDo you hold a SOC 2 Type II report?,"
+                                                "Yes. SOC 2 Type II report issued March 2026.\n")
+    (q_ws / "inputs" / "kb" / "policy.pdf").write_bytes(b"%PDF-1.4")
+    passages = T.kb_passages(q_ws)
+    assert passages["prior-answers.csv#p1"].startswith("Question: Do you hold a SOC 2 Type II report?; Answer:")
+    out = T.kb_search(q_ws, query="SOC 2 report")
+    assert out["results"][0]["passage_id"] == "prior-answers.csv#p1" and out["skipped_files"] == ["policy.pdf"]
+    T.set_answer(q_ws, question_id="Q-004", status="answered", answer="Yes.",
+                 citations=["prior-answers.csv#p1"])
+    assert _passes(C.shred_complete(q_ws, {}))          # KB files are not solicitation sources
+
+
+def test_docx_page_numbers_follow_rendered_and_section_breaks(tmp_path):
+    w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    body = (f'<w:document {w}><w:body>'
+            '<w:p><w:r><w:t>First page text shall be read.</w:t></w:r></w:p>'
+            '<w:p><w:r><w:lastRenderedPageBreak/><w:t>Second page shall follow.</w:t></w:r></w:p>'
+            '<w:p><w:r><w:br w:type="page"/></w:r><w:r><w:lastRenderedPageBreak/>'
+            '<w:t>Third page shall not double count.</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr>'
+            '<w:r><w:t>Still the third page shall end the section.</w:t></w:r></w:p>'
+            '<w:p><w:r><w:t>Fourth page shall start the next section.</w:t></w:r></w:p>'
+            '</w:body></w:document>')
+    (tmp_path / "inputs").mkdir()
+    with zipfile.ZipFile(tmp_path / "inputs" / "rfp.docx", "w") as zf:
+        zf.writestr("word/document.xml", body)
+    rows = T.shred_text(T.read_text(tmp_path, "inputs/rfp.docx"), "inputs/rfp.docx")
+    assert [r["page"] for r in rows] == [1, 2, 3, 3, 4]
+
+
+def test_milestone_hours_fit_one_run_of_the_limits():
+    m = _manifest()
+    for ms in m["milestones"]:
+        assert ms["hours"][1] * m["estimate"]["usd_per_hour"] <= m["limits"]["max_usd"], ms["id"]
+        assert ms["hours"][1] * 60 <= m["limits"]["max_wall_minutes"], ms["id"]

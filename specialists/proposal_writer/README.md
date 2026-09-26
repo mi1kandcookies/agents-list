@@ -25,10 +25,14 @@ model) and a human sign-off: the bid decision (m1), expert answers to the
 gap questions (m2), and expert approval plus signature and submission by the
 customer (m3).
 
-All checks recompute from `inputs/`: the solicitation must be unchanged
-since the shred (sha256), every requirement row must be verbatim from it,
-matrix locations must match the markers in the draft, and cited passages
-must contain the numbers and certifications stated.
+All checks recompute from `inputs/`: every solicitation file under
+`inputs/` must be shredded and unchanged since the shred (sha256), every
+requirement row must be verbatim from it with the shredder's type, matrix
+locations must match the markers in the draft (checklist markers count for
+format, submission and form rows; content the draft cannot answer is listed
+under the checklist's Open items and shown as `open_item`), and cited
+passages must contain the numbers and certifications stated. Only `[KB:]`
+citations ground company facts; `[REQ:]` restates a requirement's figure.
 
 ## Inputs
 
@@ -36,7 +40,9 @@ must contain the numbers and certifications stated.
   `.md`, `.txt` or `.docx` (convert PDFs to text first), or a questionnaire
   exported as `.csv`.
 - `inputs/kb/` - the knowledge base: capability statement, past proposals,
-  past-performance write-ups, resumes, policies, prior answers.
+  past-performance write-ups, resumes, policies, prior answers, as `.md`,
+  `.txt`, `.docx` or `.csv` (one passage per row). Other formats are listed
+  as skipped and cannot be cited.
 - Intake: engagement mode (`rfp` or `questionnaire`), deadline, funder
   AI-use policy, win themes, expert contacts.
 
@@ -59,8 +65,10 @@ submits. The agent never logs into a portal.
 ## Limits
 
 - 120 steps, 4M tokens, $50 of model spend and 4 hours per milestone run.
-- Page counts in the draft are estimated from words (500 per page by
-  default); the final layout check happens on the customer's formatted PDF.
+- Page counts in the draft are estimated from words (500 per single-spaced
+  12 point page by default, halved for double spacing, fewer for a larger
+  required font); the final layout check happens on the customer's
+  formatted PDF. A page limit applies to the heading its sentence names.
 - Keyword retrieval (BM25) proposes evidence; the agent must confirm each
   passage. Scanned PDFs, spreadsheets other than CSV, and classified,
   export-controlled or controlled unclassified material are out of scope.

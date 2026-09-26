@@ -63,7 +63,9 @@ intake:
   - field: knowledge_base_files
     question: >-
       Upload the material the response may draw on: capability statement, past proposals,
-      past-performance write-ups, resumes, security policies, prior questionnaire answers.
+      past-performance write-ups, resumes, security policies, prior questionnaire answers,
+      as .md, .txt, .docx or .csv (one answer per row); convert PDFs and spreadsheets to one
+      of these first, since nothing else can be cited.
     required: true
   - field: submission_deadline
     question: When is the response due, and when do you need the final draft to allow for internal review?
@@ -91,7 +93,7 @@ milestones:
       - deliverables/m1-shred/compliance_matrix.csv
       - deliverables/m1-shred/format_rules.json
       - deliverables/m1-shred/bid-brief.md
-    hours: [2, 6]
+    hours: [1, 3]
     acceptance:
       - {check: files_exist, params: {paths: [deliverables/m1-shred/requirements.json,
           deliverables/m1-shred/compliance_matrix.csv, deliverables/m1-shred/format_rules.json,
@@ -123,7 +125,7 @@ milestones:
       - deliverables/m2-outline/evidence_map.csv
       - deliverables/m2-outline/gaps.md
       - deliverables/m2-outline/outline.md
-    hours: [3, 8]
+    hours: [2, 4]
     acceptance:
       - {check: files_exist, params: {paths: [deliverables/m2-outline/evidence_map.csv,
           deliverables/m2-outline/gaps.md, deliverables/m2-outline/outline.md]}}
@@ -147,7 +149,7 @@ milestones:
       - deliverables/m3-draft/proposal.md
       - deliverables/m3-draft/compliance_matrix.csv
       - deliverables/m3-draft/submission-checklist.md
-    hours: [6, 20]
+    hours: [2, 4]
     acceptance:
       - {check: files_exist, params: {paths: [deliverables/m3-draft/proposal.md,
           deliverables/m3-draft/compliance_matrix.csv, deliverables/m3-draft/submission-checklist.md]}}
