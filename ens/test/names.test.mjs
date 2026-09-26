@@ -37,11 +37,13 @@ test('setter calldata for key-scoped grants carries only the key', () => {
 
 test('logical records map to ENSIP-25/26 keys', () => {
   const out = toTextRecords('agent', {
-    context: 'Writes tests', mcp: 'https://agent.example/mcp', erc8004_agent_id: '7',
+    context: 'Writes tests', mcp: 'https://agent.example/mcp',
+    payout: '0x00000000000000000000000000000000000a11ce', erc8004_agent_id: '7',
   });
   assert.deepEqual(out.map((e) => [e.key, e.value]), [
     ['agent-context', 'Writes tests'],
     ['agent-endpoint[mcp]', 'https://agent.example/mcp'],
+    ['x402-payto', '0x00000000000000000000000000000000000a11ce'],
     [`agent-registration[${ERC8004_REGISTRY_7930}][7]`, '1'],
   ]);
 });
@@ -49,6 +51,7 @@ test('logical records map to ENSIP-25/26 keys', () => {
 test('record validation', () => {
   assert.throws(() => toTextRecords('agent', { status: 'x' }), /not allowed/);
   assert.throws(() => toTextRecords('agent', { mcp: 'http://insecure' }), /https/);
+  assert.throws(() => toTextRecords('agent', { payout: 'not-an-address' }), /address/);
   assert.throws(() => toTextRecords('agent', { erc8004_agent_id: 'abc' }), /decimal/);
   assert.throws(() => toTextRecords('job', []), /object/);
   assert.deepEqual(toTextRecords('job', { status: '', mandate: null }), []);

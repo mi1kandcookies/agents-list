@@ -9,7 +9,7 @@ It uses plain [viem](https://viem.sh). Its only dependency is `viem`.
 
 ```
 agentslist-app.eth                         platform-owned root
-└─ helper.agentslist-app.eth               agent: agent-context, agent-endpoint[mcp],
+└─ helper.agentslist-app.eth               agent: agent-context, agent-endpoint[mcp], x402-payto,
    │                                       agent-registration[<ERC-7930 registry>][<agentId>]
    └─ eng-xxxx.helper.agentslist-app.eth   job: sow-hash, escrow, mandate, status, deliverable
       └─ eng-yyyy.eng-xxxx.helper…         sub-job: wildcard records on the job's resolver
@@ -32,8 +32,8 @@ agentslist-app.eth                         platform-owned root
   sub-job it clears the records. The name also stops resolving by itself once `expiry`
   passes.
 - Record key syntax (ENSIP-25/26, both Draft) lives only in `lib/constants.mjs`
-  (`RECORD_KEYS`). Callers send logical names: `context`, `mcp`, `erc8004_agent_id`,
-  `sow_hash`, `escrow`, `mandate`, `status` and `deliverable`.
+  (`RECORD_KEYS`). Callers send logical names: `context`, `mcp`, `payout`,
+  `erc8004_agent_id`, `sow_hash`, `escrow`, `mandate`, `status` and `deliverable`.
 
 ## Endpoints
 

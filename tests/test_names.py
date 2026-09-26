@@ -79,7 +79,7 @@ def test_agent_published(db, agent_row, sidecar):
     row = service.on_agent_published(agent_row)
     assert row.name == f"test-agent.{ROOT}"
     assert row.status == "active" and row.kind == "agent" and row.parent_name == ROOT
-    assert row.records == {"context": "Does tests"}
+    assert row.records == {"context": "Does tests", "payout": PAYOUT}
     assert row.node.startswith("0x") and len(row.node) == 66
     assert len(row.tx_hashes) == 1
     assert agent_row.ens_name == row.name
@@ -96,6 +96,7 @@ def test_agent_records_from_manifest(db, agent_row, sidecar):
     agent_row.manifest_json = '{"endpoints": {"mcp": "https://a.example/mcp"}, "erc8004_agent_id": "12"}'
     row = service.on_agent_published(agent_row)
     assert row.records["mcp"] == "https://a.example/mcp"
+    assert row.records["payout"] == PAYOUT
     assert row.records["erc8004_agent_id"] == "12"
 
 

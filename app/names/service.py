@@ -80,7 +80,7 @@ def _commit() -> None:
 
 def on_agent_published(agent: Agent) -> EnsName | None:
     try:
-        row = _agent_row(agent)
+        row = _agent_row(agent, refresh_records=True)
         _push(row)
         return row
     except Exception:
@@ -264,13 +264,27 @@ def _manifest(agent: Agent) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _agent_row(agent: Agent) -> EnsName:
+def _agent_row(agent: Agent, *, refresh_records: bool = False) -> EnsName:
     existing = (EnsName.query.filter_by(agent_id=agent.id, kind="agent")
                 .filter(EnsName.status != "revoked").first())
     root = _root_row()
-    if existing is not None:
-        return existing
     label = slug(agent.name) or agent.public_id.lower()
+    manifest = _manifest(agent)
+    endpoints = manifest.get("endpoints") if isinstance(manifest.get("endpoints"), dict) else {}
+    payout = agent.payout_address or agent.deployer_wallet
+    records = _clean({
+        "context": (agent.description or "")[:1000],
+        "mcp": manifest.get("mcp_endpoint") or endpoints.get("mcp"),
+        "payout": payout,
+        "erc8004_agent_id": manifest.get("erc8004_agent_id"),
+    })
+    if existing is not None:
+        if refresh_records and existing.records != records:
+            existing.records = records
+            # Re-push an active agent name so newly-added authorization
+            # records such as x402-payto reach its existing resolver.
+            existing.status = "pending"
+        return existing
     name = f"{label}.{root.name}"
     taken = db.session.get(EnsName, name)
     if taken is not None and taken.agent_id != agent.id:
@@ -279,13 +293,7 @@ def _agent_row(agent: Agent) -> EnsName:
     if row.status == "revoked":
         row.status = "pending"       # re-issue; the sidecar deploys fresh proxies
     row.agent_id = agent.id
-    manifest = _manifest(agent)
-    endpoints = manifest.get("endpoints") if isinstance(manifest.get("endpoints"), dict) else {}
-    row.records = _clean({
-        "context": (agent.description or "")[:1000],
-        "mcp": manifest.get("mcp_endpoint") or endpoints.get("mcp"),
-        "erc8004_agent_id": manifest.get("erc8004_agent_id"),
-    })
+    row.records = records
     return row
 
 
