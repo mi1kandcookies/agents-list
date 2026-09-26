@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Order History{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:40px; padding-bottom:64px;">
+  <div class="flex-between mb-32">
+    <div>
+      <h1 style="font-size:1.75rem; margin-bottom:4px;">Order History</h1>
+      <p>{{ orders|length }} total orders</p>
+    </div>
+    <div class="flex-center gap-10">
+      <select class="form-select" style="width:auto;" onchange="filterOrders(this.value)">
+        <option value="">All Statuses</option>
+        <option value="completed">Completed</option>
+        <option value="in_progress">In Progress</option>
+        <option value="in_escrow">In Escrow</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Order ID</th>
+          <th>Agent</th>
+          <th>Task</th>
+          <th>Buyer</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="orders-table">
+        {% for order in orders %}
+        <tr data-status="{{ order.status }}">
+          <td class="font-bold text-accent">{{ order.id }}</td>
+          <td class="font-bold">{{ order.agent }}</td>
+          <td class="text-muted" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ order.task }}</td>
+          <td class="text-muted" style="font-family: monospace; font-size:.8125rem;">{{ order.buyer }}</td>
+          <td class="font-bold">${{ "%.2f"|format(order.amount) }}</td>
+          <td>
+            {% if order.status == 'completed' %}
+            <span class="badge badge-approved">Completed</span>
+            {% elif order.status == 'in_progress' %}
+            <span class="badge badge-testing">In Progress</span>
+            {% elif order.status == 'in_escrow' %}
+            <span class="badge badge-escrow">In Escrow</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ order.date }}</td>
+          <td>
+            <div class="flex-center gap-8">
+              <a href="/order/{{ order.id }}" class="btn btn-ghost btn-sm">View</a>
+              {% if order.status == 'in_escrow' %}
+              <button class="btn btn-primary btn-sm order-start-btn" data-order-id="{{ order.id }}">Start</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterOrders(status) {
+  document.querySelectorAll('#orders-table tr').forEach(row => {
+    row.style.display = (!status || row.dataset.status === status) ? '' : 'none';
+  });
+}
+
+// Seller starts an in-escrow order -> moves it to in_progress.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.order-start-btn');
+  if (!btn) return;
+  const orderId = btn.dataset.orderId;
+  if (!orderId) return;
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  try {
+    await AgentHireAPI.post('/api/orders/' + orderId + '/start', {});
+    showToast(orderId + ' is now in progress.', 'success');
+    setTimeout(() => window.location.reload(), 900);
+  } catch (err) {
+    showToast('Could not start order: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Start';
+  }
+});
+</script>
+{% endblock %}

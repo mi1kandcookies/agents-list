@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Manage: {{ agent.name }}{% endblock %}
+
+{% block content %}
+<div class="container-sm" style="padding-top:40px; padding-bottom:64px;">
+  <div class="flex-center gap-8 mb-24 text-sm text-muted">
+    <a href="/seller/earnings" class="text-muted" style="text-decoration:underline;">Dashboard</a>
+    <span>›</span>
+    <span style="color:var(--text);">{{ agent.name }}</span>
+  </div>
+
+  <div class="flex-between mb-32">
+    <div>
+      <h1 style="font-size:1.75rem; margin-bottom:8px;">Manage Listing</h1>
+      <div class="flex-center gap-8">
+        {% if agent.verified %}
+        <span class="badge badge-verified">✓ {{ agent.verification_tier.title() }} Verified</span>
+        {% else %}
+        <span class="badge badge-unverified">Unverified</span>
+        {% endif %}
+        {% if agent.surge_active %}
+        <span class="badge badge-surge">Surge Active</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex-center gap-10">
+      <a href="/agent/{{ agent.id }}" class="btn btn-ghost btn-sm" target="_blank">Preview →</a>
+      <button class="btn btn-danger btn-sm" id="pause-btn" onclick="pauseAgent()">Pause Listing</button>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start;">
+
+    <!-- ── Edit Form ──────────────────────────────────────────────────── -->
+    <div class="flex-col gap-20">
+      <div class="card">
+        <h3 style="margin-bottom:24px;">Agent Details</h3>
+        <div class="flex-col gap-16">
+          <div class="form-group">
+            <label class="form-label">Agent Name</label>
+            <input type="text" class="form-input" id="edit-name" value="{{ agent.name }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Short Description</label>
+            <input type="text" class="form-input" id="edit-desc" value="{{ agent.description }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <select class="form-select" id="edit-category">
+              {% for cat in categories %}
+              <option {% if cat == agent.category %}selected{% endif %}>{{ cat }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags (comma separated)</label>
+            <input type="text" class="form-input" id="edit-tags" value="{{ agent.tags | join(', ') }}">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:20px;">Pricing</h3>
+        <div class="grid-2 gap-16 mb-16">
+          <div class="form-group">
+            <label class="form-label">Minimum Price (USDC)</label>
+            <input type="number" class="form-input" id="edit-min-price" step="0.00001" value="{{ agent.min_price }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Maximum Price (USDC)</label>
+            <input type="number" class="form-input" id="edit-max-price" step="0.00001" value="{{ agent.max_price }}">
+          </div>
+        </div>
+        <div class="card card-sm" style="background:rgba(245,158,11,.04); border-color:rgba(245,158,11,.15);">
+          <div class="flex-between text-sm">
+            <span class="text-muted">Current live price</span>
+            <span class="font-bold font-mono text-accent" id="live-price-display">${{ "%.5f"|format(agent.current_price) }}</span>
+          </div>
+          <div class="flex-between text-sm mt-8">
+            <span class="text-muted">Billing model</span>
+            <span class="font-bold">{{ 'Per Token' if agent.billing == 'per_token' else 'Per Minute' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-between">
+        <button class="btn btn-ghost" onclick="window.location='/seller/earnings'">← Cancel</button>
+        <button class="btn btn-gradient" id="save-btn" onclick="saveChanges()">Save Changes</button>
+      </div>
+    </div>
+
+    <!-- ── Sidebar ────────────────────────────────────────────────────── -->
+    <div class="flex-col gap-16">
+      <!-- Stats -->
+      <div class="card">
+        <h4 style="margin-bottom:16px;">Performance</h4>
+        <div class="flex-between mb-10 text-sm"><span class="text-muted">Rating</span>
+          <div class="rating" title="{{ agent.rating }} out of 5">
+            <span class="rating-stars" style="--star-fill:{{ ((agent.rating / 5) * 100) | round(1) }}%;" aria-label="{{ agent.rating }} out of 5">★★★★★</span>
+            <span class="rating-value font-bold">{{ "%.1f"|format(agent.rating) }}</span>
+          </div></div>
+        <div class="flex-between mb-10 text-sm"><span class="text-muted">Reviews</span>
+          <span class="font-bold">{{ agent.reviews }}</span></div>
+        <div class="flex-between mb-10 text-sm"><span class="text-muted">Tasks Completed</span>
+          <span class="font-bold">{{ "{:,}".format(agent.tasks_completed) }}</span></div>
+        <div class="flex-between text-sm"><span class="text-muted">Avg Time</span>
+          <span class="font-bold">{{ agent.avg_completion_time }}</span></div>
+      </div>
+
+      <!-- Capabilities -->
+      <div class="card">
+        <h4 style="margin-bottom:12px;">Capabilities</h4>
+        {% for cap in agent.capabilities %}
+        <div class="tier-feature">{{ cap }}</div>
+        {% endfor %}
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="card">
+        <h4 style="margin-bottom:12px;">Actions</h4>
+        <div class="flex-col gap-8">
+          <button class="btn btn-secondary btn-sm w-full" onclick="reactivateAgent()">✓ Reactivate</button>
+          <a href="/seller/verification" class="btn btn-ghost btn-sm w-full" style="text-align:center;">Upgrade Verification</a>
+          <a href="/agent/{{ agent.id }}" class="btn btn-ghost btn-sm w-full" style="text-align:center;">View Public Page →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  startLivePriceTicker({{ agent.id }});
+
+  async function saveChanges() {
+    const btn = document.getElementById('save-btn');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+      const res = await AgentHireAPI.post('/seller/agents/{{ agent.id }}', {
+        action: 'update',
+        name:      document.getElementById('edit-name').value,
+        description: document.getElementById('edit-desc').value,
+        min_price: document.getElementById('edit-min-price').value,
+        max_price: document.getElementById('edit-max-price').value,
+        tags:      document.getElementById('edit-tags').value,
+      });
+      showToast('Changes saved.', 'success');
+    } catch (e) { showToast('Save failed: ' + e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
+  }
+
+  async function pauseAgent() {
+    if (!confirm('Pause this listing? It will be hidden from the marketplace.')) return;
+    try {
+      await AgentHireAPI.post('/seller/agents/{{ agent.id }}', { action: 'pause' });
+      showToast('Listing paused.', 'warning');
+      document.getElementById('pause-btn').textContent = 'Paused';
+      document.getElementById('pause-btn').disabled = true;
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  }
+
+  async function reactivateAgent() {
+    try {
+      await AgentHireAPI.post('/seller/agents/{{ agent.id }}', { action: 'reactivate' });
+      showToast('Listing reactivated.', 'success');
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  }
+</script>
+{% endblock %}

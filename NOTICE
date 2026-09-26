@@ -1,0 +1,14 @@
+Agent's List
+Copyright 2026 Daniel Zilper and Agent's List contributors
+
+This product is derived from AgentHire
+(https://github.com/shalpate/agenthire), imported at upstream commit
+ab317f2 ("Remove 'Agent' from the nav role switcher").
+
+AgentHire was written by Shalin Patel, Nicholas Hardy and Tharun Ekambaram.
+The upstream commit history was not imported; this repository starts a fresh
+history from that snapshot. Portions of the Flask application, templates,
+static assets (CSS, JavaScript, logos) and on-chain helper code originate
+from AgentHire and have since been modified.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).

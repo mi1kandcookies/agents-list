@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Verification{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:36px; padding-bottom:72px;">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:28px;">
+    <div>
+      <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.14em; color:var(--text-3); margin-bottom:5px;">Seller · Verification</div>
+      <h1 style="font-size:1.5rem; margin:0 0 4px; letter-spacing:-.025em;">Agent Verification</h1>
+      <p style="font-size:.8125rem; color:var(--text-3); margin:0;">Track verification progress and agent activity</p>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <a href="/seller/earnings" class="btn btn-ghost btn-sm" style="font-family:var(--font-mono); font-size:.6875rem;">← Dashboard</a>
+      <a href="/seller/create"   class="btn btn-gradient btn-sm">+ New Agent</a>
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:24px;">
+    <div class="vrf-stat-card" style="--accent-line:var(--green);">
+      <div class="vrf-stat-icon" style="background:var(--green-dim); color:var(--green);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="vrf-stat-value">{{ queue|selectattr('status','equalto','approved')|list|length }}</div>
+      <div class="vrf-stat-sub">of {{ queue|length }} submitted &middot; Active</div>
+    </div>
+    <div class="vrf-stat-card" style="--accent-line:var(--blue);">
+      <div class="vrf-stat-icon" style="background:var(--blue-dim); color:var(--blue);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="vrf-stat-value">2.4M</div>
+      <div class="vrf-stat-sub">tokens this month</div>
+    </div>
+    <div class="vrf-stat-card" style="--accent-line:#f59e0b;">
+      <div class="vrf-stat-icon" style="background:rgba(245,158,11,.1); color:#f59e0b;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div class="vrf-stat-value">{{ queue|selectattr('status','in',['pending','testing','human_review'])|list|length }}</div>
+      <div class="vrf-stat-sub">awaiting verification</div>
+    </div>
+  </div>
+
+  <!-- Slash policy -->
+  <div style="display:flex; align-items:center; gap:10px; padding:10px 16px; background:rgba(245,158,11,.04); border:1px solid rgba(245,158,11,.15); border-radius:var(--radius); margin-bottom:28px;">
+    <span style="font-family:var(--font-mono); font-size:.5rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.1em; white-space:nowrap; flex-shrink:0;">Bond Policy</span>
+    <span style="font-size:.75rem; color:var(--text-3);">Below 3 stars + 10 complaints → investigation → <strong style="color:var(--text-2);">25% slash</strong> · Second warning → <strong style="color:var(--text-2);">50% slash</strong> · Third incident → <strong style="color:var(--text-2);">removal</strong></span>
+  </div>
+
+  <!-- Agent cards -->
+  {% set status_meta = {
+    'pending':      ('vrf-status-pending',  'pending',  'Pending',      'Queued for review.'),
+    'testing':      ('vrf-status-testing',  'testing',  'Testing',      'Automated tests running.'),
+    'human_review': ('vrf-status-human',    'human',    'Human Review', 'Team review in progress.'),
+    'approved':     ('vrf-status-approved', 'approved', 'Approved',     'Live on marketplace.'),
+    'rejected':     ('vrf-status-rejected', 'rejected', 'Rejected',     'Review required before resubmit.'),
+  } %}
+
+  <div style="display:flex; flex-direction:column; gap:14px;">
+    {% for item in queue %}
+    {% set meta = status_meta[item.status] %}
+    <div class="vrf-agent-card">
+
+      <!-- Card header -->
+      <div class="vrf-agent-header">
+        <div style="display:flex; align-items:center; gap:14px; min-width:0;">
+          <div class="vrf-agent-avatar">AGT</div>
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:.9375rem; margin-bottom:3px;">{{ item.agent }}</div>
+            <div style="font-family:var(--font-mono); font-size:.5625rem; color:var(--text-3); display:flex; align-items:center; gap:8px;">
+              <span>{{ item.id }}</span>
+              <span style="opacity:.4;">·</span>
+              <span>{{ item.submitted }}</span>
+              <span style="opacity:.4;">·</span>
+              <span>{{ item.tier.title() }} Audit</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+          <div style="font-family:var(--font-mono); font-size:.625rem; color:var(--text-3);">{{ '$10' if item.tier == 'basic' else '$50' }} USDC</div>
+          <span class="vrf-status-badge {{ meta[0] }}">
+            <span class="vrf-status-dot"></span>{{ meta[2] }}
+          </span>
+        </div>
+      </div>
+
+      <div class="vrf-agent-body">
+
+        {% if item.safety_score is not none %}
+        <!-- Scores + Timeline -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:32px;">
+
+          <!-- Scores -->
+          <div>
+            <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:14px;">Automated Test Results</div>
+            <div>
+              {% set scores = [('Safety', item.safety_score), ('Performance', item.performance_score), ('Reliability', item.reliability_score)] %}
+              {% for label, score in scores %}
+              <div class="vrf-score-row">
+                <span class="vrf-score-label">{{ label }}</span>
+                <div class="vrf-score-track">
+                  <div class="vrf-score-fill {{ 'green' if score >= 85 else 'amber' }}" style="width:{{ score }}%;"></div>
+                </div>
+                <span class="vrf-score-num" style="color:{{ 'var(--green)' if score >= 85 else '#f59e0b' }};">{{ score }}%</span>
+              </div>
+              {% endfor %}
+            </div>
+
+            <!-- Status message -->
+            <div style="margin-top:16px; padding:12px 14px; background:var(--card-2); border-radius:var(--radius); border:1px solid var(--border);">
+              <div style="font-size:.75rem; color:var(--text-2); line-height:1.5;">
+                {% if item.status == 'testing' %}Automated safety, performance, and reliability tests are running. Results will be available shortly.
+                {% elif item.status == 'human_review' %}A member of our protocol team is conducting a hands-on review. This typically takes 1–3 business days.
+                {% elif item.status == 'approved' %}Your agent passed verification and is now live on the marketplace.
+                {% elif item.status == 'rejected' %}Your agent did not pass. Review the feedback below and resubmit after making the required changes.
+                {% else %}Your agent is queued for review. You'll be notified when testing begins.
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Timeline -->
+          <div>
+            <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:14px;">Review Timeline</div>
+            <div class="vrf-timeline">
+              <div class="vrf-tl-item">
+                <div class="vrf-tl-dot done">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div><div class="vrf-tl-label">Submitted</div><div class="vrf-tl-sub">{{ item.submitted }}</div></div>
+              </div>
+              <div class="vrf-tl-item">
+                <div class="vrf-tl-dot {{ 'done' if item.status in ['testing','human_review','approved'] else ('active' if item.status == 'testing' else '') }}">
+                  {% if item.status in ['human_review','approved'] %}
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  {% else %}2{% endif %}
+                </div>
+                <div>
+                  <div class="vrf-tl-label">Automated Tests</div>
+                  <div class="vrf-tl-sub">{{ 'Complete' if item.status in ['testing','human_review','approved'] else 'Pending' }}</div>
+                </div>
+              </div>
+              {% if item.tier == 'thorough' %}
+              <div class="vrf-tl-item">
+                <div class="vrf-tl-dot {{ 'done' if item.status == 'approved' else ('active' if item.status == 'human_review' else '') }}">
+                  {% if item.status == 'approved' %}<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>{% else %}3{% endif %}
+                </div>
+                <div>
+                  <div class="vrf-tl-label">Human Review</div>
+                  <div class="vrf-tl-sub">{{ 'In Progress' if item.status == 'human_review' else ('Complete' if item.status == 'approved' else 'Pending') }}</div>
+                </div>
+              </div>
+              {% endif %}
+              <div class="vrf-tl-item">
+                <div class="vrf-tl-dot {{ 'done' if item.status == 'approved' else '' }}">
+                  {% if item.status == 'approved' %}<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>{% else %}✓{% endif %}
+                </div>
+                <div>
+                  <div class="vrf-tl-label">Live on Marketplace</div>
+                  <div class="vrf-tl-sub" style="{{ 'color:var(--green);' if item.status == 'approved' else '' }}">{{ 'Active' if item.status == 'approved' else 'Pending' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Workflow preview -->
+        {% set mock_stages = [
+          ('Input Parser',     'internal', False),
+          ('Reasoning Engine', 'internal', False),
+          ('SecureAudit AI',   'subagent', True),
+          ('Output Formatter', 'internal', False),
+        ] if item.agent in ['ContentForge', 'WebCrawler X'] else [
+          ('Input Parser',   'internal', False),
+          ('Core Processor', 'internal', False),
+          ('Output Formatter','internal', False),
+        ] %}
+        <div style="margin-top:20px; padding-top:18px; border-top:1px solid var(--border);">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <div style="font-family:var(--font-mono); font-size:.5rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3);">Execution Pipeline</div>
+            {% if mock_stages|selectattr(2)|list|length > 0 %}
+            <span class="exec-type-badge exec-type-composable">{{ mock_stages|length }} stages</span>
+            {% else %}
+            <span class="exec-type-badge exec-type-standalone">Standalone</span>
+            {% endif %}
+          </div>
+          <div style="display:flex; align-items:center; gap:0; flex-wrap:wrap;">
+            {% for name, type, conditional in mock_stages %}
+            <div style="display:flex; align-items:center; gap:0;">
+              <div style="display:flex; align-items:center; gap:7px; padding:6px 12px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius); font-size:.75rem;">
+                <span style="width:6px; height:6px; border-radius:50%; background:{{ 'var(--green)' if type == 'subagent' else 'var(--blue)' }}; flex-shrink:0;"></span>
+                <span style="font-weight:600;">{{ name }}</span>
+                {% if conditional %}<span style="font-family:var(--font-mono); font-size:.5rem; color:#f59e0b; background:rgba(245,158,11,.1); padding:1px 5px; border-radius:3px;">if</span>{% endif %}
+              </div>
+              {% if not loop.last %}
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="none" style="flex-shrink:0; margin:0 2px;"><path d="M0 6h12M9 2l4 4-4 4" stroke="var(--border-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% else %}
+        <!-- Skeleton / not started -->
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div class="skeleton skel-line" style="height:8px; width:60%; border-radius:4px;"></div>
+          <div class="skeleton skel-line" style="height:8px; width:40%; border-radius:4px;"></div>
+          <div class="skeleton skel-line" style="height:8px; width:50%; border-radius:4px;"></div>
+        </div>
+        <div style="font-family:var(--font-mono); font-size:.6875rem; color:var(--text-3); margin-top:10px;">Test results will appear once processing begins</div>
+        {% endif %}
+
+      </div><!-- /vrf-agent-body -->
+    </div><!-- /vrf-agent-card -->
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

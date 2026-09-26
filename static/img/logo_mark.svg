@@ -1,0 +1,15 @@
+<svg width="100%" viewBox="62 50 180 132" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="AgentHire mark">
+  <polygon points="148,62 192,88 192,140 148,166 104,140 104,88" fill="none" stroke="#0fba8a" stroke-width="3" stroke-linejoin="round"/>
+  <polygon points="148,80 180,98 180,134 148,152 116,134 116,98" fill="#0a2e22"/>
+  <circle cx="148" cy="116" r="24" fill="none" stroke="#0fba8a" stroke-width="1" opacity="0.4"/>
+  <circle cx="148" cy="116" r="9" fill="#0fba8a"/>
+  <circle cx="148" cy="116" r="4" fill="#0a2e22"/>
+  <line x1="104" y1="88"  x2="72"  y2="70"  stroke="#0fba8a" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="72"  cy="70"  r="4" fill="#0fba8a" opacity="0.7"/>
+  <line x1="192" y1="88"  x2="224" y2="70"  stroke="#0fba8a" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="224" cy="70"  r="4" fill="#0fba8a" opacity="0.7"/>
+  <line x1="104" y1="140" x2="72"  y2="158" stroke="#0fba8a" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="72"  cy="158" r="4" fill="#0fba8a" opacity="0.5"/>
+  <line x1="192" y1="140" x2="224" y2="158" stroke="#0fba8a" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="224" cy="158" r="4" fill="#0fba8a" opacity="0.5"/>
+</svg>

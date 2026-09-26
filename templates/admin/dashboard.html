@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+  <!-- Sidebar -->
+  <aside class="admin-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Protocol</div>
+      <a href="/admin/dashboard" class="sidebar-link active"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">DB</span> Dashboard</a>
+      <a href="/admin/verification-queue" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">VRF</span> Verification Queue</a>
+      <a href="/admin/moderation" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MOD</span> Moderation</a>
+      <a href="/admin/payouts" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">PAY</span> Payouts</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Marketplace</div>
+      <a href="/marketplace" class="sidebar-link"><span class="sidebar-icon" style="font-family:var(--font-mono);font-size:.5625rem;font-weight:700;">MKT</span> Browse Agents</a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="admin-main">
+    <div class="flex-between mb-16">
+      <div>
+        <h1 style="font-size:1.75rem; margin-bottom:4px;">Protocol Dashboard</h1>
+        <p class="text-sm text-muted">AgentHire · Admin · Live from <code>ChainTransaction</code> on Avalanche Fuji</p>
+      </div>
+      <div class="flex-center gap-10">
+        <div class="footer-chain"><span class="live-dot"></span> Live</div>
+      </div>
+    </div>
+
+    <!-- Data source toggle — transparent split between real on-chain vs seeded demo volume -->
+    <div style="display:flex; gap:12px; align-items:center; padding:10px 16px; margin-bottom:24px; background:var(--card-2); border:1px solid var(--border); border-radius:8px; font-family:var(--font-mono); font-size:.72rem;">
+      <span style="color:var(--text-3); font-size:.56rem; text-transform:uppercase; letter-spacing:.08em;">Showing</span>
+      {% if stats.live_only %}
+        <a href="?all=1" style="padding:3px 9px; background:transparent; border:1px solid var(--border); color:var(--text-3); border-radius:4px; text-decoration:none;">All activity ({{ "{:,}".format(stats.total_ct_rows) }})</a>
+        <span style="padding:3px 9px; background:rgba(34,197,94,.1); border:1px solid var(--green); color:var(--green); border-radius:4px;">● Live on-chain only ({{ stats.real_ct_rows }})</span>
+      {% else %}
+        <span style="padding:3px 9px; background:rgba(95,227,227,.1); border:1px solid var(--accent); color:var(--accent); border-radius:4px;">All activity ({{ "{:,}".format(stats.total_ct_rows) }})</span>
+        <a href="/admin/dashboard" style="padding:3px 9px; background:transparent; border:1px solid var(--border); color:var(--text-3); border-radius:4px; text-decoration:none;">Live on-chain only ({{ stats.real_ct_rows }})</a>
+      {% endif %}
+      <span style="margin-left:auto; color:var(--text-3); font-size:.62rem;">
+        {{ stats.real_ct_rows }} real Fuji tx · {{ "{:,}".format(stats.total_ct_rows - stats.real_ct_rows) }} seeded demo activity
+      </span>
+    </div>
+
+    <!-- Live Fuji Tx Feed — real on-chain txs, newest first. Auto-refreshes every 5s. -->
+    <div class="card mb-24" style="border:1px solid var(--green); background:linear-gradient(180deg, rgba(34,197,94,.04), transparent);">
+      <div class="flex-between mb-12">
+        <div>
+          <div style="font-family:var(--font-mono); font-size:.625rem; text-transform:uppercase; letter-spacing:.12em; color:var(--green); margin-bottom:4px;">● LIVE FUJI TX FEED</div>
+          <h3 style="margin:0;">Real on-chain transactions</h3>
+          <p class="text-sm text-muted" style="margin-top:4px;">Every row below is a real tx on Avalanche Fuji. Fire a new one at <a href="/demo" style="color:var(--accent);">/demo</a> → it appears here within 5 seconds.</p>
+        </div>
+        <button id="btn-refresh-txs" class="btn btn-ghost btn-sm">Refresh now</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Kind</th>
+              <th>Tx Hash</th>
+              <th>Agent</th>
+              <th>Amount</th>
+              <th>Time</th>
+              <th>Explorer</th>
+            </tr>
+          </thead>
+          <tbody id="live-tx-tbody">
+            <tr><td colspan="6" class="text-muted" style="padding:14px;">Loading real Fuji txs…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Key Metrics — live from ChainTransaction -->
+    <div class="grid-4 mb-32">
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Total Agents</div>
+        <div class="stat-value">{{ stats.total_agents }}</div>
+        <div class="stat-change up mt-8">{{ stats.verified_agents }} verified on-chain</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Pending Verifications</div>
+        <div class="stat-value" style="color:var(--warning);">{{ stats.pending_verifications }}</div>
+        <a href="/admin/verification-queue" class="text-xs text-accent mt-8" style="display:block;">Review queue →</a>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Active Orders</div>
+        <div class="stat-value">{{ stats.active_orders }}</div>
+        <div class="stat-change up mt-8">{{ stats.settle_count }} total settled</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-muted mb-8" style="text-transform:uppercase; letter-spacing:.06em;">Total Stake Locked</div>
+        <div class="stat-value" style="color:var(--warning);">${{ "{:,.0f}".format(stats.total_stake_usdc) }}</div>
+        <div class="stat-change up mt-8">across {{ stats.verified_agents }} bonded agents</div>
+      </div>
+    </div>
+
+    <div class="grid-2 gap-24 mb-32">
+      <!-- Hourly Revenue -->
+      <div class="chart-wrap">
+        <div class="chart-header">
+          <span class="chart-title">Revenue by Hour (Today)</span>
+          <span class="live-indicator"><span class="live-dot"></span> Live</span>
+        </div>
+        <div style="height:200px;">
+          <canvas id="hourly-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Platform Split -->
+      <div class="chart-wrap">
+        <div class="chart-header">
+          <span class="chart-title">Revenue Breakdown</span>
+        </div>
+        <div style="height:200px;">
+          <canvas id="breakdown-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Volume + Breakdown — all live from CT -->
+    {% set this_mo = stats.monthly[-1] if stats.monthly else 0 %}
+    {% set last_mo = stats.monthly[-2] if stats.monthly and stats.monthly|length > 1 else 0 %}
+    {% set delta_pct = ((this_mo - last_mo) / last_mo * 100) if last_mo > 0 else 0 %}
+    {% set avg_order = (stats.total_volume / stats.deposit_count) if stats.deposit_count > 0 else 0 %}
+    <div class="card mb-24">
+      <div class="flex-between mb-20">
+        <h3>Total Volume</h3>
+        <div class="flex-center gap-12">
+          <span class="text-2xl font-bold" style="font-size:1.5rem; font-weight:700;">${{ "{:,.2f}".format(stats.total_volume) }} USDC</span>
+          <span class="stat-change {% if delta_pct >= 0 %}up{% else %}down{% endif %}">{% if delta_pct >= 0 %}↑{% else %}↓{% endif %} {{ "{:.1f}".format(delta_pct|abs) }}% MoM</span>
+        </div>
+      </div>
+      <div class="grid-4">
+        <div>
+          <div class="text-xs text-muted mb-4">Settled (lifetime)</div>
+          <div class="font-bold" style="font-size:1.125rem;">${{ "{:,.2f}".format(stats.usdc_settled) }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-muted mb-4">Deposits Total</div>
+          <div class="font-bold" style="font-size:1.125rem; color:var(--warning);">{{ "{:,}".format(stats.deposit_count) }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-muted mb-4">Protocol Fees (10 bps)</div>
+          <div class="font-bold" style="font-size:1.125rem; color:var(--success);">${{ "{:,.2f}".format(stats.platform_fees) }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-muted mb-4">Avg Order Value</div>
+          <div class="font-bold" style="font-size:1.125rem;">${{ "{:,.2f}".format(avg_order) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Agents -->
+    <div class="card">
+      <div class="flex-between mb-16">
+        <h3>All Agents</h3>
+        <a href="/marketplace" class="btn btn-ghost btn-sm">View Marketplace →</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Seller</th>
+              <th>Category</th>
+              <th>Verification</th>
+              <th>Rating</th>
+              <th>Tasks</th>
+              <th>Surge</th>
+            </tr>
+          </thead>
+          <tbody>
+            {# Most-recently-listed agents first so the 5 new demo agents
+               (ResumeForge, PRCopy Pro, etc) surface immediately. #}
+            {% for agent in (agents | sort(attribute='id', reverse=True))[:8] %}
+            <tr>
+              <td class="font-bold">{{ agent.name }}</td>
+              <td class="text-muted">{{ agent.seller }}</td>
+              <td>{{ agent.category }}</td>
+              <td>
+                {% if agent.verified %}
+                <span class="badge badge-verified">✓ {{ agent.verification_tier.title() }}</span>
+                {% else %}
+                <span class="badge badge-unverified">Unverified</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="rating" title="{{ agent.rating }} out of 5">
+                  <span class="rating-stars" style="--star-fill:{{ ((agent.rating / 5) * 100) | round(1) }}%;" aria-label="{{ agent.rating }} out of 5">★★★★★</span>
+                  <span class="rating-value">{{ "%.1f"|format(agent.rating) }}</span>
+                </div>
+              </td>
+              <td>{{ "{:,}".format(agent.tasks_completed) }}</td>
+              <td>
+                {% if agent.surge_active %}
+                <span class="badge badge-surge">SURGE x{{ agent.surge_multiplier }}</span>
+                {% else %}
+                <span class="text-muted text-xs">--</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+makeBarChart('hourly-chart',
+  {{ stats.revenue_labels | tojson }},
+  [{
+    label: 'Revenue (USDC)',
+    data: {{ stats.hourly_revenue | tojson }},
+    backgroundColor: 'rgba(59,130,246,.5)',
+    borderColor: '#3B82F6',
+    borderWidth: 1,
+  }]
+);
+
+makeDoughnutChart('breakdown-chart',
+  {{ stats.breakdown_labels | tojson }},
+  {{ stats.breakdown_values | tojson }},
+  ['#3B82F6', '#22C55E']
+);
+
+// ── Live Fuji tx feed — polls /api/transactions?real_only=1 every 5s ──────
+(async function liveTxFeed() {
+  const KIND_COLOR = {
+    register: '#7fb3ff', deposit: '#7fb3ff', stake: '#ffdb7f',
+    settle: '#5ade7a', a2a_hire: '#5ade7a', slash: '#ff7f7f',
+    refund: '#ffdb7f', listing_update: '#9aa4b2',
+  };
+  const short = (h) => h ? ((h.startsWith('0x')?h:'0x'+h).slice(0,10) + '…' + h.slice(-6)) : '—';
+  const ago = (ts) => {
+    const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s/60) + 'm';
+    if (s < 86400) return Math.floor(s/3600) + 'h';
+    return Math.floor(s/86400) + 'd';
+  };
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/transactions?real_only=1&limit=20');
+      const d = await r.json();
+      const tbody = document.getElementById('live-tx-tbody');
+      if (!d.transactions || !d.transactions.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:14px;">No real Fuji txs yet. Fire one at <a href="/demo" style="color:var(--accent);">/demo</a>.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = d.transactions.map(tx => {
+        const color = KIND_COLOR[tx.kind] || '#9aa4b2';
+        const h = tx.txHash && tx.txHash.startsWith('0x') ? tx.txHash : '0x' + (tx.txHash || '');
+        const explorerUrl = 'https://subnets-test.avax.network/c-chain/tx/' + h;
+        const amt = tx.amountUSDCDisplay ? '$' + Number(tx.amountUSDCDisplay).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+        const agent = tx.agentId ? '#' + tx.agentId : '—';
+        return `<tr>
+          <td><span style="color:${color}; font-weight:700; font-family:var(--font-mono); font-size:.75rem;">${tx.kind}</span></td>
+          <td><span class="font-mono text-xs">${short(h)}</span></td>
+          <td>${agent}</td>
+          <td>${amt}</td>
+          <td class="text-muted text-xs">${ago(tx.ts)} ago</td>
+          <td><a href="${explorerUrl}" target="_blank" style="color:var(--accent); font-size:.72rem;">Ava Labs ↗</a></td>
+        </tr>`;
+      }).join('');
+    } catch (e) {
+      console.warn('live-tx-feed failed:', e);
+    }
+  }
+  await refresh();
+  setInterval(refresh, 5000);
+  document.getElementById('btn-refresh-txs')?.addEventListener('click', refresh);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+{% block title %}Checkout: {{ agent.name }}{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top:40px; padding-bottom:64px;">
+  <div class="flex-center gap-8 mb-24 text-sm text-muted">
+    <a href="/agent/{{ agent.id }}" class="text-muted" style="text-decoration:underline;">{{ agent.name }}</a>
+    <span>›</span>
+    <span style="color:var(--text);">Checkout</span>
+  </div>
+
+  <h1 style="font-size:1.75rem; margin-bottom:32px;">Complete Your Order</h1>
+
+  <div class="checkout-layout">
+    <!-- ── Left ──────────────────────────────────────────────────────────── -->
+    <div class="flex-col gap-20">
+
+      <!-- Wallet -->
+      <div class="card">
+        <div class="flex-between mb-16">
+          <h3>Wallet</h3>
+          <span class="badge badge-pending" id="wallet-status-badge">Not Connected</span>
+        </div>
+        <p class="text-sm mb-16" id="checkout-wallet-desc">Connect your wallet to pay with USDC on Avalanche Fuji.</p>
+        <button class="btn btn-secondary w-full" id="checkout-wallet-btn" type="button" onclick="__walletClick(event)">Connect Wallet</button>
+        <div class="flex-between mt-12 text-xs text-muted" style="font-family:var(--font-mono);">
+          <span>Token</span><span>USDC · MockUSDC 0x9C49…</span>
+        </div>
+        <!-- Appears once wallet is connected — fires the on-chain payment
+             directly so the rent flow is a single click from this state. -->
+        <button type="button" id="wallet-proceed" onclick="document.getElementById('confirm-pay')?.scrollIntoView({behavior:'smooth', block:'center'}); setTimeout(() => document.getElementById('confirm-pay')?.click(), 600);" style="display:none; width:100%; margin-top:14px; padding:11px 14px; background:linear-gradient(135deg, rgba(34,197,94,.15), rgba(34,197,94,.06)); border:1px solid var(--green); border-radius:8px; color:var(--green); font-family:var(--font-mono); font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; cursor:pointer; transition:filter .12s;">
+          → Fund escrow & pay now
+        </button>
+      </div>
+      <script>
+      // Sync this card with the global wallet state
+      (function() {
+        function sync() {
+          const addr = (document.cookie.match(/(?:^|;\s*)buyer_wallet=(0x[a-fA-F0-9]{40})/) || [])[1];
+          const badge = document.getElementById('wallet-status-badge');
+          const btn   = document.getElementById('checkout-wallet-btn');
+          const desc  = document.getElementById('checkout-wallet-desc');
+          const go    = document.getElementById('wallet-proceed');
+          if (addr) {
+            const short = addr.slice(0,6) + '…' + addr.slice(-4);
+            const isDemo = addr.toLowerCase() === '0xdb4135c6884d81497769440788306ee985dd1a6e';
+            if (badge) { badge.textContent = 'Connected'; badge.className = 'badge badge-approved'; }
+            if (btn)   { btn.textContent = (isDemo?'◆ ':'') + short; }
+            if (desc)  { desc.textContent = 'Connected to Avalanche Fuji. Ready to fund escrow.'; }
+            if (go)    { go.style.display = 'block'; }
+          }
+        }
+        document.addEventListener('DOMContentLoaded', sync);
+        window.addEventListener('agenthire:connected', sync);
+      })();
+      </script>
+
+      <!-- Task Details — description is sent to the agent's LLM as the prompt -->
+      <div class="card">
+        <h3 style="margin-bottom:16px;">Task Details</h3>
+        <div class="form-group">
+          <label class="form-label">Task Description</label>
+          <textarea id="task-description" class="form-textarea" placeholder="Describe what you need {{ agent.name }} to do. This is sent to the agent as the prompt after the escrow payment settles." style="min-height:120px;"></textarea>
+          <div class="form-hint mt-8" style="font-family:var(--font-mono);">Sent to {{ agent.name }} via Akash-hosted Qwen 2.5 after the on-chain escrow confirms.</div>
+        </div>
+      </div>
+
+      {% if a2a.composable %}
+      <!-- ── A2A Budget Controls ────────────────────────────────────────── -->
+      <div class="card" style="border-color:rgba(79,116,255,.2);">
+        <div class="flex-center gap-10 mb-18">
+          <span class="exec-type-badge exec-type-composable">A2A Composable</span>
+          <span class="text-xs text-muted">Sub-agent costs apply</span>
+        </div>
+
+        <!-- Max Spend Limit -->
+        <div class="max-spend-control mb-16">
+          <div class="flex-between">
+            <div>
+              <div class="font-bold text-sm mb-2">Max Spend Limit</div>
+              <p class="text-xs">Agent cannot exceed this amount under any circumstance.</p>
+            </div>
+            <span class="badge badge-approved">Hard Cap</span>
+          </div>
+          <div class="max-spend-input-wrap">
+            <div class="max-spend-prefix">$</div>
+            <input type="number" class="max-spend-input" id="max-spend-input"
+                   value="1.00" min="0.01" step="0.01"
+                   oninput="updateMaxSpend(this.value)">
+            <div class="max-spend-suffix">USDC</div>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-top:8px;">
+            {% for preset in ['0.25','0.50','1.00','2.00','5.00'] %}
+            <button class="btn btn-ghost btn-sm" style="font-family:var(--font-mono); font-size:.6875rem; padding:4px 10px;"
+                    onclick="document.getElementById('max-spend-input').value='{{ preset }}'; updateMaxSpend('{{ preset }}');">${{ preset }}</button>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Sub-agent permission -->
+        <div class="form-group mb-16">
+          <label class="form-label">Sub-Agent Permission</label>
+          <select class="permission-select" id="subagent-permission" onchange="updatePermissionHint(this.value)">
+            <option value="auto">Auto - use sub-agents within budget</option>
+            <option value="ask">Ask before exceeding estimate</option>
+            <option value="disable">Disable sub-agents</option>
+          </select>
+          <div class="form-hint mt-8" id="permission-hint" style="font-family:var(--font-mono);">
+            Sub-agents will run automatically within your max spend limit.
+          </div>
+        </div>
+
+        <!-- Sub-agent list for awareness -->
+        <div style="border-top:1px solid var(--border); padding-top:14px;">
+          <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:10px;">Possible Sub-Agents</div>
+          {% for sa in a2a.sub_agents %}
+          <div class="flex-between py-8" style="border-bottom:1px solid var(--border); {{ 'border-bottom:none;' if loop.last }}">
+            <div class="flex-center gap-8">
+              <div style="width:6px; height:6px; border-radius:50%; background:var(--green);"></div>
+              <span class="text-sm">{{ sa.name }}</span>
+              <span class="text-xs text-muted">· {{ sa.role }}</span>
+            </div>
+            <span style="font-family:var(--font-mono); font-size:.75rem; color:var(--amber);">${{ "%.3f"|format(sa.est_cost_low) }}-${{ "%.3f"|format(sa.est_cost_high) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Escrow Explanation -->
+      <div class="card" style="background:rgba(79,116,255,.03); border-color:rgba(79,116,255,.12);">
+        <h4 style="margin-bottom:14px; color:var(--blue);">How Escrow Works</h4>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-dot done">1</div>
+            <div class="timeline-content" style="padding-top:3px;">
+              <h4>Payment Locked</h4>
+              <p>Your USDC is held in a smart contract - no one can access it until the task is complete.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot active">2</div>
+            <div class="timeline-content" style="padding-top:3px;">
+              <h4>Agent Executes{% if a2a.composable %} (+ Sub-Agents){% endif %}</h4>
+              <p>{% if a2a.composable %}Main agent and any called sub-agents run within your approved budget.{% else %}The agent runs your task. You can monitor progress in real-time.{% endif %}</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot">3</div>
+            <div class="timeline-content" style="padding-top:3px;">
+              <h4>You Confirm Delivery</h4>
+              <p>Review results. Confirm to release - or open a dispute within 48 hours.</p>
+            </div>
+          </div>
+          <div class="timeline-item" style="padding-bottom:0;">
+            <div class="timeline-dot">4</div>
+            <div class="timeline-content" style="padding-top:3px;">
+              <h4>Funds Released</h4>
+              <p>Exact amount used is released. {% if a2a.composable %}Unused portion of your max spend is returned.{% endif %}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right: Order Summary ────────────────────────────────────────── -->
+    <div style="position:sticky; top:24px;">
+      <div class="price-box mb-16">
+        <h3 style="margin-bottom:20px;">Order Summary</h3>
+
+        <!-- Agent info -->
+        <div class="flex-center gap-12 mb-20 pb-20" style="border-bottom:1px solid var(--border);">
+          {% set cat_codes = {'Development':'DEV','Data & Analytics':'DAT','Content':'CON','Finance':'FIN','Research':'RES','Security':'SEC','Automation':'AUT'} %}
+          <div class="agent-avatar" style="background:var(--card-3); color:var(--{{ 'green' if agent.verified else 'amber' }});">
+            {{ cat_codes.get(agent.category,'AGT') }}
+          </div>
+          <div>
+            <div class="font-bold">{{ agent.name }}</div>
+            <div class="text-xs text-muted">by {{ agent.seller }}</div>
+            {% if agent.verified %}<span class="badge badge-verified mt-4" style="display:inline-flex;">Verified</span>{% endif %}
+          </div>
+        </div>
+
+        {# Compute sub-agent cost range dynamically from the A2A workflow
+           definition. No hardcoded strings. The range is the sum of each
+           sub_agent's est_cost_low / est_cost_high, surge-multiplied if the
+           base agent is currently in surge. #}
+        {% set base_unit = agent.current_price * (agent.surge_multiplier or 1.0) %}
+        {% set sub_low   = (a2a.sub_agents or []) | sum(attribute='est_cost_low',  start=0.0) %}
+        {% set sub_high  = (a2a.sub_agents or []) | sum(attribute='est_cost_high', start=0.0) %}
+        {# "Per task" estimate: base × typical-tokens (50) + sub-agent range #}
+        {% set typical_tokens = 50 %}
+        {% set total_low  = (base_unit * typical_tokens) + sub_low %}
+        {% set total_high = (base_unit * typical_tokens) + sub_high %}
+        {% set hard_cap   = (total_high * 1.25) | round(2) %}
+        <!-- Cost breakdown -->
+        <div class="cost-breakdown mb-16">
+          <div class="cost-row">
+            <span class="cost-label">Base agent</span>
+            <div>
+              <div class="cost-value">${{ "%.5f"|format(base_unit) }}</div>
+              <div style="font-family:var(--font-mono); font-size:.5625rem; color:var(--text-3); text-align:right;">per {{ 'token' if agent.billing == 'per_token' else 'min' }}</div>
+            </div>
+          </div>
+          {% if a2a.composable and a2a.sub_agents %}
+          <div class="cost-row">
+            <div>
+              <div class="cost-label">Sub-agent usage (est.)</div>
+              <div class="cost-variable-note">{{ a2a.sub_agents|length }} sub-agent{{ 's' if a2a.sub_agents|length != 1 }} · depends on task complexity</div>
+            </div>
+            <span class="cost-value range">${{ "%.4f"|format(sub_low) }} – ${{ "%.4f"|format(sub_high) }}</span>
+          </div>
+          {% endif %}
+          {% if agent.surge_active %}
+          <div class="cost-row" style="background:var(--amber-dim);">
+            <span class="cost-label" style="color:var(--amber);">Surge ×{{ "%.2f"|format(agent.surge_multiplier) }}</span>
+            <span class="cost-value" style="color:var(--amber);">Active · applied to base</span>
+          </div>
+          {% endif %}
+          <div class="cost-row total">
+            <div>
+              <div class="cost-label font-bold" style="color:var(--text);">
+                {% if a2a.composable %}Estimated Total ({{ typical_tokens }} tok){% else %}Total ({{ typical_tokens }} tok){% endif %}
+              </div>
+              {% if a2a.composable and a2a.sub_agents %}<div class="cost-variable-note">Final cost depends on sub-agent usage</div>{% endif %}
+            </div>
+            <span class="cost-value" style="color:var(--text); font-size:1rem;">
+              {% if a2a.composable and a2a.sub_agents %}
+                ${{ "%.4f"|format(total_low) }} – ${{ "%.4f"|format(total_high) }}
+              {% else %}
+                ${{ "%.4f"|format(base_unit * typical_tokens) }}
+              {% endif %}
+            </span>
+          </div>
+        </div>
+
+        {% if a2a.composable %}
+        <!-- Hard Spend Cap — derived: 25% above upper estimate -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:var(--card-3); border:1px solid var(--border-2); border-radius:var(--radius-sm); margin-bottom:16px;">
+          <div>
+            <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.09em; color:var(--text-3);">Hard Spend Cap</div>
+            <div style="font-family:var(--font-mono); font-size:1.25rem; font-weight:700; color:var(--text); margin-top:2px;" id="max-spend-display">${{ "%.2f"|format(hard_cap) }} USDC</div>
+            <div style="font-family:var(--font-mono); font-size:.5rem; color:var(--text-3); margin-top:3px;">= upper estimate × 1.25 buffer</div>
+          </div>
+          <span class="badge badge-approved">Enforced</span>
+        </div>
+        {% endif %}
+
+        <div class="escrow-notice mb-16">
+          <span class="icon" style="font-size:.75rem;font-family:var(--font-mono);color:var(--blue);font-weight:700;">ESC</span>
+          <p>{% if a2a.composable %}Funds held in escrow up to your max spend cap. Unused balance returned on completion.{% else %}Full amount held in escrow - released after task confirmation.{% endif %}</p>
+        </div>
+
+        <button class="btn btn-gradient btn-full btn-lg" id="confirm-pay"
+                data-agent-id="{{ agent.id }}"
+                data-agent-name="{{ agent.name }}">
+          Confirm & Pay in Escrow
+        </button>
+        <div id="pay-status" style="margin-top:12px; font-family:var(--font-mono); font-size:.75rem; color:var(--text-3); text-align:center;"></div>
+        <a href="/agent/{{ agent.id }}" class="btn btn-ghost btn-full btn-sm mt-8">← Back to Agent</a>
+
+        <script>
+        // Checkout pay flow. Default path: server-side facilitator signs the
+        // tx (demo wallet is the facilitator, so no client signing needed).
+        // If the user has a real injected wallet with a signer attached,
+        // we route through payWithX402 so they sign the EIP-3009 permit
+        // themselves. Otherwise we hit /api/sim/trigger-direct which fires
+        // the real Fuji tx from the server-side facilitator.
+        (() => {
+          const btn = document.getElementById('confirm-pay');
+          const statusEl = document.getElementById('pay-status');
+          if (!btn) return;
+          btn.addEventListener('click', async () => {
+            const agentId    = Number(btn.dataset.agentId);
+            const agentName  = btn.dataset.agentName || 'the agent';
+            const maxSpendInput = document.getElementById('max-spend-input');
+            const depositUSDC = Number(maxSpendInput && maxSpendInput.value) || 1;
+            const taskPrompt = (document.getElementById('task-description')?.value || '').trim()
+                             || ('Hired ' + agentName + ' via x402');
+            btn.disabled = true;
+            const setStatus = (s) => { statusEl.textContent = s; };
+            const buyerWalletConn = (window.AgentHire && window.AgentHire.address) ||
+                                    (document.cookie.match(/buyer_wallet=(0x[a-fA-F0-9]{40})/) || [])[1] ||
+                                    '';
+            // x402 handshake log panel — shows the HTTP 402 → 200 transition
+            // live so reviewers see the protocol actually running.
+            statusEl.innerHTML = `
+              <div id="x402-log" style="text-align:left; background:var(--card-2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-family:var(--font-mono); font-size:.68rem; line-height:1.7; color:var(--text-2); white-space:pre-wrap; word-break:break-word; max-height:200px; overflow:auto;"></div>`;
+            const log = (line) => {
+              const el = document.getElementById('x402-log');
+              if (el) { el.textContent += line + '\n'; el.scrollTop = el.scrollHeight; }
+            };
+            const qs = '?amountUSDC=' + encodeURIComponent(depositUSDC) +
+                       '&buyerWallet=' + encodeURIComponent(buyerWalletConn) +
+                       '&prompt=' + encodeURIComponent(taskPrompt);
+            try {
+              log('→ GET /api/x402/demo-execute/' + agentId);
+              const r1 = await fetch('/api/x402/demo-execute/' + agentId + qs);
+              if (r1.status !== 402) {
+                log('unexpected status ' + r1.status + ' (expected 402)');
+                throw new Error('expected HTTP 402, got ' + r1.status);
+              }
+              const challenge = await r1.json();
+              log('← HTTP 402 Payment Required');
+              log('  price:  ' + challenge.challenge.price.amountUSDC + ' USDC');
+              log('  permit: EIP-3009 transferWithAuthorization');
+              log('');
+              log('→ POST /api/x402/auto-sign  (facilitator signs EIP-3009 permit)');
+              const rSign = await fetch('/api/x402/auto-sign', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ amountUSDC: depositUSDC, agentId }),
+              });
+              const signed = await rSign.json();
+              if (!signed.ok) throw new Error(signed.error || 'auto-sign failed');
+              log('← signature ready (v,r,s) · ' + String(signed.permit.nonce).slice(0, 18) + '…');
+              log('');
+              log('→ POST /api/x402/demo-execute/' + agentId + '  (with X-Payment header)');
+              const r2 = await fetch('/api/x402/demo-execute/' + agentId + qs, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Payment':    JSON.stringify(signed.permit),
+                },
+              });
+              const d = await r2.json();
+              if (!r2.ok || !d.ok) throw new Error(d.detail || d.error || ('HTTP ' + r2.status));
+              const rec = d.x402Receipt || {};
+              const h = rec.txHash || '';
+              log('← HTTP 200 OK · settled');
+              log('  tx: ' + h);
+
+              // Success panel — payment on-chain + Akash agent working on task
+              const avaxUrl  = rec.explorer || ('https://subnets-test.avax.network/c-chain/tx/' + h);
+              const orderUrl = d.orderId ? ('/order/' + d.orderId) : '';
+              document.getElementById('x402-log').insertAdjacentHTML('afterend', `
+                <div style="margin-top:12px; text-align:left; background:rgba(34,197,94,.06); border:1px solid var(--green); border-radius:10px; padding:14px 16px; line-height:1.55; margin-bottom:12px;">
+                  <div style="color:var(--green); font-weight:700; letter-spacing:.08em; text-transform:uppercase; font-size:.625rem; margin-bottom:6px;">✓ Paid via HTTP 402 handshake · gasless</div>
+                  <div style="font-size:.82rem; color:var(--text); margin-bottom:8px;">${d.orderId || ''} · $${depositUSDC.toFixed(2)} USDC · ${agentName}</div>
+                  <div style="word-break:break-all; color:var(--text-3); margin-bottom:10px; font-size:.68rem;">${h}</div>
+                  <div style="display:flex; gap:14px; flex-wrap:wrap;">
+                    <a href="${avaxUrl}" target="_blank" style="color:var(--accent); font-weight:600;">→ Ava Labs tx ↗</a>
+                    ${orderUrl ? `<a href="${orderUrl}" style="color:var(--accent);">→ Order receipt</a>` : ''}
+                    <a href="/active-jobs" style="color:var(--accent);">→ Active jobs</a>
+                  </div>
+                </div>
+                <div id="akash-wrap" style="background:rgba(95,227,227,.05); border:1px solid rgba(95,227,227,.25); border-radius:10px; padding:14px 16px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-family:var(--font-mono); font-size:.625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--accent);">⚡ ${agentName} · Akash · Qwen 2.5 Coder 7B</span>
+                    <span id="akash-meta" style="font-family:var(--font-mono); font-size:.58rem; color:var(--text-3);">generating…</span>
+                  </div>
+                  <pre id="akash-out" style="font-family:var(--font-mono); font-size:.78rem; line-height:1.55; white-space:pre-wrap; word-break:break-word; margin:0; color:var(--text-2); max-height:300px; overflow:auto;">Running your task on decentralized GPU compute…</pre>
+                </div>`);
+              window.open(avaxUrl, '_blank');
+
+              // Fire the real Akash generate call for the agent's response
+              try {
+                const g = await fetch('/api/agents/' + agentId + '/generate', {
+                  method: 'POST', headers: {'Content-Type':'application/json'},
+                  body: JSON.stringify({ prompt: taskPrompt, maxTokens: 400 }),
+                });
+                const gd = await g.json();
+                const outEl  = document.getElementById('akash-out');
+                const metaEl = document.getElementById('akash-meta');
+                if (g.ok && gd.response) {
+                  outEl.textContent = gd.response;
+                  metaEl.textContent = `${gd.totalTokens||'?'} tokens · ${gd.latencyMs||'?'} ms`;
+                } else {
+                  outEl.textContent = '(Akash inference unavailable — payment already settled)';
+                  metaEl.textContent = gd.error ? String(gd.error).slice(0, 80) : 'offline';
+                }
+              } catch (akashErr) {
+                const outEl = document.getElementById('akash-out');
+                if (outEl) outEl.textContent = '(Akash error: ' + (akashErr.message || akashErr) + ')';
+              }
+              if (window.showToast) showToast('HTTP 402 → 200 · paid & escrowed', 'success');
+              btn.textContent = 'Pay Again';
+              btn.disabled = false;
+            } catch (e) {
+              console.error(e);
+              log('');
+              log('✗ ' + (e.message || e));
+              if (window.showToast) showToast('x402 payment failed: ' + (e.message || e), 'error');
+              btn.textContent = 'Confirm & Pay in Escrow';
+              btn.disabled = false;
+            }
+          });
+        })();
+        </script>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  startLivePriceTicker({{ agent.id }});
+
+  const cwBtn  = document.getElementById('checkout-wallet-btn');
+  const badge  = document.getElementById('wallet-status-badge');
+  if (cwBtn) {
+    cwBtn.addEventListener('click', async () => {
+      try {
+        const addr = await window.AgentHire.connectWallet();
+        if (addr) {
+          cwBtn.textContent = window.AgentHire.short(addr) + ' ✓';
+          cwBtn.classList.replace('btn-secondary', 'btn-success');
+          badge.className = 'badge badge-approved';
+          badge.textContent = 'Connected';
+        }
+      } catch (e) {
+        showToast('Wallet connect failed: ' + e.message, 'error');
+      }
+    });
+  }
+
+  // Restore connected state if wallet already active
+  window.addEventListener('agenthire:connected', (e) => {
+    if (cwBtn && e.detail && e.detail.address) {
+      cwBtn.textContent = window.AgentHire.short(e.detail.address) + ' ✓';
+      cwBtn.classList.replace('btn-secondary', 'btn-success');
+      if (badge) { badge.className = 'badge badge-approved'; badge.textContent = 'Connected'; }
+    }
+  });
+
+  function updateMaxSpend(val) {
+    const el = document.getElementById('max-spend-display');
+    if (el) el.textContent = '$' + parseFloat(val || 0).toFixed(2) + ' USDC';
+  }
+
+  function updatePermissionHint(val) {
+    const hints = {
+      auto:    'Sub-agents will run automatically within your max spend limit.',
+      ask:     'Execution will pause and ask for your approval before exceeding the estimate.',
+      disable: 'Sub-agents are disabled. Only the base agent runs - some features may be limited.'
+    };
+    const el = document.getElementById('permission-hint');
+    if (el) el.textContent = hints[val] || '';
+  }
+</script>
+{% endblock %}
