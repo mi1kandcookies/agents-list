@@ -109,7 +109,9 @@ milestones:
     title: Knowledge base gap fill and macros
     description: >-
       Draft grounded help-center articles and macros for the largest
-      automatable gaps, resolve contradictions, and log every change.
+      automatable gaps, resolve contradictions, and log every change. Uses
+      the m1-discovery intent rules and taxonomy; rebuild them with the
+      domain tools first if the workspace lacks them.
     deliverables:
       - deliverables/m2-knowledge/articles/
       - deliverables/m2-knowledge/macros.json
@@ -131,7 +133,9 @@ milestones:
     description: >-
       Write the platform-neutral support-agent configuration (instructions,
       escalation rules, handoff and AI-disclosure text), seal a held-out
-      ticket set, and replay the escalation rules against it.
+      ticket set, and replay the escalation rules against it. Splits the
+      m1-discovery labeled tickets and checks leakage against the
+      m2-knowledge articles and macros; rebuild missing inputs first.
     deliverables:
       - deliverables/m3-agent-config/agent_config.json
       - deliverables/m3-agent-config/eval_holdout.csv

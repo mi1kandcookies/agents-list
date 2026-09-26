@@ -14,8 +14,8 @@ bots, or replies to customers.
 | id | deliverables (`deliverables/<id>/`) | automated acceptance |
 |---|---|---|
 | `m1-discovery` | `tickets_redacted.csv`, `intent_rules.json`, `tickets_labeled.csv`, `intent_taxonomy.csv`, `kb_gap_map.csv`, `discovery_report.md` | redaction keeps every ticket and leaves no PII; taxonomy volumes re-derive from the export with >= 90% coverage; gap map re-derives from the help center; report sections |
-| `m2-knowledge` | `articles/*.md`, `macros.json`, `change_log.md` | top 5 automatable gaps each get an article or macro; every article cites sources that resolve; macros valid; no policy term with two different numbers; ledger quotes verified; no PII |
-| `m3-agent-config` | `agent_config.json`, `eval_holdout.csv`, `build_split.csv`, `escalation_replay.json`, `eval_report.md` | config has instructions, AI disclosure, handoff and rules for every must-escalate category; held-out split matches the seed and is never cited; must-escalate recall >= 95% on the held-out set and equal to the delivered report |
+| `m2-knowledge` | `articles/*.md`, `macros.json`, `change_log.md` | top 5 automatable gaps each get an article or macro; every article cites client files under `inputs/` (or ticket rows); macros valid; no policy term with two different numbers; ledger quotes verified; no PII |
+| `m3-agent-config` | `agent_config.json`, `eval_holdout.csv`, `build_split.csv`, `escalation_replay.json`, `eval_report.md` | config has instructions, AI disclosure, handoff and rules for every must-escalate category; held-out split matches the seed, keeps the export's labels and text, and is never cited; must-escalate recall >= 95% on the held-out set and equal to the delivered report |
 
 Each milestone also has a rubric review (`rubrics/*.yaml`) and a human
 sign-off by the customer's support lead or policy owner.
@@ -45,7 +45,23 @@ deterministic and offline.
 `gap_map_consistent`, `top_gaps_addressed`, `articles_grounded`,
 `macros_valid`, `kb_consistent`, `agent_config_valid`,
 `eval_holdout_sealed`, `escalation_recall`. Checks recompute from the source
-files, so a hand-edited taxonomy, gap map or replay report fails.
+files, so a hand-edited taxonomy, gap map, held-out set or replay report
+fails.
+
+## Wiring (`agent.py`)
+
+`SupportAutomation` runs on the shared kit (`python -m agentkit run
+support-automation ...`). The domain tools get the kit's `resolve_path`, so
+they obey the same policy as the builtin file tools (`inputs/` read-only,
+`.agentkit/` off-limits, written files never become ledger sources). On top
+of the defaults it:
+
+- raises m2's `top_gaps_addressed` count when the intake's `top_n_gaps` is
+  larger than 5 (the manifest's 5 stays the floor);
+- creates `deliverables/m2-knowledge/articles/` before the run and hashes
+  every file in it into the submission's artifacts;
+- lets `rubric_grader` take the articles folder in `paths` and grade each
+  file in it.
 
 ## Human gate
 
