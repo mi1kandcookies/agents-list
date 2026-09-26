@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from agentkit.checks.builtin import citations as kit_citations
 from agentkit.errors import ToolError
 from agentkit.ledger import Ledger
 
@@ -64,7 +65,6 @@ _COMMUNITY_HOSTS = ("reddit.com", "quora.com", "medium.com", "substack.com", "bl
                     "linkedin.com", "youtube.com")
 
 _CLAIM_ID = re.compile(r"^C\d+$")
-_CITATION = re.compile(r"\[(C\d+)\]")
 _ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
 
@@ -458,7 +458,9 @@ def build_sizing_model(workspace: Path, *, currency: str, top_down: dict[str, An
 
 
 def citations_in(text: str) -> list[str]:
-    return _CITATION.findall(text or "")
+    """Claim ids cited in text, read exactly as the kit's citations_resolve
+    reads them (single [C1] or grouped [C1, C2]), in numeric order."""
+    return sorted(kit_citations(text or ""), key=lambda cid: int(cid[1:]))
 
 
 TOOL_DEFS: list[dict[str, Any]] = [

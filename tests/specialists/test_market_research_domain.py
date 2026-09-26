@@ -382,6 +382,18 @@ def test_matrix_cells_cited_rejects_hand_edits(ws):
     assert "no [C#] citation" in res["details"]
 
 
+def test_grouped_citations_read_like_the_kit(ws):
+    assert tools.citations_in("see [C12] and [C3, C4; C3]") == ["C3", "C4", "C12"]
+    _evidence_ws(ws)
+    _write_report(ws, REPORT.replace("| [C5] |", "| [C5, C1] |"))
+    res = checks.report_answers_questions(ws, {})
+    assert res["passed"] is True and res["score"] == pytest.approx(2 / 3, abs=1e-4)
+    _matrix(ws)
+    path = ws / tools.MATRIX_PATH
+    path.write_text(path.read_text(encoding="utf-8").replace("[C4]", "[C4; C99]"), encoding="utf-8")
+    assert "C99 is not a verified" in checks.matrix_cells_cited(ws, {})["details"]
+
+
 def test_sizing_model_consistent(ws):
     tools.build_sizing_model(ws, **_sizing_args())
     res = checks.sizing_model_consistent(ws, {"tolerance": 0.30})
