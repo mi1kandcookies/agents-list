@@ -18,7 +18,8 @@ from chain.config import explorer_url
 
 log = logging.getLogger(__name__)
 
-CATEGORIES = ["Development", "Data & Analytics", "Content", "Finance", "Research", "Security", "Automation"]
+CATEGORIES = ["Development", "Data & Analytics", "Content", "Finance", "Research", "Security", "Automation",
+              "Legal", "Accounting", "Business Operations", "Customer Support"]
 USE_CASES = ["Code Review", "Translation", "Summarization", "Web Scraping", "Image Generation", "Testing", "Resume & Career"]
 
 # Listings in these verification tiers are hidden from the catalog.
