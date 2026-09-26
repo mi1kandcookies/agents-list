@@ -538,6 +538,19 @@ def test_manifest_parses_and_names_known_tools_and_checks(manifest):
             assert path.startswith(f"deliverables/{m['id']}/")
 
 
+def test_manifest_prompt_files_exist_and_keep_boundaries(manifest):
+    prompts = [manifest["prompts"]["system"], *manifest["prompts"]["include"]]
+    for rel in prompts:
+        assert (PKG / rel).is_file(), rel
+    system = (PKG / manifest["prompts"]["system"]).read_text(encoding="utf-8")
+    assert "Not investment advice" in system and "ask_client" in system
+    for d in ("inputs/", "deliverables/"):
+        assert d in system
+    # the red-flag playbook lists exactly the ids the check enforces
+    playbook = (PKG / "playbook/red-flags.md").read_text(encoding="utf-8")
+    assert all(f"| {k} |" in playbook for k in C.RED_FLAG_ITEMS)
+
+
 def test_manifest_policy_and_listing(manifest):
     assert manifest["egress"] == {"mode": "allowlist", "allow": ["data.sec.gov", "www.sec.gov"]}
     assert manifest["shell"]["allow"] == []
