@@ -200,6 +200,13 @@ def test_index_dataroom(ws):
     assert md["sha256"] == T.sha256_path(ws / md["path"])
 
 
+def test_index_dataroom_without_data_room_writes_empty_index(tmp_path):
+    out = T.index_dataroom(tmp_path)
+    assert out["files"] == 0 and out["root_exists"] is False
+    assert (tmp_path / T.DATAROOM_INDEX_PATH).read_text(encoding="utf-8").startswith("path,")
+    assert C.dataroom_index_complete(tmp_path, {})["passed"] is True
+
+
 def test_tool_defs_are_well_formed():
     names = [d["name"] for d in T.TOOL_DEFS]
     assert len(names) == len(set(names))
@@ -498,3 +505,56 @@ def test_check_defs_signature(built):
     for fn in C.CHECK_DEFS.values():
         res = fn(built, {}, run=None)
         assert set(res) == {"passed", "details", "score"}
+
+
+# --- manifest ----------------------------------------------------------------------
+
+KIT_TOOLS = {"read_file", "write_file", "edit_file", "list_files", "search_files", "run_command",
+             "http_fetch", "web_search", "read_document", "record_source", "record_claim",
+             "ask_client", "post_progress", "submit_milestone"}
+KIT_CHECKS = {"file_exists", "files_exist", "markdown_sections", "no_placeholders", "word_count",
+              "json_valid", "csv_columns", "command_succeeds", "ledger_verified",
+              "citations_resolve", "disclaimer_present", "rubric_grader", "human_signoff"}
+
+
+@pytest.fixture(scope="module")
+def manifest():
+    yaml = pytest.importorskip("yaml")
+    return yaml.safe_load((PKG / "agent.yaml").read_text(encoding="utf-8"))
+
+
+def test_manifest_parses_and_names_known_tools_and_checks(manifest):
+    assert manifest["schema_version"] == 1 and manifest["slug"] == "financial-research"
+    domain_tools = {d["name"] for d in T.TOOL_DEFS}
+    assert set(manifest["tools"]) <= KIT_TOOLS | domain_tools
+    assert domain_tools <= set(manifest["tools"])
+    for m in manifest["milestones"]:
+        for crit in m["acceptance"]:
+            assert crit["check"] in KIT_CHECKS | set(C.CHECK_DEFS), crit["check"]
+            if crit["check"] == "rubric_grader":
+                rubric = PKG / crit["params"]["rubric"]
+                assert rubric.is_file()
+        for path in m["deliverables"]:
+            assert path.startswith(f"deliverables/{m['id']}/")
+
+
+def test_manifest_policy_and_listing(manifest):
+    assert manifest["egress"] == {"mode": "allowlist", "allow": ["data.sec.gov", "www.sec.gov"]}
+    assert manifest["shell"]["allow"] == []
+    assert manifest["human_gate"]["required"] is False
+    assert "Not investment advice" in manifest["human_gate"]["disclaimer"]
+    assert manifest["listing"]["pricing"]["currency"] == "USDC"
+    assert manifest["models"]["primary"] == "anthropic:claude-opus-5"
+    assert [m["id"] for m in manifest["milestones"]] == ["m1-plan-sources", "m2-spreads-comps",
+                                                         "m3-diligence-memo"]
+    required = {i["field"] for i in manifest["intake"] if i["required"]}
+    assert {"companies", "research_question", "sec_user_agent"} <= required
+
+
+def test_rubrics_are_well_formed():
+    yaml = pytest.importorskip("yaml")
+    for path in (PKG / "rubrics").glob("*.yaml"):
+        rubric = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert set(rubric) == {"name", "criteria", "threshold"}, path.name
+        assert abs(sum(c["weight"] for c in rubric["criteria"]) - 1.0) < 1e-9, path.name
+        assert all(set(c) == {"id", "description", "weight"} for c in rubric["criteria"])

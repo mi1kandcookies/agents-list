@@ -1,0 +1,36 @@
+# Rubric for deliverables/m3-diligence-memo/memo.md and questions.md (grader model).
+name: Diligence memo and question list
+criteria:
+  - id: answers_mandate
+    description: >-
+      The summary answers the research questions from the approved plan
+      directly, with the supporting figures, in the first screen of text.
+    weight: 0.2
+  - id: evidence
+    description: >-
+      Claims are specific and sourced; qualitative statements quote or cite a
+      filing or data-room passage; nothing is asserted beyond what the sources
+      show, and uncertainty is stated plainly.
+    weight: 0.2
+  - id: balance
+    description: >-
+      Bull and bear cases are both argued at full strength with evidence, and
+      key risks are ranked by likelihood and impact rather than listed.
+    weight: 0.2
+  - id: red_flags
+    description: >-
+      Red flags found in the checklist are explained in context (what
+      happened, when, how it was resolved, what it implies) rather than just
+      named.
+    weight: 0.15
+  - id: questions
+    description: >-
+      Management questions are prioritized, specific, and each references the
+      memo section or source gap that motivates it.
+    weight: 0.15
+  - id: professional_boundaries
+    description: >-
+      Reads as analysis for a professional reviewer: no rating, price target,
+      buy/sell/hold language or personalized advice; the disclaimer is present.
+    weight: 0.1
+threshold: 0.8

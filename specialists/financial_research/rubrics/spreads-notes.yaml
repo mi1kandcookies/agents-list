@@ -1,0 +1,26 @@
+# Rubric for deliverables/m2-spreads-comps/spreads_notes.md (grader model).
+name: Spreads and comps notes
+criteria:
+  - id: definitions
+    description: >-
+      Defines every derived figure (EBITDA, total debt, market cap, enterprise
+      value, each multiple and margin) exactly as computed, including which
+      share count and price date were used.
+    weight: 0.3
+  - id: exceptions
+    description: >-
+      Lists every missing metric, non-standard tag, restatement or unmatched
+      spreads row with a specific explanation, and says how it affects
+      comparability.
+    weight: 0.3
+  - id: comparability
+    description: >-
+      Calls out differences that distort the comps (fiscal year ends, one-off
+      items, negative EBITDA or earnings shown as n/m, currency, segment mix).
+    weight: 0.2
+  - id: medians_read
+    description: >-
+      Reports peer medians and where the target sits against them, without
+      turning the comparison into a valuation conclusion or recommendation.
+    weight: 0.2
+threshold: 0.75

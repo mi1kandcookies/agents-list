@@ -598,11 +598,11 @@ def index_dataroom(workspace: Path, *, fetch=None, run=None, root: str = "inputs
     readable=no and a note, never silently dropped.
     """
     base = _safe_path(workspace, root)
-    if not base.is_dir():
-        raise ToolError(f"{root} is not a directory")
     ws = Path(workspace).resolve()
     rows = []
-    for path in sorted(p for p in base.rglob("*") if p.is_file()):
+    # No data room supplied: still write the (empty) index so M1 is explicit.
+    files = sorted(p for p in base.rglob("*") if p.is_file()) if base.is_dir() else []
+    for path in files:
         ext = path.suffix.lower()
         rel = path.resolve().relative_to(ws).as_posix()
         row = {"path": rel, "sha256": sha256_path(path), "bytes": path.stat().st_size,
@@ -619,7 +619,7 @@ def index_dataroom(workspace: Path, *, fetch=None, run=None, root: str = "inputs
         rows.append(row)
     columns = ["path", "sha256", "bytes", "media_type", "pages", "readable", "note"]
     _write_csv(_safe_path(workspace, output), columns, rows)
-    return {"path": output, "files": len(rows),
+    return {"path": output, "files": len(rows), "root_exists": base.is_dir(),
             "unreadable": [r["path"] for r in rows if r["readable"] != "yes"]}
 
 
