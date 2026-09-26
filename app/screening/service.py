@@ -20,7 +20,8 @@ Calls per hop:
     money-moving hops              Scan Token on mainnet USDC (cached 1 h)
     typed_data given / signature   Scan Message with the payload rebuilt for
                                    mainnet (chainId 1, mainnet USDC domain,
-                                   mapped addresses)
+                                   mapped addresses; an unmapped signer is
+                                   sent as-is, only the payee must be mapped)
 
 Every verdict is persisted as a Screening row. Tests and callers that want a
 different screener set ``app.extensions["screener"]`` (e.g. FakeScreener).
@@ -279,6 +280,7 @@ class InterceptaScreener:
         decision = policy.decide(state["findings"], th)
         now = datetime.now(timezone.utc)
         raw = dict(state["raw"])
+        risk_group = state["signals"].get("risk_group")
         if agent is None and agent_id is not None:
             raw["agent_ref"] = str(agent_id)
         row = Screening(
@@ -288,7 +290,7 @@ class InterceptaScreener:
             verdict=decision.verdict, cap_micro=decision.cap_micro, reasons=decision.reasons,
             toxic_score=_int_or_none(state["signals"].get("toxic_score")),
             traits=state["signals"].get("traits", []),
-            risk_group=state["signals"].get("risk_group"), raw=raw or None,
+            risk_group=risk_group[:32] if risk_group else None, raw=raw or None,
             provider=PROVIDER, fail_closed=decision.fail_closed, latency_ms=latency_ms,
             created_at=now, expires_at=now + timedelta(seconds=VERDICT_TTL_SECONDS),
         )
