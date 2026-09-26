@@ -20,6 +20,7 @@ from agentkit.journal import Checkpoint, Journal
 from agentkit.ledger import Ledger
 from agentkit.llm import ModelAdapter, ModelRef, ScriptedAdapter
 from agentkit.loop import Limits, RunOutcome, Runner
+from agentkit.manifest import Manifest, load_manifest, operator_fields, parse_manifest, spec_hash
 from agentkit.policy import PolicyGate
 from agentkit.security import host_allowed, redact, wrap_untrusted
 from agentkit.tools import (CommandResult, FetchResult, Tool, ToolContext, ToolRegistry,
@@ -31,11 +32,12 @@ from agentkit.types import (AcceptanceCriterion, Artifact, Brief, CheckResult, E
 __all__ = [
     "AcceptanceCriterion", "AgentKitError", "Artifact", "Brief", "BudgetExceeded", "CheckContext",
     "CheckRegistry", "CheckResult", "Checkpoint", "CommandResult", "Estimate", "Event", "EventSink",
-    "FetchResult", "HumanReview", "Journal", "JsonlSink", "Ledger", "Limits", "ManifestError",
-    "MemorySink", "Message", "MilestoneSpec", "MissingInput", "ModelAdapter", "ModelError",
-    "ModelRef", "ModelResponse", "MultiSink", "NullSink", "PolicyGate", "PolicyViolation",
-    "RunOutcome", "Runner", "ScriptedAdapter", "Submission", "Tool", "ToolCall", "ToolContext",
-    "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage", "artifact_for",
+    "FetchResult", "HumanReview", "Journal", "JsonlSink", "Ledger", "Limits", "Manifest",
+    "ManifestError", "MemorySink", "Message", "MilestoneSpec", "MissingInput", "ModelAdapter",
+    "ModelError", "ModelRef", "ModelResponse", "MultiSink", "NullSink", "PolicyGate",
+    "PolicyViolation", "RunOutcome", "Runner", "ScriptedAdapter", "Submission", "Tool", "ToolCall",
+    "ToolContext", "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage", "artifact_for",
     "builtin_registry", "canonical_json", "default_registry", "evidence_hash", "host_allowed",
-    "platform_evidence", "redact", "run_checks", "sha256_file", "tools_from_defs", "wrap_untrusted",
+    "load_manifest", "operator_fields", "parse_manifest", "platform_evidence", "redact",
+    "run_checks", "sha256_file", "spec_hash", "tools_from_defs", "wrap_untrusted",
 ]
