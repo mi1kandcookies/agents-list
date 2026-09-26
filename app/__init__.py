@@ -1,0 +1,133 @@
+"""
+Agent's List Flask application factory.
+
+    from app import create_app
+    app = create_app()            # config from FLASK_ENV (default: development)
+    app = create_app("testing")   # explicit config name
+
+Blueprints:
+    catalog  /, /marketplace, /agent/<id>, /checkout/<id>, /order/<id>, jobs pages
+    seller   /seller/*
+    admin    /admin/*
+    api      /api/* (JSON)
+    chain    /config.js, /api/x402/*, /api/onchain/*, legacy contract reads
+"""
+from __future__ import annotations
+
+import logging
+import os
+from pathlib import Path
+
+from flask import Flask, jsonify, render_template, request
+
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader (no python-dotenv dependency). Existing env wins."""
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.split(" #", 1)[0].strip().strip('"').strip("'")
+        os.environ.setdefault(key.strip(), value)
+
+
+# Load .env before app.config is imported: config classes read os.environ at import.
+_load_dotenv(_ROOT / ".env")
+
+from app.config import config as _config_map, validate_runtime_config  # noqa: E402
+from app.extensions import cors, db, limiter  # noqa: E402
+
+log = logging.getLogger("agents_list")
+
+
+def create_app(config_name: str | None = None) -> Flask:
+    """Build and configure a Flask app instance."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
+
+    app = Flask(__name__, instance_path=str(_ROOT / "instance"))
+    name = config_name or os.environ.get("FLASK_ENV", "development")
+    config_cls = _config_map.get(name, _config_map["default"])
+    app.config.from_object(config_cls)
+    if hasattr(config_cls, "init_app"):
+        config_cls.init_app(app)
+    validate_runtime_config(app)
+
+    db.init_app(app)
+    cors.init_app(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}})
+    limiter.init_app(app)
+
+    # Import models so their tables are registered on db.metadata before any
+    # create_all()/migration runs. (Upstream called create_all() before the
+    # models were imported, so a fresh database came up with no tables.)
+    from app import models  # noqa: F401
+
+    from app.admin import bp as admin_bp
+    from app.api import bp as api_bp
+    from app.catalog import bp as catalog_bp
+    from app.chain import bp as chain_bp
+    from app.seller import bp as seller_bp
+
+    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
+        app.register_blueprint(bp)
+
+    app.jinja_env.globals["enumerate"] = enumerate
+    _register_request_logging(app)
+    _register_error_handlers(app)
+    _register_cli(app)
+    _init_database(app)
+    return app
+
+
+def _register_request_logging(app: Flask) -> None:
+    @app.before_request
+    def _log_request():
+        log.debug("%s %s", request.method, request.path)
+
+    @app.after_request
+    def _log_response(response):
+        log.info("%s %s -> %s", request.method, request.path, response.status_code)
+        return response
+
+
+def _register_error_handlers(app: Flask) -> None:
+    @app.errorhandler(404)
+    def not_found(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        return render_template("404.html"), 404
+
+    @app.errorhandler(500)
+    def server_error(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "internal server error", "code": "INTERNAL"}), 500
+        return render_template("500.html"), 500
+
+
+def _register_cli(app: Flask) -> None:
+    @app.cli.command("seed")
+    def seed_command():
+        """Load sample agents for local development."""
+        from app.models import Agent
+        from app.sample_data import seed_sample_agents
+        added = seed_sample_agents(db, Agent)
+        print(f"Added {added} sample agents.")
+
+
+def _init_database(app: Flask) -> None:
+    """Create tables for local development databases."""
+    with app.app_context():
+        try:
+            db.create_all()
+            from app.models import _ensure_columns
+            _ensure_columns(app)
+        except Exception as exc:  # never block boot on the dev DB
+            log.warning("database init skipped: %s", exc)

@@ -4,8 +4,8 @@ onchain.py - Python-native on-chain layer for Agent's List.
 Lets the Flask app talk to Avalanche Fuji without a separate Node service.
 Requires: pip install web3 eth-account requests
 
-Usage from app.py:
-    from onchain import OnChain
+Usage:
+    from chain.client import OnChain
     chain = OnChain.from_env()
     session = chain.get_session(session_id)
     chain.x402_execute(signed_payload)  # executes EIP-3009 + depositFunds
@@ -32,7 +32,6 @@ This module is stateless and safe to import multiple times.
 
 from __future__ import annotations
 import os
-import time
 from typing import Any
 
 try:

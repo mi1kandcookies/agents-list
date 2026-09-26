@@ -15,7 +15,7 @@ Sample data for local development is loaded explicitly with `flask seed`.
 from __future__ import annotations
 import json
 from datetime import datetime, timezone
-from extensions import db
+from app.extensions import db
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────

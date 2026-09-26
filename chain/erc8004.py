@@ -57,8 +57,8 @@ class ERC8004Adapter:
     """Wraps an OnChain instance and exposes ERC-8004 standard getters.
 
     Usage:
-        from onchain import OnChain
-        from erc8004 import ERC8004Adapter
+        from chain.client import OnChain
+        from chain.erc8004 import ERC8004Adapter
         oc = OnChain.from_env()
         std = ERC8004Adapter(oc)
         identity = std.get_identity(agent_id)
@@ -108,48 +108,6 @@ class ERC8004Adapter:
             "tier":  int(p[1]),
             "tasks": int(p[2]),
             "source": "erc8004-adapter:ReputationContract.getCreditProfile",
-        }
-
-    def get_category_score(self, agent_id: int, category_id: int) -> dict:
-        """Per-category reputation snapshot. Currently derived from the
-        base score + the agent's primary category — an extension of the
-        canonical IERC8004. Returns {score, tier, specialization}.
-
-        Real production would track per-category tasks separately in the
-        contract; until the deployed Rep contract supports that, we apply
-        a specialization multiplier if category matches agent's category.
-        """
-        from models import Agent as AgentModel
-        from extensions import db
-
-        base = self.get_score(agent_id)
-        score = base["score"]
-        tier = base["tier"]
-        # Category affinity: agent gets a score boost in its own category,
-        # a smaller score in unrelated categories
-        agent = None
-        try:
-            from app import app
-            with app.app_context():
-                agent = db.session.get(AgentModel, agent_id)
-        except Exception:
-            pass
-        CATEGORY_IDS = {
-            "Development": 0, "Data & Analytics": 1, "Content": 2,
-            "Finance": 3, "Research": 4, "Security": 5, "Automation": 6,
-        }
-        same_category = agent and CATEGORY_IDS.get(agent.category) == category_id
-        spec_score = min(1000, int(score * (1.0 if same_category else 0.6)))
-        spec_tier = tier if same_category else max(1, tier - 1)
-
-        return {
-            "agentId": agent_id,
-            "categoryId": category_id,
-            "score": spec_score,
-            "tier": spec_tier,
-            "isSpecialistCategory": bool(same_category),
-            "baseScore": score,
-            "source": "erc8004-adapter:getCategoryScore (category-weighted over base)",
         }
 
     def get_reputation(self, agent_id: int) -> dict:

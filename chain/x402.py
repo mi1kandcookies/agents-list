@@ -19,7 +19,7 @@ Without this, our app merely *has* an x402 endpoint; with this, our app
 endpoints and negotiates payment.
 
 Usage:
-    from x402 import require_x402
+    from chain.x402 import require_x402
 
     @app.route("/api/agents/<int:agent_id>/execute")
     @require_x402(price_per_call_usdc=0.01, recipient_resolver=lambda req, kw: escrow_addr)
@@ -38,7 +38,6 @@ Otherwise it returns 402 with a challenge header describing what's expected.
 from __future__ import annotations
 import json
 import time
-import hashlib
 from functools import wraps
 from typing import Callable
 
@@ -132,7 +131,7 @@ def execute_payment(permit: dict, *, recipient_override: str = None) -> dict:
     """Submit the permit on-chain via facilitator. Returns receipt.
     Lazy-imports onchain so this module has no hard deps on web3."""
     try:
-        from onchain import OnChain
+        from chain.client import OnChain
         oc = OnChain.from_env()
     except Exception as e:
         return {"ok": False, "error": f"onchain not configured: {e}"}
@@ -180,7 +179,7 @@ def require_x402(
     def wrap(view):
         @wraps(view)
         def inner(*args, **kwargs):
-            from onchain import ADDRESSES, CHAIN_ID
+            from chain.client import ADDRESSES, CHAIN_ID
             usdc = ADDRESSES.get("MockUSDC", "")
             default_recipient = ADDRESSES.get("EscrowPayment", "")
             recipient = default_recipient
