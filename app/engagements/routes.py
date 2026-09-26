@@ -15,6 +15,7 @@ from flask import current_app, g, jsonify, redirect, render_template, request, u
 from app.approvals.actions import format_usdc
 from app.engagements import bp
 from app.engagements import service as svc
+from app.engagements import subhire as sub
 from app.engagements.service import EngagementError
 from app.engagements.sow import SowError, parse_usdc
 from app.extensions import db
@@ -130,6 +131,22 @@ def api_release(engagement_id, idx):
     return jsonify(svc.approval_json(approval)), 202
 
 
+@bp.route("/api/engagements/<engagement_id>/subhire", methods=["POST"])
+def api_subhire(engagement_id):
+    """Authenticated by the caller's mandate (``Authorization: Mandate
+    <jwt>``), not the API token: the mandate is the authority being used."""
+    try:
+        token = sub.mandate_from_header(request.headers.get("Authorization"))
+        body = _body()
+        status, out = sub.subhire(
+            engagement_id, token, agent_ref=body.get("agent_id"), outcome=body.get("outcome"),
+            budget_micro=_usdc(body.get("budget_usdc"), "budget_usdc"),
+            category=body.get("category"))
+    except EngagementError as exc:
+        return _error(exc)
+    return jsonify(out), status
+
+
 # ── pages ─────────────────────────────────────────────────────────────────
 @bp.route("/jobs")
 def jobs_list():
@@ -181,6 +198,15 @@ def jobs_detail(engagement_id, error: str | None = None, status: int = 200):
     svc.refresh(eng)
     return render_template("jobs/detail.html", job=svc.engagement_json(eng, detail=True),
                            error=error), status
+
+
+@bp.route("/jobs/<engagement_id>/chain")
+def jobs_chain(engagement_id):
+    try:
+        eng = svc.get_engagement(engagement_id)
+    except EngagementError:
+        return render_template("404.html"), 404
+    return render_template("jobs/chain.html", chain=sub.chain_tree(eng))
 
 
 @bp.route("/jobs/<engagement_id>/hire", methods=["POST"])
