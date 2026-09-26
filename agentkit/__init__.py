@@ -18,7 +18,7 @@ from agentkit.evidence import (artifact_for, canonical_json, evidence_hash, plat
                                sha256_file)
 from agentkit.journal import Checkpoint, Journal
 from agentkit.ledger import Ledger
-from agentkit.llm import ModelAdapter, ModelRef, ScriptedAdapter
+from agentkit.llm import ModelAdapter, ModelRef, ScriptedAdapter, get_adapter
 from agentkit.loop import Limits, RunOutcome, Runner
 from agentkit.manifest import Manifest, load_manifest, operator_fields, parse_manifest, spec_hash
 from agentkit.policy import PolicyGate
@@ -37,7 +37,7 @@ __all__ = [
     "ModelError", "ModelRef", "ModelResponse", "MultiSink", "NullSink", "PolicyGate",
     "PolicyViolation", "RunOutcome", "Runner", "ScriptedAdapter", "Submission", "Tool", "ToolCall",
     "ToolContext", "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage", "artifact_for",
-    "builtin_registry", "canonical_json", "default_registry", "evidence_hash", "host_allowed",
-    "load_manifest", "operator_fields", "parse_manifest", "platform_evidence", "redact",
-    "run_checks", "sha256_file", "spec_hash", "tools_from_defs", "wrap_untrusted",
+    "builtin_registry", "canonical_json", "default_registry", "evidence_hash", "get_adapter",
+    "host_allowed", "load_manifest", "operator_fields", "parse_manifest", "platform_evidence",
+    "redact", "run_checks", "sha256_file", "spec_hash", "tools_from_defs", "wrap_untrusted",
 ]
