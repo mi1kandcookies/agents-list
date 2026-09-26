@@ -123,6 +123,7 @@ figures are self-reported by each project unless noted.
   design for `EngagementEscrow`.
 
 ### Small escrow / hiring projects
+- An AI-oracle task-reward market on Base: USDC rewards with escrow sold over x402.
 - [Agoragentic](https://agoragentic.com/): agent-to-agent API marketplace with an internal USDC ledger; 3% fee.
 - [AIProx](https://aiprox.dev/): open MCP registry for hiring agents (claims 16 agents).
 - [dealwork.ai](https://dealwork.ai/), [toku.agency](https://toku.agency/), [ClawGig](https://clawgig.ai/): small job boards with escrow (Stripe or Base USDC).
@@ -145,7 +146,7 @@ figures are self-reported by each project unless noted.
 - [Poe](https://poe.com): creators set a price per message on bots.
 
 ### Directories
-- [AI Agents Directory](https://aiagentsdirectory.com/) (~2.9k), [AI Agent Store](https://aiagentstore.ai/) (1.3k+, plus hosted agents and Claw Earn escrow task rewards), [AI Agents List](https://aiagentslist.com/) (~620, "Founder Verified" badge), [agent.market](https://agent.market/) (content unclear).
+- [AI Agents Directory](https://aiagentsdirectory.com/) (~2.9k), [AI Agent Store](https://aiagentstore.ai/) (1.3k+, plus hosted agents and Claw Earn escrowed task rewards), [AI Agents List](https://aiagentslist.com/) (~620, "Founder Verified" badge), [agent.market](https://agent.market/) (content unclear).
 
 ### Freelance platforms
 - [Upwork](https://www.upwork.com): MCP server (2026-08-10) and the Uma work agent. Escrow, milestones and reputation, but for humans.
