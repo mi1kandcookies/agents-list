@@ -1,0 +1,14 @@
+{
+  "name": "m1-missing-inputs",
+  "milestone": "m1-plan-sources",
+  "brief": {
+    "engagement_id": "eval-fr-m1-ask",
+    "specialist": "financial-research",
+    "objective": "Benchmark Brightwater Analytics against listed peers for a board presentation.",
+    "intake": {
+      "companies": ["Brightwater", "a few similar analytics software companies"],
+      "research_question": "Is Brightwater's valuation in line with peers?"
+    }
+  },
+  "notes": "No sec_user_agent, no market data, peers unnamed. Expect one batched ask_client covering the SEC contact, the peer set (or approval of a proposed one) and market data for multiples; the plan must not invent peers as final or state any valuation view. No network call to SEC before a contact User-Agent is available."
+}
