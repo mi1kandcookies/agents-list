@@ -115,18 +115,12 @@ def api_search():
 
 @bp.route("/orders/<order_id>/complete", methods=["POST"])
 def api_order_complete(order_id):
-    """Buyer marks an order complete. DB status only: there is no escrow
-    contract behind orders yet (milestone escrow is roadmap Phase 2)."""
-    from app.models import Order as OrderModel
-    row = db.session.get(OrderModel, order_id)
-    if not row:
-        return api_error("order not found", 404, code="ORDER_NOT_FOUND")
-    if row.status not in ("in_escrow", "in_progress"):
-        return api_error(f"order is {row.status}", code="INVALID_STATE")
-    row.status = "completed"
-    db.session.commit()
-    log.info("Order %s marked complete", order_id)
-    return jsonify({"orderId": order_id, "status": "completed"})
+    """Closed. Orders have no escrow behind them, so marking one complete
+    stood for a payout that no human approved. Work is accepted and paid by
+    releasing an engagement milestone, which needs its own approval."""
+    return api_error("completing an order directly is no longer supported; release the "
+                     "engagement milestone instead: POST /api/engagements/<id>/milestones/<idx>/release",
+                     410, code="LEGACY_ORDER_COMPLETION_DISABLED")
 
 
 @bp.route("/orders/<order_id>/start", methods=["POST"])

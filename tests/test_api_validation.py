@@ -1,4 +1,6 @@
 """Request validation on write endpoints."""
+import pytest
+
 from tests.conftest import WALLET
 
 
@@ -12,27 +14,32 @@ def _permit(**overrides):
     return body
 
 
-def test_x402_pay_rejects_invalid_wallet(client):
-    resp = client.post("/api/x402/pay", json=_permit(**{"from": "0x123", "to": "0x456", "value": 0}))
-    assert resp.status_code == 400
-    body = resp.get_json()
-    assert body["code"] == "INVALID_REQUEST"
-    assert body["field"] == "from"
+# /api/x402/pay settled any signed authorization without an approval; it is
+# closed (410) whatever the body, valid or not, and records nothing.
+@pytest.mark.parametrize("overrides", [
+    {"from": "0x123", "to": "0x456", "value": 0},
+    {"value": 0},
+    {"task": "build it"},
+])
+def test_x402_pay_is_closed(client, db, agent, overrides):
+    from app.models import Order
+    resp = client.post("/api/x402/pay", json=_permit(agentId=agent, **overrides))
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_PAYMENT_DISABLED"
+    assert Order.query.count() == 0
 
 
-def test_x402_pay_rejects_zero_value(client, agent):
-    resp = client.post("/api/x402/pay", json=_permit(value=0, agentId=agent))
-    assert resp.status_code == 400
-    assert resp.get_json()["field"] == "value"
-
-
-def test_x402_pay_without_facilitator_records_pending_order(client, agent):
-    resp = client.post("/api/x402/pay", json=_permit(agentId=agent, task="build it"))
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["realTx"] is False
-    assert body["status"] == "pending_payment"
-    assert client.get(f"/order/{body['orderId']}").status_code == 200
+def test_order_completion_is_closed(client, db, agent):
+    """Marking an order complete (the old payout trigger) no longer changes it."""
+    from app.models import Order
+    db.session.add(Order(id="ORD-TEST0001", agent_id=agent, buyer=WALLET, amount=5.0,
+                         status="in_escrow", task="t", date="2026-01-01"))
+    db.session.commit()
+    resp = client.post("/api/orders/ORD-TEST0001/complete")
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_ORDER_COMPLETION_DISABLED"
+    db.session.expire_all()
+    assert db.session.get(Order, "ORD-TEST0001").status == "in_escrow"
 
 
 def test_agent_register_requires_valid_wallet(client):

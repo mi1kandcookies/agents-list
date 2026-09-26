@@ -1,5 +1,6 @@
 {#
   verdict_card(v): one screening verdict (docs/decisions/0001-custody-chain.md §4).
+  v.payee_source ("ens" | "profile"), when set, says where the payee address came from.
   Page must include css/screening.css.
 
     {% from "components/verdict_card.html" import verdict_card %}
@@ -43,6 +44,9 @@
       <span title="{{ subject.screened_address }}">Screened {{ short_addr(subject.screened_address) }}</span>
     {% else %}
       <span title="{{ subject.chain_address }}">Not screened: {{ short_addr(subject.chain_address) }}</span>
+    {% endif %}
+    {% if v.payee_source %}
+      <span class="verdict-card__payee" data-payee-source="{{ v.payee_source }}">Payee from {{ "ENS record" if v.payee_source == "ens" else "agent profile" }}</span>
     {% endif %}
     <span>{{ v.latency_ms }} ms</span>
     <span>{{ v.provider }} · {{ v.id }}</span>
