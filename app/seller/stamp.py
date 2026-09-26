@@ -398,14 +398,14 @@ def seed_stamps_refusal(app) -> Optional[str]:
     return None
 
 
-def seed_sample_stamps() -> list[str]:
-    """Dev-stamp the sample agents from ``flask seed``. Returns their names."""
+def seed_demo_stamps() -> list[str]:
+    """Dev-stamp the demo agents from ``flask seed-demo``. Returns their names."""
+    from app.demo_seed import DEMO_AGENTS, DEMO_OPERATOR
     from app.models import Agent
-    from app.sample_data import SAMPLE_AGENTS, SAMPLE_SELLER
-    names = {spec["name"] for spec in SAMPLE_AGENTS}
+    names = {spec["name"] for spec in DEMO_AGENTS}
     done = []
     for agent in Agent.query.filter(Agent.name.in_(names)).order_by(Agent.id).all():
-        if (agent.seller or "").lower() != SAMPLE_SELLER.lower():
+        if agent.seller != DEMO_OPERATOR:
             continue
         if agent.manifest_stamp_sub and agent.manifest_stamp_sub != DEV_STAMP_SUB:
             continue  # a real operator stamp is never overwritten
