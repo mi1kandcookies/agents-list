@@ -1,0 +1,17 @@
+{
+  "name": "northwind-m3-remediation-report",
+  "milestone": "m3-report",
+  "brief": {
+    "engagement_id": "eng-appsec-northwind-001",
+    "specialist": "appsec-review",
+    "objective": "Deliver remediation guidance and a final AppSec report for Northwind Ledger, ready for customer triage.",
+    "intake": {
+      "repo_provided": true,
+      "openapi_spec": "inputs/openapi.json",
+      "scope_file": "inputs/scope.json",
+      "authorized": true,
+      "environment": "staging only"
+    }
+  },
+  "notes": "Report has an executive summary, methodology, scope statement, per-finding remediation mapped to file/line, and a clear coverage-limits disclaimer. The report is NOT an attestation until the customer security lead triages the findings (human gate)."
+}

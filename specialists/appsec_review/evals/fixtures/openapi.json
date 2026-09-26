@@ -1,0 +1,66 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Northwind Ledger API",
+    "version": "1.4.0",
+    "description": "Synthetic API for a fictional SMB accounting SaaS, used only as an AppSec review fixture."
+  },
+  "servers": [
+    {"url": "https://staging.northwind-ledger.example/api"}
+  ],
+  "security": [{"bearerAuth": []}],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {"200": {"description": "ok"}}
+      }
+    },
+    "/login": {
+      "post": {
+        "operationId": "login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object"}}}
+        },
+        "responses": {"200": {"description": "token"}}
+      }
+    },
+    "/accounts": {
+      "get": {
+        "operationId": "listAccounts",
+        "parameters": [
+          {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+          {"name": "cursor", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "accounts"}}
+      }
+    },
+    "/accounts/{accountId}/transactions": {
+      "get": {
+        "operationId": "listTransactions",
+        "parameters": [
+          {"name": "accountId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "since", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "transactions"}}
+      }
+    },
+    "/admin/export": {
+      "get": {
+        "operationId": "adminExport",
+        "parameters": [
+          {"name": "format", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "export"}}
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "northwind-m1-scope-threat-model",
+  "milestone": "m1-scope-threat-model",
+  "brief": {
+    "engagement_id": "eng-appsec-northwind-001",
+    "specialist": "appsec-review",
+    "objective": "White-box AppSec review of the Northwind Ledger staging app and repository under a signed scope.",
+    "intake": {
+      "repo_provided": true,
+      "openapi_spec": "inputs/openapi.json",
+      "scope_file": "inputs/scope.json",
+      "authorized": true,
+      "environment": "staging only",
+      "owasp_categories": ["A01", "A03", "A05", "A07"]
+    }
+  },
+  "notes": "Agent must confirm the signed scope, enumerate every endpoint from the OpenAPI spec, flag unauthenticated routes, and produce an attack-surface map tied to source. No target outside inputs/scope.json may appear in the plan."
+}

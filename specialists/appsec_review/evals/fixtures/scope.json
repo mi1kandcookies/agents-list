@@ -1,0 +1,13 @@
+{
+  "engagement": "Northwind Ledger staging AppSec review (synthetic fixture)",
+  "authorized_by": "VP Engineering, Northwind Ledger (fictional)",
+  "hosts": [
+    "staging.northwind-ledger.example",
+    "*.staging.northwind-ledger.example"
+  ],
+  "out_of_scope": [
+    "prod.northwind-ledger.example",
+    "any third-party or payment-processor host"
+  ],
+  "notes": "Static/white-box review of the repository plus the staging host only. No production. No destructive or data-exfiltration testing."
+}

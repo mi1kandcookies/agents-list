@@ -1,0 +1,31 @@
+name: report
+description: >-
+  Grader rubric for the M3 final report. Scored by a grader model; a weighted score
+  at or above the threshold is a pass.
+threshold: 0.8
+criteria:
+  - id: executive_summary
+    description: >-
+      A non-technical executive summary states business risk, severity counts and
+      the top priorities to fix.
+    weight: 0.15
+  - id: methodology_and_scope
+    description: >-
+      Methodology and the reviewed scope are stated clearly, including what was
+      and was not covered.
+    weight: 0.2
+  - id: evidence_per_finding
+    description: >-
+      Each finding carries file:line evidence, a CWE/OWASP class, a CVSS score and
+      an exploit scenario or complete source-to-sink trace.
+    weight: 0.25
+  - id: remediation_quality
+    description: >-
+      Remediation is specific and code-level, mapped to the exact file/line or
+      configuration, with retest guidance.
+    weight: 0.25
+  - id: honest_limits
+    description: >-
+      The report states coverage limits and includes the disclaimer that this is
+      not a substitute for a manual pentest and not proof of security.
+    weight: 0.15

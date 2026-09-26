@@ -1,0 +1,17 @@
+{
+  "name": "northwind-m2-findings-sarif",
+  "milestone": "m2-findings",
+  "brief": {
+    "engagement_id": "eng-appsec-northwind-001",
+    "specialist": "appsec-review",
+    "objective": "Produce a validated findings register with SARIF 2.1.0 output for Northwind Ledger.",
+    "intake": {
+      "repo_provided": true,
+      "openapi_spec": "inputs/openapi.json",
+      "scope_file": "inputs/scope.json",
+      "authorized": true,
+      "environment": "staging only"
+    }
+  },
+  "notes": "Each finding needs CWE/OWASP class, a CVSS score, a source->sink exploit scenario and a code-level fix. SARIF must validate, every location must resolve to a real file:line with a matching snippet, and every claimed secret must reproduce from a fresh scan. Static evidence only; no live exploitation."
+}
