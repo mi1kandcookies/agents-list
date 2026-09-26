@@ -621,6 +621,13 @@ def test_upgrade_log_verified(tmp_path):
     red["steps"][1]["test_run"] = "run-4"
     write(ws, rel, json.dumps(red))
     assert "not green" in C.upgrade_log_verified(ws, {})["details"]
+    # green, but with tests switched off for the run (and back on before the diff)
+    T.run_tests(ws, run=fake_run("2 passed, 3 skipped"), argv=["pytest"])     # run-5
+    hollow = good_log()
+    hollow["steps"][1]["test_run"] = "run-5"
+    write(ws, rel, json.dumps(hollow))
+    assert "run-5 ran 2 passing / 3 skipped tests (baseline run-1: 5 / 0)" in \
+        C.upgrade_log_verified(ws, {})["details"]
     write(ws, rel, json.dumps({"steps": []}))
     assert C.upgrade_log_verified(ws, {})["passed"] is False
 

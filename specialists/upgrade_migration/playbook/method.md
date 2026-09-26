@@ -64,6 +64,8 @@ How the log is checked (`upgrade_log_verified`):
 - Replaying the steps from the baseline must give the repo's versions now.
   Each run's recorded dependency versions must show its step applied and no
   later step: change, test, log; never change everything and log afterwards.
+- A cited run must be green with no fewer passing and no more skipped tests
+  than the baseline run.
 - Steps that had to move together (a package and the transitive versions it
   pulled in, a coupled group) are consecutive entries citing the same run.
 - `"from": "unpinned"` pins a package that had no exact version;

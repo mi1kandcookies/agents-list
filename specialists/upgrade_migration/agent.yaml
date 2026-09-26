@@ -181,7 +181,9 @@ milestones:
             - deliverables/m2-upgrade/upgrade-log.json
             - deliverables/m2-upgrade/report.md
       - check: tests_pass
-        description: Full suite green now, with at least as many passing tests as the baseline run
+        description: >-
+          Client's full suite green now, with no fewer passing and no more skipped tests than
+          its baseline run
         params: {cwd: repo}
       - check: osv_delta
         description: >-
@@ -201,7 +203,7 @@ milestones:
                    ".travis.yml", "bitbucket-pipelines.yml", ".buildkite/*", ".drone.yml"]
           max_changed_lines: 400
       - check: patch_generated
-        description: repo.patch is the git diff the platform generated, not a hand-written file
+        description: repo.patch is the git diff generated at submission, not a hand-written file
         params: {patch: deliverables/m2-upgrade/repo.patch}
       - check: patch_matches_repo
         params: {patch: deliverables/m2-upgrade/repo.patch, repo: repo}

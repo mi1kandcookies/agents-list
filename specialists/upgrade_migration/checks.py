@@ -460,7 +460,8 @@ def upgrade_log_verified(workspace: Path, params: dict, *, run=None) -> dict:
     proves each step: every version change of a baseline package is logged
     (unpinning and removal included), steps chain from the baseline versions
     to the repo's, and each step cites a green run of the client's test
-    command, after the baseline run and after the previous step's run, whose
+    command, after the baseline run and after the previous step's run, with
+    no fewer passing and no more skipped tests than the baseline run, whose
     recorded dependency versions show exactly this step applied and no
     later one. Consecutive steps that moved together cite the same run."""
     rel = params.get("log", "deliverables/m2-upgrade/upgrade-log.json")
@@ -526,6 +527,11 @@ def upgrade_log_verified(workspace: Path, params: dict, *, run=None) -> dict:
         entry = runs[i]
         if not T.is_green(entry):
             problems.append(f"{where}: {run_id} was not green")
+        got, floor = entry["counts"], runs[base_run]["counts"]
+        if got["passed"] < floor["passed"] or got.get("skipped", 0) > floor.get("skipped", 0):
+            problems.append(f"{where}: {run_id} ran {got['passed']} passing / {got.get('skipped', 0)} skipped "
+                            f"tests (baseline {runs[base_run]['id']}: {floor['passed']} / "
+                            f"{floor.get('skipped', 0)})")
         if not _client_run(entry, argv, cwd):
             problems.append(f"{where}: {run_id} is not the client's test command "
                             f"(`{' '.join(argv)}` in {cwd}/)")
