@@ -21,8 +21,9 @@ rejects the approval with REPLAYED_TOKEN. ``auth_time`` must be no earlier
 than the approval's creation and at most STEPUP_MAX_AGE_SECONDS old.
 
 ``consume()`` re-selects the row ``FOR UPDATE`` and re-checks state, expiry,
-action hash, ban, weekly cap, the engagement's claimed human and screening in
-the same transaction that runs the executor, so an approval executes at most
+action hash, ban, weekly cap, the engagement's claimed human and screening
+(a fresh screen of the payee for money-moving kinds) in the same transaction
+that runs the executor, so an approval executes at most
 once. When a callback or poll reaches ``approved``, the executor runs at once.
 
 Every state change writes an ``approval_events`` row.
@@ -218,17 +219,41 @@ def create_approval(kind: str, action: dict, *, flow: str, engagement_id: Option
 
 
 def _check_screening(approval: Approval) -> None:
-    """The bound screening must not be REFUSE.
-
-    TODO(screening): once app/screening exposes screen(), consume() should run
-    a fresh screen for money-moving kinds instead of trusting the stored row.
-    """
+    """The screening bound at create time must exist and not be REFUSE."""
     if not approval.screening_id:
         return
     screening = db.session.get(Screening, approval.screening_id)
     if screening is None or screening.verdict == "REFUSE":
         raise ApprovalError("SCREENING_REFUSED",
                             "screening missing" if screening is None else "screening verdict REFUSE")
+
+
+# Money-moving kinds and the screening hop they are re-screened as in consume().
+RESCREEN_HOPS = {"engagement.fund": "engagement.fund", "milestone.release": "milestone.release",
+                 "subhire.fund": "subhire.hop"}
+
+
+def _rescreen(approval: Approval, action: dict) -> None:
+    """Fresh screen of the payee right before a money-moving action executes.
+
+    Uses the same policy as payment hops: REFUSE, an expired verdict, an
+    amount over a CAP, or an unacknowledged ASK_HUMAN all refuse. Actions
+    without ``payee_address`` have nothing to screen here.
+    """
+    hop = RESCREEN_HOPS.get(approval.kind)
+    payee = action.get("payee_address")
+    if hop is None or not payee:
+        return
+    from app.screening import policy
+    from app.screening.service import screen
+    amount = int(action.get("amount_micro") or 0)
+    verdict = screen(hop, chain_address=payee, amount_micro=amount,
+                     engagement_id=approval.engagement_id, agent_id=approval.agent_id)
+    _event(approval, "rescreened", screening_id=verdict.get("id"), verdict=verdict.get("verdict"))
+    try:
+        policy.enforce_verdict(verdict, amount, acknowledged=bool(action.get("screening_ack")))
+    except policy.ScreeningBlocked as exc:
+        raise ApprovalError("SCREENING_REFUSED", f"re-screen {exc.code}: {exc}") from None
 
 
 def _engagement_buyer(approval: Approval) -> Optional[Human]:
@@ -538,6 +563,7 @@ def consume(approval_id: str, *, kind: str) -> ExecutionResult:
         if buyer is not None and buyer.id != human.id:
             raise ApprovalError("WRONG_HUMAN", "engagement is claimed by another human")
         _check_screening(approval)
+        _rescreen(approval, action)
     except ApprovalError as exc:
         _transition(approval, "blocked", code=exc.code, detail=exc.message)
         db.session.commit()
@@ -611,8 +637,9 @@ def to_dict(approval: Approval) -> dict:
     action = approval.action
     screening = None
     if approval.screening_id:
+        from app.screening.service import verdict_from_row
         row = db.session.get(Screening, approval.screening_id)
-        screening = {"id": approval.screening_id, "verdict": row.verdict if row else None}
+        screening = verdict_from_row(row) if row else {"id": approval.screening_id, "verdict": None}
     result = result_of(approval)
     return {
         "approval_id": approval.id,
