@@ -161,8 +161,18 @@
       milestones: [], milestonesFor: null, milestonesEdited: false,
       deadline: { mode: null, date: "" },
       budget: { mode: null, amount: 0 },
-      agent: null, engagement: null
+      agent: null, engagement: null,
+      // Set when the answers were filled from an uploaded statement of work:
+      // {filename, sha256, outcome, brief, warnings, notes, msFromFile, jobCriteria}.
+      source: null
     };
+  }
+
+  // The brief the parser wrote for the uploaded document, until the outcome is edited.
+  function currentBrief() {
+    var src = state.source;
+    if (src && src.brief && state.outcome === src.outcome) return src.brief;
+    return briefFromOutcome(state.outcome);
   }
 
   function defaultMilestones(c, budget) {
@@ -269,7 +279,7 @@
   }
 
   function renderBrief() {
-    var b = briefFromOutcome(state.outcome);
+    var b = currentBrief();
     var node = $("#f-brief");
     node.textContent = b || "Your one-line brief appears here.";
     node.classList.toggle("is-empty", !b);
@@ -283,14 +293,16 @@
       n.classList.toggle("is-empty", !text);
       n.classList.toggle("mono", !!(text && mono));
     };
-    set("brief", briefFromOutcome(state.outcome));
+    set("brief", currentBrief());
     set("category", c ? c.label : "");
-    set("milestones", state.milestones.length && state.step > 2
+    set("milestones", state.milestones.length && (state.step > 2 || (state.source && state.source.msFromFile))
       ? plural(state.milestones.length, "milestone") + ", " + fmtUSDC(msTotal()) : "", true);
     set("deadline", deadlineText(), !!state.deadline.date && state.deadline.mode !== "asap" && state.deadline.mode !== "flexible");
     set("budget", state.budget.mode === "suggest" ? "Scoper suggests" :
       state.budget.mode === "custom" ? fmtUSDC(state.budget.amount) : "", state.budget.mode === "custom");
     set("agent", state.agent ? state.agent.name : "");
+    $("#sum-source").hidden = !state.source;
+    if (state.source) set("source", state.source.filename);
   }
 
   function renderProgress() {
@@ -323,8 +335,15 @@
       state.milestones = defaultMilestones(c, c.suggested_budget);
       state.milestonesFor = c.key;
       state.milestonesEdited = false;
+      // Job-wide criteria from an uploaded SOW go on the final milestone.
+      var extra = state.source && state.source.jobCriteria;
+      if (extra && extra.length) {
+        var last = state.milestones[state.milestones.length - 1];
+        last.criteria = last.criteria.concat(extra);
+      }
       if (state.budget.mode === "custom" && state.budget.amount) rescale(state.budget.amount);
     }
+    if (state.source && state.source.msFromFile) state.milestonesFor = c.key;
     $("#ms-reset-note").hidden = !(state.milestonesEdited && state.milestonesFor !== c.key);
   }
 
@@ -596,7 +615,10 @@
 
   // Step 8
   function renderContract() {
-    bind("c-brief", briefFromOutcome(state.outcome));
+    bind("c-brief", currentBrief());
+    $('[data-term="source"]').hidden = !state.source;
+    bind("c-source", state.source ? state.source.filename : "");
+    bind("c-source-hash", state.source ? "sha256 " + state.source.sha256 : "");
     bind("c-agent", state.agent ? state.agent.name : "");
     bind("c-agent-id", state.agent && /^AGT-/i.test(state.agent.id) ? state.agent.id : "");
     bind("c-deadline", deadlineText() || "Flexible");
@@ -662,7 +684,12 @@
   // ── Navigation ─────────────────────────────────────────────────────────────
   function enter(step) {
     if (step === 2) renderCategory();
-    if (step === 3) { ensureMilestones(); renderMilestones(); }
+    if (step === 3) {
+      ensureMilestones(); renderMilestones();
+      var lede = $("#ms-lede");
+      if (!lede.dataset.suggested) lede.dataset.suggested = lede.textContent;
+      lede.textContent = state.source && state.source.msFromFile ? lede.dataset.fromFile : lede.dataset.suggested;
+    }
     if (step === 4) renderCriteria();
     if (step === 5) renderDeadline();
     if (step === 6) {
@@ -730,6 +757,7 @@
     agentsFor = null;
     outcomeEl.value = "";
     $("#flow-restore").hidden = true;
+    renderSource();
     renderBrief();
     show(1, false);
     outcomeEl.focus();
@@ -746,10 +774,11 @@
       postJSON("/api/engagements", {
         agent_id: state.agent.id,
         outcome: state.outcome.trim(),
-        brief: briefFromOutcome(state.outcome),
+        brief: currentBrief(),
         category: state.category,
         budget_usdc: total,
         deadline: state.deadline.date || null,
+        source_document: state.source ? { filename: state.source.filename, sha256: state.source.sha256 } : null,
         milestones: state.milestones.map(function (m) {
           return { title: m.title.trim(), amount_usdc: Number(m.amount),
             acceptance: m.criteria.filter(function (c) { return c.trim(); }).map(function (c) { return "- " + c.trim(); }).join("\n") };
@@ -778,7 +807,88 @@
     });
   });
 
+  // ── Uploaded statement of work ────────────────────────────────────────────
+  function renderSource() {
+    var note = $("#sow-note");
+    if (!note) return;
+    var src = state.source;
+    note.hidden = !src;
+    var zone = $("#sow");
+    if (zone) {
+      $("[data-sow-title]", zone).textContent = src ? "Use a different file?" : "Have a statement of work?";
+      $("[data-sow-pick]", zone).textContent = src ? "Replace file" : "Upload SOW";
+      $("[data-sow-hint]", zone).textContent = src ? "Drop another file here to fill the steps again." : zone.dataset.hint;
+    }
+    if (!src) return;
+    $("#sow-note-file").textContent = src.filename;
+    var list = $("#sow-note-list");
+    list.innerHTML = "";
+    (src.notes || []).concat(src.warnings || []).forEach(function (w) { list.appendChild(el("li", { text: w })); });
+    list.hidden = !list.children.length;
+  }
+
+  // Fill every step from a parsed scope (POST /api/sow/parse). Anything the
+  // document did not state stays empty so its step asks for it.
+  function applyScope(scope) {
+    var keepAgent = state.agent;
+    var outcome = scope.outcome || state.outcome;
+    var s = freshState(outcome);
+    s.agent = keepAgent;
+    s.category = cat(scope.category_key) ? scope.category_key : guessCategory(outcome);
+    s.categoryGuessed = !scope.category_key && !!s.category;
+    var warnings = (scope.warnings || []).slice();
+    var ms = (scope.milestones || []).slice(0, MAX_MILESTONES).map(function (m) {
+      return { id: uid(), title: String(m.title || ""), amount: Number(m.amount_usdc) || 0,
+        criteria: (m.acceptance || []).map(String) };
+    });
+    if ((scope.milestones || []).length > MAX_MILESTONES) warnings.push("Only the first " + MAX_MILESTONES + " milestones were used.");
+    s.source = {
+      filename: scope.source && scope.source.filename, sha256: scope.source && scope.source.sha256,
+      outcome: outcome, brief: scope.outcome ? scope.brief : null,
+      warnings: warnings, notes: (scope.notes || []).slice(),
+      msFromFile: ms.length > 0, jobCriteria: ms.length ? [] : (scope.acceptance || []).map(String)
+    };
+    state = s;
+    var budget = Number(scope.budget_usdc) || 0;
+    if (ms.length) {
+      state.milestones = ms;
+      state.milestonesFor = state.category;
+      state.milestonesEdited = true;
+      if (budget && ms.every(function (m) { return !m.amount; })) {
+        shareBase = null;
+        ms.forEach(function (m) { m.amount = 1; });
+        rescale(budget);
+        state.source.notes.push("The document gives a budget but no milestone amounts, so it was split evenly.");
+      }
+    }
+    var total = msTotal();
+    if (ms.length && total > 0) state.budget = { mode: "custom", amount: total };
+    else if (budget) state.budget = { mode: "custom", amount: budget };
+    var dl = scope.deadline || {};
+    if (dl.mode) state.deadline = { mode: dl.mode, date: dl.date || "" };
+    agentsFor = null;
+    outcomeEl.value = state.outcome;
+    $("#flow-restore").hidden = true;
+    renderSource();
+    renderBrief();
+    show(1, false);
+    announce("Filled from " + state.source.filename + ". Review each step.");
+  }
+
+  var sowZone = $("#sow");
+  if (sowZone && window.SowUpload) {
+    window.SowUpload.mount(sowZone, {
+      target: $('.flow-step[data-step="1"]'),
+      onParsed: function (scope) { showError($("#e-1"), ""); applyScope(scope); }
+    });
+  }
+
   // ── Boot ───────────────────────────────────────────────────────────────────
+  var handed = window.SowUpload && window.SowUpload.take();   // from the home search box
+  if (handed && handed.source) {
+    applyScope(handed);
+  }
+  renderSource();
   renderBrief();
   show(state.step, false);
 })();

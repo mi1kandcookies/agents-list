@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 from flask import jsonify, render_template, request
 
@@ -58,6 +59,7 @@ def engagement_estimate(engagement_id: str):
     return render_template("intake/estimate.html", eng=eng, milestones=milestones, est=est,
                            total_cents=(eng.total_micro or 0) // 10_000,
                            can_approve=eng.status in ("draft", "scoped"),
+                           source=json.loads(eng.sow_json or "{}").get("source_document"),
                            auto_release_days=AUTO_RELEASE_DAYS)
 
 

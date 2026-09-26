@@ -422,13 +422,25 @@ def _milestones_from_lines(lines, *, explicit_only: bool) -> list[dict]:
     base = None
     tops = [ind for ind, t in lines if t and _BULLET.match(t)]
     top_indent = min(tops) if tops else 0
+    top = [t for ind, t in lines if t and _BULLET.match(t) and ind <= top_indent]
+    # Text from PDFs loses indentation, so nested criteria can sit at the same
+    # level as the milestones. Tell them apart by list style ("1." items with
+    # "-" criteria), or by amounts (only the milestone lines carry one).
+    numbered = [bool(re.match(r"\d", t)) for t in top]
+    priced = [bool(amounts(t)) for t in top]
+    if top and any(numbered) and not all(numbered):
+        is_milestone = (lambda t: bool(re.match(r"\d", t)) == numbered[0])
+    elif top and priced[0] and not all(priced):
+        is_milestone = (lambda t: bool(amounts(t)))
+    else:
+        is_milestone = (lambda t: True)
     for indent, t in lines:
         if not t:
             continue
         stripped = _BULLET.sub("", t).strip() if _BULLET.match(t) else t
         mark = _MS_MARK.match(stripped.lstrip("#").strip())
         is_top_item = (not explicit_only and _BULLET.match(t) and indent <= top_indent
-                       and (base is None or base == "items"))
+                       and (base is None or base == "items") and is_milestone(t))
         if mark or is_top_item:
             if mark:
                 base = base or "marks"
@@ -538,13 +550,13 @@ def _deadline(sections, today: date, warnings: list[str]) -> dict:
     dates = [d for d in (_find_date(t, today)[0] for t in timeline_lines + ms_lines) if d]
     if dates:
         return _dated(max(dates), today, "latest date in the timeline", False, warnings)
-    warnings.append("No deadline found. Pick one on the deadline step.")
+    warnings.append("No deadline found in the document.")
     return none
 
 
 def _dated(d: date, today: date, text: str, ambiguous: bool, warnings) -> dict:
     if d < today:
-        warnings.append(f"The deadline in the document ({d.isoformat()}) has already passed. Pick a new one.")
+        warnings.append(f"The deadline in the document ({d.isoformat()}) has already passed.")
         return {"date": None, "mode": None, "text": text}
     if ambiguous:
         warnings.append(f"Read {text[:60]!r} as month/day ({d.isoformat()}). Check the deadline.")
@@ -624,7 +636,7 @@ def heuristic_scope(text: str, *, today: date | None = None) -> dict:
             outcome = _truncate("\n\n".join(paras), MAX_OUTCOME)
             break
     if not outcome:
-        warnings.append("No objective or outcome found. Describe the result you want in your own words.")
+        warnings.append("No objective or outcome found in the document.")
 
     # Milestones: explicit "Milestone N" markers anywhere, else a table or the
     # list in a Milestones section.
@@ -659,11 +671,11 @@ def heuristic_scope(text: str, *, today: date | None = None) -> dict:
         notes.append("Budget is the sum of the milestone amounts.")
     elif budget is not None and have_all and ms_sum != budget:
         warnings.append(f"Milestone amounts add up to {_num(ms_sum)} USDC but the budget says "
-                        f"{_num(budget)} USDC. Check the budget step.")
+                        f"{_num(budget)} USDC.")
     if budget is None:
-        warnings.append("No budget found. Set one on the budget step.")
+        warnings.append("No budget found in the document.")
     if milestones and not have_all:
-        warnings.append("Some milestones have no amount in the document. Add them on the milestones step.")
+        warnings.append("Some milestones have no amount in the document.")
 
     if job_criteria:
         if len(milestones) == 1:
@@ -675,13 +687,13 @@ def heuristic_scope(text: str, *, today: date | None = None) -> dict:
                 notes.append("Job-wide acceptance criteria were added to "
                              f"“{missing[-1]['title']}”.")
     if not milestones:
-        warnings.append("No milestones found. The flow suggests a starting set for the category.")
+        warnings.append("No milestones found in the document.")
     elif any(not m["acceptance"] for m in milestones):
-        warnings.append("Some milestones have no acceptance criteria. Add them on the success criteria step.")
+        warnings.append("Some milestones have no acceptance criteria in the document.")
 
     category = _category(text, " ".join([title or "", outcome or ""]))
     if not category:
-        warnings.append("Could not tell the kind of work. Choose a category.")
+        warnings.append("Could not tell the kind of work from the document.")
 
     brief = brief_of(outcome) or (brief_of(title) if title else None)
     return _result(outcome=outcome, brief=brief, title=title, category=category,
@@ -821,7 +833,7 @@ def llm_scope(text: str, *, today: date | None = None, fallback: dict | None = N
         except ValueError:
             d = None
         if d is not None and d < today:
-            warnings.append(f"The deadline in the document ({d.isoformat()}) has already passed. Pick a new one.")
+            warnings.append(f"The deadline in the document ({d.isoformat()}) has already passed.")
             d = None
     if mode == "date" and d is None:
         mode = None
@@ -845,19 +857,19 @@ def llm_scope(text: str, *, today: date | None = None, fallback: dict | None = N
         deadline = fb["deadline"]
 
     if not outcome:
-        warnings.append("No objective or outcome found. Describe the result you want in your own words.")
+        warnings.append("No objective or outcome found in the document.")
     if not milestones:
-        warnings.append("No milestones found. The flow suggests a starting set for the category.")
+        warnings.append("No milestones found in the document.")
     elif any(m["amount_usdc"] is None for m in milestones):
-        warnings.append("Some milestones have no amount in the document. Add them on the milestones step.")
+        warnings.append("Some milestones have no amount in the document.")
     if milestones and any(not m["acceptance"] for m in milestones):
-        warnings.append("Some milestones have no acceptance criteria. Add them on the success criteria step.")
+        warnings.append("Some milestones have no acceptance criteria in the document.")
     if budget is None:
-        warnings.append("No budget found. Set one on the budget step.")
+        warnings.append("No budget found in the document.")
     if not deadline["mode"]:
-        warnings.append("No deadline found. Pick one on the deadline step.")
+        warnings.append("No deadline found in the document.")
     if not category:
-        warnings.append("Could not tell the kind of work. Choose a category.")
+        warnings.append("Could not tell the kind of work from the document.")
     return _result(outcome=outcome, brief=brief, title=fb.get("title"), category=category,
                    milestones=milestones, acceptance=fb.get("acceptance") or [], deadline=deadline,
                    budget=_num(budget), warnings=warnings, notes=notes, method="llm")
