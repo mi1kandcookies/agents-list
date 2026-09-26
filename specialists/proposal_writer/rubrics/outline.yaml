@@ -1,0 +1,15 @@
+name: Annotated outline and gap list
+criteria:
+  - id: mirrors_structure
+    description: Volumes and sections follow the order and naming the instructions require.
+    weight: 0.3
+  - id: budget_by_weight
+    description: Page budgets are proportionate to the evaluation weights and fit each volume's limit.
+    weight: 0.2
+  - id: evidence_named
+    description: Each section names the win theme and the knowledge-base passages it will use.
+    weight: 0.25
+  - id: gap_questions_actionable
+    description: Every gap question is specific, cites the requirement id and can be answered by a named role.
+    weight: 0.25
+threshold: 0.75

@@ -206,8 +206,11 @@ def format_rules_captured(workspace: Path, params: dict[str, Any], *, run=None) 
 @_guarded
 def dates_match_source(workspace: Path, params: dict[str, Any], *, run=None) -> dict[str, Any]:
     """Every date in the bid brief appears in the solicitation, and every
-    deadline-like date in the solicitation appears in the brief."""
+    deadline-like date in the solicitation appears in the brief. A
+    questionnaire's due date comes from the customer, so it is skipped there."""
     doc, problems = _load(workspace, params)
+    if doc.get("mode") == "questionnaire":
+        return _result(True, "questionnaire engagement; dates come from intake", None)
     if problems:
         return _result(False, _brief(problems), 0.0)
     found = []
@@ -274,8 +277,11 @@ def evidence_map_complete(workspace: Path, params: dict[str, Any], *, run=None) 
 @_guarded
 def outline_budget_ok(workspace: Path, params: dict[str, Any], *, run=None) -> dict[str, Any]:
     """Outline page budgets fit the solicitation's page limits (recomputed)
-    and every content requirement is covered by a heading."""
+    and every content requirement is covered by a heading. A questionnaire
+    has no page limits and is covered by its answer sheet instead."""
     doc, problems = _load(workspace, params)
+    if doc.get("mode") == "questionnaire":
+        return _result(True, "questionnaire engagement; coverage is checked on the answer sheet", None)
     if problems:
         return _result(False, _brief(problems), 0.0)
     report = T.outline_budget(workspace, params.get("path", T.OUTLINE_PATH),

@@ -1,0 +1,18 @@
+name: Bid/no-bid brief
+criteria:
+  - id: requirements_summary
+    description: States what is being bought, by whom, and the eligibility conditions, each traced to a solicitation section.
+    weight: 0.2
+  - id: dates_complete
+    description: Lists every deadline (questions, intent to bid, proposal due) with time zone where given, copied exactly.
+    weight: 0.2
+  - id: evaluation_criteria
+    description: Summarizes the evaluation factors, their relative weight and the award basis without distortion.
+    weight: 0.2
+  - id: risks
+    description: Names concrete risks (eligibility, mandatory experience, page pressure, funder AI-use policy, unclear instructions) and what would resolve each.
+    weight: 0.2
+  - id: recommendation
+    description: Gives a bid, no-bid or conditional recommendation with reasons tied to the evidence, and leaves the decision to the customer.
+    weight: 0.2
+threshold: 0.75
