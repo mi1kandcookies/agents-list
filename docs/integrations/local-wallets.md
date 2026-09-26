@@ -29,3 +29,13 @@ The launcher also loads the shared `agents-list.sidecar-token` Keychain entry
 as `ENS_SIDECAR_TOKEN`. It does not enable live writes by itself. The ENS
 sidecar must be started without `DRY_RUN=1` and the explicit setup command must
 be used before any name-registration transaction is sent.
+
+Optional entries are loaded when present:
+
+- `agents-list.intercepta-api-key` → `INTERCEPTA_API_KEY`
+- `agents-list.mock-deployer` → `MOCK_USDC_DEPLOYER_PRIVATE_KEY`
+
+Store those entries in the macOS Keychain UI (or an approved secret-management
+workflow). The launcher keeps missing optional entries unset, so screening
+continues to fail closed and mock-token deployment remains unavailable until
+explicitly configured.
