@@ -10,7 +10,7 @@ Steps:
    (``app.seller.stamp.stamp_status(a).ok``), with its stamped manifest
    (model, tools, MCP servers, skills), description, does / doesn't lists,
    category, token prices and track record.
-2. **Capability** is judged by the Agent's List matchmaker agent, an
+2. **Capability** is decided by the Agent's List matchmaker agent, an
    OpenAI-compatible model reached through app/llm.py (``LLM_URL``), with the
    prompt in app/intake/matchmaker_prompt.py at temperature 0. Its reply is
    validated strictly: the schema must match, the agent id must be one of the

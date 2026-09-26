@@ -2,7 +2,7 @@
 
 The matchmaker is the platform's own agent. It reads the buyer's job and the
 hireable listings and answers one question: which listing, if any, can do
-this job. It only assesses capability. Cost, token and duration figures are
+this job. It only decides capability. Cost, token and duration figures are
 computed by the server from the token model and each agent's listed prices;
 the model may suggest a token range, which the server clamps, and any cost
 it states is ignored.
