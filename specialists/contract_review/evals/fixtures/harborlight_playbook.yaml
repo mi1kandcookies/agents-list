@@ -1,0 +1,102 @@
+# Synthetic codified playbook for the fictional Harborlight Logistics LLC,
+# buying SaaS (purchasing side). Used by tests and eval cases.
+schema_version: 1
+contract_type: saas_msa
+side: customer
+jurisdiction_scope: US commercial
+escalation_contact: Deputy General Counsel
+families:
+  - id: liability_cap_amount
+    title: Limitation of liability - cap amount
+    severity: high
+    preferred: Mutual cap of at least 12 months of fees paid or payable.
+    fallback: ["Mutual cap of 6 months of fees with a fixed-dollar floor of USD 250,000."]
+    walk_away: Any cap below 3 months of fees, or a cap that binds only the customer.
+    escalate_if: Counterparty refuses any cap above 6 months of fees.
+  - id: liability_cap_base
+    title: Limitation of liability - cap base
+    severity: medium
+    preferred: Fees paid or payable in the 12 months before the event giving rise to the claim.
+    fallback: [Fees paid in the 12 months before the claim.]
+    walk_away: A base measured only by fees already paid in a short look-back window.
+  - id: liability_indirect_damages
+    title: Limitation of liability - indirect damages
+    severity: medium
+    preferred: Mutual exclusion of indirect and consequential damages, subject to the carve-outs.
+    fallback: [Mutual exclusion without carve-outs for lost profits only.]
+    walk_away: A one-way exclusion that protects only the provider.
+  - id: liability_carve_outs
+    title: Limitation of liability - carve-outs
+    severity: critical
+    preferred: Indemnity obligations, breach of confidentiality, data protection breaches, gross negligence and wilful misconduct sit outside the cap.
+    fallback: [Data protection breaches subject to a super-cap of 3x the general cap.]
+    walk_away: Provider's indemnity and data-breach liability capped at the general cap with no super-cap.
+    escalate_if: Any carve-out is refused.
+  - id: indemnification
+    title: Indemnification
+    severity: critical
+    preferred: Provider indemnifies for third-party IP infringement claims and data breaches; any customer indemnity is limited to third-party claims from customer content.
+    fallback: [Mutual third-party-claim indemnities limited to IP infringement.]
+    walk_away: A one-way customer indemnity for "any breach" of the agreement.
+    escalate_if: Customer indemnity covers any breach or first-party losses.
+  - id: intellectual_property
+    title: Intellectual property and feedback
+    severity: high
+    preferred: Customer owns its data; feedback licence is limited to improving the Services and never covers Customer Data.
+    fallback: [Feedback licence limited to aggregated, de-identified usage data.]
+    walk_away: Any licence to use Customer Data for model training or unrelated purposes.
+    escalate_if: Provider insists on training rights over Customer Data.
+  - id: data_protection
+    title: Data protection and security
+    severity: high
+    preferred: Signed DPA, written security program, breach notice within 72 hours.
+    fallback: [Breach notice within 5 business days plus a DPA before any personal data is processed.]
+    walk_away: No DPA and no fixed breach-notice window.
+  - id: confidentiality
+    title: Confidentiality
+    severity: medium
+    preferred: Mutual, reasonable care, survives 5 years and indefinitely for trade secrets.
+    fallback: [Survives 3 years; trade secrets for as long as they remain trade secrets.]
+    walk_away: No confidentiality obligation on the provider.
+  - id: warranties
+    title: Warranties
+    severity: medium
+    preferred: Services perform materially as documented; remedy is re-performance or refund of prepaid fees.
+    fallback: [Performance warranty for the first 90 days of each term.]
+    walk_away: Full "as is" disclaimer on a paid production service.
+  - id: term_termination
+    title: Term, termination and renewal
+    severity: medium
+    preferred: Renewal only by written agreement; termination for convenience on 30 days' notice.
+    fallback: [Auto-renewal with a non-renewal notice window of no more than 30 days and a renewal price cap.]
+    walk_away: Non-renewal notice window over 60 days with uncapped renewal pricing.
+  - id: assignment
+    title: Assignment and change of control
+    severity: medium
+    preferred: Neither party assigns without consent, except to a successor in a merger with notice.
+    fallback: [Mutual right to assign on change of control with notice and a customer termination right.]
+    walk_away: One-sided assignment right for the provider only.
+  - id: governing_law
+    title: Governing law and disputes
+    severity: low
+    preferred: Laws of Ohio, courts in Columbus, Ohio.
+    fallback: [Laws of New York or Delaware with a neutral forum.]
+    walk_away: A foreign governing law.
+  - id: insurance
+    title: Insurance
+    severity: low
+    preferred: "Provider carries cyber and E&O insurance of at least USD 5,000,000."
+    fallback: ["Cyber insurance of at least USD 2,000,000."]
+    walk_away: No insurance commitment when the provider hosts Customer Data.
+  - id: payment
+    title: Payment and price changes
+    severity: medium
+    preferred: Net 45 days; price increases only at renewal and capped at 5%.
+    fallback: [Net 30 days; renewal increases capped at 7%.]
+    walk_away: Unilateral mid-term price increases.
+  - id: non_solicitation
+    title: Non-solicitation
+    severity: low
+    preferred: No non-solicitation clause, or mutual with a general-advertising exception.
+    fallback: [Mutual 12-month non-solicit of directly involved staff.]
+    walk_away: One-way non-solicit binding only the customer for more than 12 months.

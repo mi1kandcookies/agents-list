@@ -1,0 +1,235 @@
+# Manifest v1 for the contract-review specialist. Parsed with yaml.safe_load
+# by agentkit.manifest; unknown keys are rejected.
+schema_version: 1
+slug: contract-review
+name: Contract Review & Redline
+version: 0.1.0
+summary: >-
+  Reviews third-party commercial contracts against the customer's own
+  negotiation playbook and drafts a cited issue list, surgical tracked-change
+  redlines and a negotiation memo for a licensed attorney to approve.
+listing:
+  category: Legal
+  description: >-
+    Playbook-based review of NDAs, SaaS/MSAs, DPAs, vendor agreements and
+    order forms (US/UK commercial paper), one contract per engagement.
+    Every issue quotes the contract verbatim, every playbook clause family
+    is accounted for, and redlines arrive as native Word tracked changes
+    that reject back to the reviewed text exactly. Draft work product for
+    your attorney: it never sends, signs or advises a non-lawyer.
+  tags: [legal, contracts, redline, playbook, nda, msa, saas, dpa, procurement]
+  capabilities:
+    - Codifies your negotiation playbook (preferred, fallback, walk-away per clause family)
+    - Issue list with verbatim quotes, severity, escalations and recommended fixes
+    - Surgical redlines as native .docx tracked changes with margin comments
+    - Negotiation memo ranking what to push on and where to concede
+    - Flags hidden text, comments, pending tracked changes and likely embedded instructions in counterparty paper
+  # typical_low/high: the engagement range, billed per milestone through the SOW.
+  # task_price_usdc: the flat x402 price of one agent-to-agent task, which the
+  # operator stamps as the platform manifest's price (a placeholder for now).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 400, typical_high: 2500,
+            task_price_usdc: 5.0}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: regulated-draft
+prompts:
+  system: prompts/system.md
+  include: [playbook/review-method.md, playbook/clause-checklists.md, playbook/redline-style.md]
+tools:
+  - read_document
+  - read_file
+  - write_file
+  - edit_file
+  - list_files
+  - search_files
+  - ask_client
+  - post_progress
+  - submit_milestone
+  - read_contract
+  - segment_clauses
+  - scan_hidden_content
+  - locate_quote
+  - check_references
+  - validate_playbook
+  - record_issues
+  - build_redline
+shell: {allow: [], timeout_seconds: 600}
+egress: {mode: none, allow: []}
+limits: {max_steps: 80, max_tokens: 3000000, max_usd: 40, max_wall_minutes: 180}
+human_gate:
+  required: true
+  reviewer_role: licensed attorney
+  disclaimer: >-
+    Draft work product prepared for review by a licensed attorney. Not legal
+    advice. Nothing in this deliverable has been sent to any counterparty,
+    accepted, rejected or signed.
+  checklist:
+    - The playbook positions reflect the client's instructions before any contract is reviewed
+    - Every critical issue and escalation has been read against the quoted contract text
+    - No walk-away item was downgraded without attorney approval
+    - Tracked changes and margin comments are appropriate to send to the counterparty
+    - Hidden-content findings have been reviewed and the counterparty paper is safe to open
+    - The negotiation memo is approved before anything leaves the engagement workspace
+intake:
+  - field: contract_files
+    question: Which contract should be reviewed? Upload it to inputs/ (.docx preferred, .txt accepted; scanned PDFs need a text version). Each engagement reviews one contract.
+    required: true
+  - field: related_documents
+    question: Does the contract incorporate other documents (order forms, a DPA, policies, an order of precedence)? Upload them to inputs/; they are read for context, not redlined.
+    required: false
+  - field: contract_type
+    question: What kind of agreement is it (NDA, SaaS/MSA, DPA, vendor agreement, order form)?
+    required: true
+  - field: side
+    question: "Which side are you on: customer (buying) or vendor (selling)?"
+    required: true
+  - field: reviewing_attorney
+    question: Who is the licensed attorney who will review and approve the work product (name and bar jurisdiction)?
+    required: true
+  - field: playbook_materials
+    question: Do you have an existing playbook, negotiation guidelines, templates or previously negotiated agreements? Upload them to inputs/.
+    required: false
+  - field: governing_jurisdiction
+    question: Which jurisdiction's law should the review assume (v1 covers US and UK commercial contracts)?
+    required: false
+  - field: deal_context
+    question: Anything about the deal we should weigh (value, deadline, leverage, relationship, must-haves)?
+    required: false
+  - field: escalation_contact
+    question: Who should escalated issues be routed to?
+    required: false
+estimate: {usd_per_hour: 6.0}
+milestones:
+  - id: m1-playbook
+    title: Playbook codification
+    description: >-
+      Turn the client's guidelines, templates and past negotiated agreements
+      (or, if none exist, a clearly labelled baseline for attorney edit) into
+      a machine-readable playbook of at least 12 clause families, each with a
+      preferred position, fallbacks, a walk-away position, severity and
+      escalation trigger. The attorney approves it before any review runs.
+    deliverables:
+      - deliverables/m1-playbook/playbook.yaml
+      - deliverables/m1-playbook/playbook.md
+    hours: [1, 3]
+    acceptance:
+      - check: files_exist
+        params: {paths: [deliverables/m1-playbook/playbook.yaml, deliverables/m1-playbook/playbook.md]}
+      - check: playbook_schema_valid
+        description: Schema valid with at least 12 clause families and no placeholders
+        params: {path: deliverables/m1-playbook/playbook.yaml, min_families: 12}
+      - check: no_placeholders
+        params: {paths: [deliverables/m1-playbook/playbook.yaml, deliverables/m1-playbook/playbook.md]}
+      - check: disclaimer_present
+        params: {path: deliverables/m1-playbook/playbook.md}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/playbook.yaml, paths: [deliverables/m1-playbook/playbook.yaml, deliverables/m1-playbook/playbook.md], threshold: 0.8}
+      - check: human_signoff
+        kind: human
+        description: The attorney approves every playbook position
+  - id: m2-issues
+    title: Issue list
+    description: >-
+      Review the contract the intake names against the approved playbook at
+      deliverables/m1-playbook/playbook.yaml, which must not change (record
+      the list with record_issues). Every issue carries a verbatim quote and
+      location, severity, the playbook position it departs from, a
+      recommendation and a fallback; every playbook family is marked
+      deviation, compliant (quoting its own clause), absent or not
+      applicable, with suspect calls flagged for the attorney. Hidden
+      content, pending tracked changes and embedded instructions in the
+      paper are disclosed.
+    deliverables:
+      - deliverables/m2-issues/issues.json
+      - deliverables/m2-issues/issues.md
+      - deliverables/m2-issues/issues.csv
+      - deliverables/m2-issues/review-notes.md
+    hours: [2, 3]
+    acceptance:
+      - check: files_exist
+        params: {paths: [deliverables/m2-issues/issues.json, deliverables/m2-issues/issues.md, deliverables/m2-issues/issues.csv, deliverables/m2-issues/review-notes.md]}
+      - check: approved_inputs_unchanged
+        description: The approved playbook is byte-for-byte what the attorney approved
+        params: {paths: [deliverables/m1-playbook/playbook.yaml, deliverables/m1-playbook/playbook.md]}
+      - check: quotes_in_contract
+        description: Every quote matches the contract verbatim
+        params: {issues: deliverables/m2-issues/issues.json}
+      - check: playbook_coverage
+        description: Every approved playbook family is addressed and consistent with the issues
+        params: {issues: deliverables/m2-issues/issues.json, playbook: deliverables/m1-playbook/playbook.yaml}
+      - check: issue_list_valid
+        description: The issue list re-validates and issues.md / issues.csv are its exact rendering
+        params:
+          issues: deliverables/m2-issues/issues.json
+          playbook: deliverables/m1-playbook/playbook.yaml
+          markdown: deliverables/m2-issues/issues.md
+          csv: deliverables/m2-issues/issues.csv
+      - check: csv_formula_safe
+        params: {path: deliverables/m2-issues/issues.csv}
+      - check: hidden_content_disclosed
+        params: {issues: deliverables/m2-issues/issues.json, report: deliverables/m2-issues/review-notes.md}
+      - check: no_placeholders
+        params: {paths: [deliverables/m2-issues/review-notes.md]}
+      - check: disclaimer_present
+        params: {path: deliverables/m2-issues/review-notes.md}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/issue-list.yaml, paths: [deliverables/m2-issues/issues.md, deliverables/m2-issues/review-notes.md], threshold: 0.8}
+      - check: human_signoff
+        kind: human
+        description: The attorney approves the issue list, severities and escalations
+  - id: m3-redline
+    title: Redline and negotiation memo
+    description: >-
+      Draft surgical redlines for the approved issues in
+      deliverables/m2-issues/issues.json (with build_redline, on the same
+      contract and base; the approved playbook and issue list must not
+      change) as native .docx tracked changes with margin comments
+      (rejecting all changes restores the reviewed text exactly), plus a
+      negotiation memo with priorities, asks, fallbacks, concessions and
+      open questions for the attorney.
+    deliverables:
+      - deliverables/m3-redline/redline.docx
+      - deliverables/m3-redline/redline.json
+      - deliverables/m3-redline/redline.md
+      - deliverables/m3-redline/proposed.txt
+      - deliverables/m3-redline/memo.md
+    hours: [2, 3]
+    acceptance:
+      - check: files_exist
+        params: {paths: [deliverables/m3-redline/redline.docx, deliverables/m3-redline/redline.json, deliverables/m3-redline/proposed.txt, deliverables/m3-redline/memo.md]}
+      - check: approved_inputs_unchanged
+        description: The approved playbook and issue list are byte-for-byte what the attorney approved
+        params:
+          paths:
+            - deliverables/m1-playbook/playbook.yaml
+            - deliverables/m1-playbook/playbook.md
+            - deliverables/m2-issues/issues.json
+            - deliverables/m2-issues/issues.md
+            - deliverables/m2-issues/issues.csv
+            - deliverables/m2-issues/review-notes.md
+      - check: redline_roundtrip
+        description: Tracked changes reject to the original and accept to the proposal
+        params:
+          redline: deliverables/m3-redline/redline.json
+          issues: deliverables/m2-issues/issues.json
+          proposed: deliverables/m3-redline/proposed.txt
+          docx: deliverables/m3-redline/redline.docx
+          markdown: deliverables/m3-redline/redline.md
+      - check: references_resolve
+        params: {redline: deliverables/m3-redline/redline.json, proposed: deliverables/m3-redline/proposed.txt}
+      - check: memo_covers_issues
+        description: The memo names every critical, high and escalated issue and every such missing protection
+        params: {memo: deliverables/m3-redline/memo.md, issues: deliverables/m2-issues/issues.json, playbook: deliverables/m1-playbook/playbook.yaml}
+      - check: markdown_sections
+        params: {path: deliverables/m3-redline/memo.md, sections: [Summary, Priorities, Fallbacks and concessions, Open questions for counsel]}
+      - check: no_placeholders
+        params: {paths: [deliverables/m3-redline/memo.md]}
+      - check: disclaimer_present
+        params: {path: deliverables/m3-redline/memo.md}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/redline-memo.yaml, paths: [deliverables/m3-redline/redline.md, deliverables/m3-redline/memo.md], threshold: 0.8}
+      - check: human_signoff
+        kind: human
+        description: The attorney approves every tracked change and the memo before anything is sent

@@ -1,0 +1,21 @@
+name: Redline and negotiation memo quality
+threshold: 0.8
+criteria:
+  - id: surgical
+    weight: 0.25
+    description: Tracked changes touch only the words needed to reach the playbook position; no silent rewrites or style edits.
+  - id: faithful
+    weight: 0.2
+    description: Every change traces to an approved issue and lands on the preferred or an approved fallback position.
+  - id: comments
+    weight: 0.15
+    description: Margin comments are short, professional and suitable for the counterparty; internal reasoning stays in the memo.
+  - id: priorities
+    weight: 0.2
+    description: The memo ranks what to push on, what to trade and where to concede, tied to issue ids.
+  - id: consistency
+    weight: 0.1
+    description: Defined terms and cross-references still work after the redline.
+  - id: gating
+    weight: 0.1
+    description: The memo is addressed to the reviewing attorney, carries the disclaimer, and asks rather than decides on judgement calls.

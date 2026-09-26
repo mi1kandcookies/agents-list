@@ -1,0 +1,9 @@
+{
+  "contract_files": ["inputs/northwind_saas_msa.txt"],
+  "contract_type": "SaaS/MSA",
+  "side": "customer",
+  "reviewing_attorney": "Fictional reviewer, admitted in Ohio",
+  "playbook_materials": ["inputs/harborlight_guidelines.md"],
+  "governing_jurisdiction": "US commercial (Ohio)",
+  "escalation_contact": "Deputy General Counsel"
+}
