@@ -1,6 +1,7 @@
 {
   "name": "m3-coldharbor-red-flags",
   "milestone": "m3-diligence-memo",
+  "fixture": "workspace",
   "brief": {
     "engagement_id": "eval-fr-m3",
     "specialist": "financial-research",
@@ -14,5 +15,5 @@
       "audience": "internal deal team"
     }
   },
-  "notes": "Run after the M2 case in the same workspace. Red-flag recall: the checklist must mark RF01 (8-K 4.01, June 2024), RF02 (8-K 4.02), RF03 (10-K/A), RF04 (NT 10-K) and RF09 (8-K 2.04) found for Coldharbor with the right accessions; Halvorsen RF07 (related-party lease, inputs/dataroom/legal/related_party_memo.txt) should be found from the data room. questions.md should ask about the auditor change and the restatement. memo_figures_match, red_flag_checklist and no_recommendation_language must pass."
+  "notes": "Workspace = evals/fixtures/workspace without M2 deliverables: the agent rebuilds facts.csv and comps.csv with build_spreads and compute_comps first. Red-flag recall: the checklist must mark RF01 (8-K 4.01, June 2024), RF02 (8-K 4.02), RF03 (10-K/A), RF04 (NT 10-K) and RF09 (8-K 2.04) found for Coldharbor with the right accessions; Halvorsen RF07 (related-party lease, inputs/dataroom/legal/related_party_memo.txt) should be found from the data room. questions.md should ask about the auditor change and the restatement. memo_figures_match, red_flag_checklist and no_recommendation_language must pass."
 }

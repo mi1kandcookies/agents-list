@@ -634,13 +634,17 @@ def test_rubrics_are_well_formed():
 
 
 def test_eval_cases_are_well_formed(manifest):
+    from agentkit.evals import load_cases
+    from agentkit.registry import load_specialist
     from agentkit.types import Brief
     milestones = {m["id"] for m in manifest["milestones"]}
-    cases = sorted((PKG / "evals" / "cases").glob("*.json"))
+    fixtures = PKG / "evals" / "fixtures"
+    cases = load_cases(load_specialist("financial-research"))   # the kit's case schema
     assert len(cases) >= 3
-    for path in cases:
-        case = json.loads(path.read_text(encoding="utf-8"))
-        assert set(case) == {"name", "brief", "milestone", "notes"}, path.name
-        assert case["name"] == path.stem and case["milestone"] in milestones
-        brief = Brief.from_dict(case["brief"])
+    for case in cases:
+        assert case.name == case.path.stem and case.milestone in milestones
+        assert case.notes
+        brief = Brief.from_dict(case.brief)
         assert brief.specialist == "financial-research"
+        assert case.fixture is None or (fixtures / case.fixture).is_dir(), case.name
+        assert all((fixtures / src).is_file() for src in case.fixtures.values()), case.name
