@@ -3,7 +3,8 @@ specialists/market_research/tools.py - deterministic domain tools for the
 market-research specialist.
 
 Each tool is a plain function fn(workspace, *, fetch=None, run=None, **args)
-returning a dict; TOOL_DEFS lists them for agent.py to wrap. The model does
+returning a dict; TOOL_DEFS lists them and the kit wraps them as tools for
+the Specialist in agent.py (agentkit.tools.tools_from_defs). The model does
 the reading and judgement; these functions do the bookkeeping it must not get
 wrong: question-tree validation, source tiering, claim-to-question mapping,
 the evidence export, the competitor matrix and the sizing arithmetic.

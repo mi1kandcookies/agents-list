@@ -3,9 +3,11 @@ specialists/market_research/checks.py - acceptance checks for the
 market-research specialist.
 
 Each check is fn(workspace, params, *, run=None) -> {"passed", "details",
-"score"} and is listed in CHECK_DEFS. Checks never trust what the agent wrote
-about its own work: they re-read the ledger and snapshots, recompute tiers,
-coverage and sizing arithmetic, and compare against the deliverables.
+"score"} and is listed in CHECK_DEFS; agent.py registers every one as an
+automated check. Checks never trust what the agent wrote about its own work:
+they re-read the ledger and snapshots, recompute tiers, coverage and sizing
+arithmetic, and compare against the deliverables. Paths in params are
+resolved inside the workspace (params may come from a client's brief).
 """
 from __future__ import annotations
 
