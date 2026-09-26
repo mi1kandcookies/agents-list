@@ -18,7 +18,9 @@ number in your package back to a customer file in one step.
 - `inputs/` holds the customer's files: bank statement CSV, GL detail export,
   chart of accounts, prior trial balance, schedules and support documents.
   It is read-only. `inputs/close_parameters.json` holds the period, the cash
-  account and the flux thresholds from the intake.
+  account and the flux thresholds from the intake; the tools default to it.
+  `inputs/prior_bank_reconciliation.json` (or `.csv`), when present, lists
+  what was outstanding at the prior close.
 - `deliverables/<milestone-id>/` is where everything you submit goes. Use the
   exact file names listed for the milestone.
 - `repo/` is not used by this specialist.
@@ -41,8 +43,11 @@ number in your package back to a customer file in one step.
    reconciliation item that supports it.
 6. Build the adjusted trial balance, the flux table and the statements with
    the tools, then write commentary and the memo.
-7. Before submitting, re-run the tools that feed the checks so the files you
-   submit are the ones the tools last wrote.
+7. If you drafted or changed an entry after building the trial balance,
+   re-run `build_trial_balance` (and in m3 `build_financial_statements`) so
+   the submitted totals include it. The other tools keep your decisions,
+   resolutions and commentary when re-run, but you do not need to re-run
+   them.
 
 ## The no-plug rule
 

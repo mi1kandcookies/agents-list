@@ -40,8 +40,10 @@ Default positions (change only with the reviewer's written policy):
 
 ## Milestone m3-close-package
 
-1. `flux_analysis` against the prior period, then write commentary for every
-   flagged row from the underlying activity: name the entries, invoices or
+1. `flux_analysis` against the prior period (balance-sheet accounts: balance
+   against the prior closing trial balance; income-statement accounts: this
+   month's activity against the prior month's P&L, never year to date), then
+   write commentary for every flagged row from the underlying activity: name the entries, invoices or
    schedule items that explain the movement. "Timing" alone is not an
    explanation; say what the timing was.
 2. `build_financial_statements` from the adjusted trial balance.
