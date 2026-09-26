@@ -163,7 +163,7 @@ def api_agent_task(agent_ref):
     from app.engagements import ledger
     from app.engagements import service as eng_svc
     from app.engagements.service import EngagementError
-    from app.hiring.deliverables import build_api_test_plan
+    from app.hiring.deliverables import build_api_test_plan, build_llm_deliverable
     from app.mandates import service as mandates
     from app.mandates.tokens import MandateError
     from app.models import Agent, Engagement, HireIntent, Mandate
@@ -321,8 +321,16 @@ def api_agent_task(agent_ref):
     # Build the read-only result before settlement, but do not publish it until
     # the transfer succeeds below. The source text is hashed into the result;
     # there is no second, unapproved task body accepted after payment.
-    deliverable = build_api_test_plan(task, specialist=agent.name,
-                                      agent_id=agent.public_id)
+    from app import llm as llm_module
+    if llm_module.is_finance_demo_agent(agent.public_id):
+        try:
+            deliverable = build_llm_deliverable(task, agent=agent)
+        except RuntimeError as exc:
+            log.warning("finance LLM deliverable failed for %s: %s", agent.public_id, str(exc)[:200])
+            deliverable = build_api_test_plan(task, specialist=agent.name, agent_id=agent.public_id)
+    else:
+        deliverable = build_api_test_plan(task, specialist=agent.name,
+                                          agent_id=agent.public_id)
 
     nonces = _nonces()
     try:
