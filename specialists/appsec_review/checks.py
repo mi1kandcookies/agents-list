@@ -9,14 +9,23 @@ check recomputes from the source of truth (the SARIF file, the actual source
 tree, the signed scope) rather than trusting whatever the agent claimed, so a
 forged finding, a moved line or an out-of-scope target fails here. CHECK_DEFS at
 the bottom is the name -> function map the manifest references.
+
+Paths from params and from the SARIF log are jailed (the workspace, and for
+SARIF locations the code root) before anything is read. Evidence must be
+customer source: a location or secret in a file the agent wrote during the
+engagement (the claim ledger's "authored" list, kept by write_file and the
+domain tools) never counts, so the agent cannot plant the code it reports.
 """
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from agentkit.errors import PolicyViolation
+from agentkit.ledger import Ledger
+from agentkit.policy import INTERNAL_DIR, jail_path
 from specialists.appsec_review.tools import _host_in_scope, _host_of, scan_secrets
 
 
@@ -24,10 +33,26 @@ def _result(passed, details, score=None) -> dict:
     return {"passed": passed, "details": details, "score": score}
 
 
+def _authored(workspace: Path) -> Callable[[str], bool]:
+    """is_authored(rel) from the run's claim ledger. An unreadable ledger
+    treats every file as authored, so a broken ledger fails closed."""
+    try:
+        return Ledger(Path(workspace)).is_authored
+    except (OSError, ValueError, TypeError):
+        return lambda rel: True
+
+
+def _rel(workspace: Path, path: Path) -> str:
+    return path.relative_to(Path(workspace).resolve()).as_posix()
+
+
 def _load_sarif(workspace: Path, params: dict) -> tuple[dict | None, str]:
     """Read and JSON-parse the SARIF file named in params['path']."""
     rel = params.get("path", "deliverables/m2-findings/findings.sarif")
-    path = Path(workspace) / rel
+    try:
+        path = jail_path(Path(workspace), rel)
+    except PolicyViolation as exc:
+        return None, f"SARIF path refused: {exc}"
     if not path.exists():
         return None, f"SARIF file not found: {rel}"
     try:
@@ -95,24 +120,40 @@ def sarif_locations_exist(workspace: Path, params: dict, *, run=None) -> dict:
 
     params: path (SARIF), code_root (default '.') to resolve artifact URIs.
     A finding whose snippet no longer matches the source at that line fails,
-    which catches stale or fabricated evidence.
+    which catches stale or fabricated evidence; so does a location outside the
+    code root, under .agentkit/, or in a file the agent wrote itself.
     """
     log, ref = _load_sarif(workspace, params)
     if log is None:
         return _result(False, ref, 0.0)
-    root = Path(workspace) / params.get("code_root", ".")
+    try:
+        root = jail_path(Path(workspace), params.get("code_root", "."))
+    except PolicyViolation as exc:
+        return _result(False, f"code_root refused: {exc}", 0.0)
+    is_authored = _authored(workspace)
     total = ok = 0
     problems: list[str] = []
     for _, res in _iter_results(log):
         for loc in res.get("locations", []) or []:
             total += 1
             phys = loc.get("physicalLocation") or {}
-            uri = (phys.get("artifactLocation") or {}).get("uri", "")
+            uri = str((phys.get("artifactLocation") or {}).get("uri", ""))
             region = phys.get("region") or {}
             start = region.get("startLine")
-            target = (root / uri)
-            if not target.exists():
+            try:
+                target = jail_path(root, uri)
+            except PolicyViolation:
+                problems.append(f"{uri}: not a file inside the code root")
+                continue
+            rel = _rel(workspace, target)
+            if rel.split("/", 1)[0] == INTERNAL_DIR:
+                problems.append(f"{uri}: kit-internal file, not source")
+                continue
+            if not target.is_file():
                 problems.append(f"{uri}: file not found")
+                continue
+            if is_authored(rel):
+                problems.append(f"{uri}: written by the agent during the engagement, not customer source")
                 continue
             try:
                 lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -182,7 +223,10 @@ def scope_respected(workspace: Path, params: dict, *, run=None) -> dict:
     if log is None:
         return _result(False, ref, 0.0)
     scope_rel = params.get("scope_file", "inputs/scope.json")
-    scope_path = Path(workspace) / scope_rel
+    try:
+        scope_path = jail_path(Path(workspace), scope_rel)
+    except PolicyViolation as exc:
+        return _result(False, f"scope file refused: {exc}", 0.0)
     if not scope_path.exists():
         return _result(None, f"scope file not found: {scope_rel}; human must confirm", None)
     allow = list((json.loads(scope_path.read_text(encoding="utf-8")) or {}).get("hosts", []))
@@ -213,10 +257,14 @@ def secret_findings_reconcile(workspace: Path, params: dict, *, run=None) -> dic
     params: report (JSON list of {file, line, rule_id}), code_root (default
     'repo'). This never trusts the agent's list: it rescans the source and fails
     if any claimed finding has no matching real hit at that file:line, which
-    catches fabricated or stale secret findings.
+    catches fabricated or stale secret findings. Hits in files the agent wrote
+    during the engagement do not count.
     """
     report_rel = params.get("report", "deliverables/m2-findings/secrets.json")
-    report_path = Path(workspace) / report_rel
+    try:
+        report_path = jail_path(Path(workspace), report_rel)
+    except PolicyViolation as exc:
+        return _result(False, f"secrets report refused: {exc}", 0.0)
     if not report_path.exists():
         return _result(False, f"secrets report not found: {report_rel}", 0.0)
     try:
@@ -225,18 +273,25 @@ def secret_findings_reconcile(workspace: Path, params: dict, *, run=None) -> dic
         return _result(False, f"secrets report is not valid JSON: {exc}", 0.0)
     if isinstance(claimed, dict):
         claimed = claimed.get("findings", [])
+    if not isinstance(claimed, list):
+        return _result(False, "secrets report must be a list of findings", 0.0)
 
     fresh = scan_secrets(Path(workspace), root=params.get("code_root", "repo"))["findings"]
+    is_authored = _authored(workspace)
     # A tolerant match: same file and rule within a line or two (formatting drift).
-    real = {(f["file"], f["rule_id"], f["line"]) for f in fresh}
+    real = {(f["file"], f["rule_id"], f["line"]) for f in fresh if not is_authored(f["file"])}
     total = ok = 0
     bogus: list[str] = []
     for item in claimed:
         total += 1
+        item = item if isinstance(item, dict) else {}
         f = item.get("file")
         rid = item.get("rule_id")
         line = item.get("line")
-        if any((f, rid, line + d) in real for d in (-1, 0, 1)):
+        if isinstance(f, str):
+            f = f.replace("\\", "/")
+        if (isinstance(line, int) and not isinstance(line, bool)
+                and any((f, rid, line + d) in real for d in (-1, 0, 1))):
             ok += 1
         else:
             bogus.append(f"{f}:{line} [{rid}]")

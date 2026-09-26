@@ -10,6 +10,14 @@ scope allow-list guard. Tools take the shared signature
 injected `fetch` for network work (never urllib/requests directly), so egress
 stays policy-checked and tests stay offline. TOOL_DEFS at the bottom is what the
 kit registers with the model.
+
+Under the kit, model-supplied paths go through the injected `resolve_path`
+(workspace jail, inputs/ read-only, .agentkit/ refused, and files written here
+are marked agent-authored so the checks never accept them as customer source).
+Called directly (unit tests, the acceptance checks) the tools fall back to a
+plain workspace jail. audit_dependencies also receives the claim `ledger` and
+registers every OSV answer that lists a vulnerability as a source, so advisory
+facts can be cited like any other claim.
 """
 from __future__ import annotations
 
@@ -19,7 +27,8 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
+from agentkit.policy import INTERNAL_DIR, jail_path
 
 # --- workspace helpers -------------------------------------------------------
 
@@ -32,24 +41,41 @@ _TEXT_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rb", ".php",
                   ".conf", ".tf", ""}
 
 
-def _resolve(workspace: Path, rel: str) -> Path:
-    """Join a workspace-relative path and refuse to escape the workspace."""
+def _resolve(workspace: Path, rel: str, resolve_path: Callable | None = None, *,
+             write: bool = False) -> Path:
+    """A workspace path for `rel`: through the kit's resolve_path when the tool
+    runs under the kit, else a plain jail. Escapes raise ToolError here and
+    PolicyViolation under the kit (reported to the model as a denial)."""
+    if resolve_path is not None:
+        return resolve_path(rel, write=write)
+    try:
+        return jail_path(Path(workspace), rel)
+    except PolicyViolation as exc:
+        raise ToolError(f"path escapes workspace: {rel} ({exc})") from None
+
+
+def _iter_text_files(root: Path, workspace: Path) -> Iterable[Path]:
+    """Yield candidate text files under root, skipping vendored/binary trees,
+    kit internals and anything (a symlink) that resolves outside the workspace."""
     workspace = Path(workspace).resolve()
-    target = (workspace / rel).resolve()
-    if workspace != target and workspace not in target.parents:
-        raise ToolError(f"path escapes workspace: {rel}")
-    return target
-
-
-def _iter_text_files(root: Path) -> Iterable[Path]:
-    """Yield candidate text files under root, skipping vendored/binary trees."""
     if root.is_file():
         yield root
         return
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        if any(part in _SKIP_DIRS for part in path.parts):
+        # Grader only the parts below the scan root, so a workspace that lives
+        # under e.g. /srv/build/ is not skipped wholesale.
+        if any(part in _SKIP_DIRS for part in path.relative_to(root).parts):
+            continue
+        try:
+            real = path.resolve()
+        except OSError:
+            continue
+        if not real.is_relative_to(workspace):
+            continue
+        inner = real.relative_to(workspace).parts
+        if inner and inner[0] == INTERNAL_DIR:
             continue
         if path.suffix.lower() not in _TEXT_SUFFIXES:
             continue
@@ -103,20 +129,21 @@ _PLACEHOLDER = re.compile(
 
 
 def scan_secrets(workspace: Path, *, fetch=None, run=None, root: str = "repo",
-                 **_: Any) -> dict:
+                 resolve_path: Callable | None = None, **_: Any) -> dict:
     """Scan text files under `root` for hard-coded secrets.
 
-    Returns a findings list with file, 1-based line/column, the rule that hit,
-    a redacted excerpt, CWE and severity, plus a count of files scanned. The
-    matched secret is never returned in full.
+    Returns a findings list with file (workspace-relative), 1-based
+    line/column, the rule that hit, a redacted excerpt, CWE and severity, plus
+    a count of files scanned. The matched secret is never returned in full.
     """
-    base = _resolve(workspace, root)
+    base = _resolve(workspace, root, resolve_path)
+    ws = Path(workspace).resolve()
     patterns = _secret_patterns()
     findings: list[dict] = []
     scanned = 0
-    for path in _iter_text_files(base):
+    for path in _iter_text_files(base, ws):
         scanned += 1
-        rel = path.relative_to(Path(workspace).resolve()).as_posix()
+        rel = path.relative_to(ws).as_posix()
         text = _read_text(path)
         for lineno, line in enumerate(text.splitlines(), start=1):
             if len(line) > 4000:  # skip minified blobs
@@ -205,14 +232,18 @@ def _osv_fixed(vuln: dict, name: str) -> str:
 
 
 def audit_dependencies(workspace: Path, *, fetch: Callable | None = None, run=None,
-                       manifest: str = "repo/requirements.txt", **_: Any) -> dict:
+                       manifest: str = "repo/requirements.txt",
+                       resolve_path: Callable | None = None, ledger: Any = None,
+                       **_: Any) -> dict:
     """Parse a dependency manifest and query OSV for known vulnerabilities.
 
     Uses the injected `fetch` to POST each pinned package to the OSV query API;
     raises ToolError if no fetcher is available (network is policy-gated). The
-    manifest may be a requirements.txt or an npm package-lock.json.
+    manifest may be a requirements.txt or an npm package-lock.json. With a
+    `ledger`, each OSV answer that lists a vulnerability is registered as a
+    source (kind "tool") and its id returned as the vulnerability's `source`.
     """
-    path = _resolve(workspace, manifest)
+    path = _resolve(workspace, manifest, resolve_path)
     if not path.exists():
         raise ToolError(f"manifest not found: {manifest}")
     text = _read_text(path)
@@ -235,8 +266,15 @@ def audit_dependencies(workspace: Path, *, fetch: Callable | None = None, run=No
         status = getattr(resp, "status", 200)
         if status != 200:
             raise ToolError(f"OSV query failed for {pkg['name']}: HTTP {status}")
-        payload = json.loads(getattr(resp, "text", "") or "{}")
-        for vuln in payload.get("vulns", []) or []:
+        text = getattr(resp, "text", "") or "{}"
+        vulns = json.loads(text).get("vulns", []) or []
+        source_id = ""
+        if vulns and ledger is not None:
+            source_id = ledger.add_source(
+                f"osv:{pkg['ecosystem']}/{pkg['name']}@{pkg['version']}",
+                f"OSV advisories for {pkg['name']} {pkg['version']} ({pkg['ecosystem']})",
+                text, kind="tool").id
+        for vuln in vulns:
             vulnerabilities.append({
                 "package": pkg["name"],
                 "version": pkg["version"],
@@ -246,6 +284,7 @@ def audit_dependencies(workspace: Path, *, fetch: Callable | None = None, run=No
                 "severity": _osv_severity(vuln),
                 "fixed": _osv_fixed(vuln, pkg["name"]),
                 "aliases": vuln.get("aliases", []) or [],
+                "source": source_id,
             })
     vulnerabilities.sort(key=lambda v: (v["package"], v["id"]))
     return {"packages": packages, "package_count": len(packages),
@@ -259,14 +298,15 @@ _HTTP_METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "tr
 
 
 def parse_openapi(workspace: Path, *, fetch=None, run=None,
-                  spec_path: str = "inputs/openapi.json", **_: Any) -> dict:
+                  spec_path: str = "inputs/openapi.json",
+                  resolve_path: Callable | None = None, **_: Any) -> dict:
     """Enumerate endpoints from an OpenAPI/Swagger JSON spec.
 
     Returns every operation with its method, path, operationId, whether auth is
     required (from `security`), and its parameter names, plus an attack-surface
     summary: total endpoints, unauthenticated endpoints and declared servers.
     """
-    path = _resolve(workspace, spec_path)
+    path = _resolve(workspace, spec_path, resolve_path)
     if not path.exists():
         raise ToolError(f"spec not found: {spec_path}")
     spec = json.loads(_read_text(path))
@@ -411,14 +451,15 @@ def _host_in_scope(host: str, allow: list[str]) -> bool:
 
 
 def check_scope(workspace: Path, *, fetch=None, run=None, targets: list[str] | None = None,
-                scope_file: str = "inputs/scope.json", **_: Any) -> dict:
+                scope_file: str = "inputs/scope.json",
+                resolve_path: Callable | None = None, **_: Any) -> dict:
     """Decide whether each target is inside the signed scope allow-list.
 
     The allow-list is `{"hosts": [...]}` (entries may be exact hosts or `*.dom`
     wildcards) read from `scope_file`. Returns a per-target verdict plus an
     `all_in_scope` flag so the agent can refuse out-of-scope work.
     """
-    path = _resolve(workspace, scope_file)
+    path = _resolve(workspace, scope_file, resolve_path)
     if not path.exists():
         raise ToolError(f"scope file not found: {scope_file}")
     allow = list((json.loads(_read_text(path)) or {}).get("hosts", []))
@@ -441,17 +482,31 @@ _SARIF_SCHEMA = ("https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
                  "master/Schemata/sarif-schema-2.1.0.json")
 
 
+def _artifact_uri(file: Any, code_root: str) -> str:
+    """SARIF artifact URI relative to the code root (what code scanning and
+    sarif_locations_exist expect): a workspace path such as repo/app.py, as
+    scan_secrets reports it, becomes app.py."""
+    uri = str(file).replace("\\", "/")
+    root = (code_root or "").replace("\\", "/").strip("/")
+    if root and root != "." and uri.startswith(root + "/"):
+        uri = uri[len(root) + 1:]
+    return uri
+
+
 def build_sarif(workspace: Path, *, fetch=None, run=None, findings: list[dict] | None = None,
                 tool_name: str = "agents-list-appsec", tool_version: str = "0.1.0",
                 output_path: str = "deliverables/m2-findings/findings.sarif",
+                code_root: str = "repo", resolve_path: Callable | None = None,
                 **_: Any) -> dict:
     """Serialise findings to a SARIF 2.1.0 log written under the workspace.
 
     Each finding needs at least {rule_id, message, file, start_line}; optional
     keys: level|severity, start_column, end_line, snippet, cwe, owasp, cvss,
-    exploit, remediation. Severity maps to a SARIF level and to a numeric
-    `security-severity` property so GitHub code scanning can rank it. Returns the
-    written path and the result/rule counts.
+    exploit, remediation. `file` is relative to `code_root` (default repo); a
+    workspace path under code_root, as scan_secrets reports it, is shortened.
+    Severity maps to a SARIF level and to a numeric `security-severity`
+    property so GitHub code scanning can rank it. Returns the written path and
+    the result/rule counts.
     """
     findings = findings or []
     rules: dict[str, dict] = {}
@@ -497,7 +552,7 @@ def build_sarif(workspace: Path, *, fetch=None, run=None, findings: list[dict] |
             "message": {"text": f.get("message", f.get("name", rule_id))},
             "locations": [{
                 "physicalLocation": {
-                    "artifactLocation": {"uri": f["file"].replace("\\", "/")},
+                    "artifactLocation": {"uri": _artifact_uri(f["file"], code_root)},
                     "region": region,
                 },
             }],
@@ -517,7 +572,7 @@ def build_sarif(workspace: Path, *, fetch=None, run=None, findings: list[dict] |
             "results": results,
         }],
     }
-    out = _resolve(workspace, output_path)
+    out = _resolve(workspace, output_path, resolve_path, write=True)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(log, indent=2, sort_keys=False), encoding="utf-8")
     return {"path": output_path, "results": len(results), "rules": len(rules)}
@@ -603,6 +658,8 @@ TOOL_DEFS = [
                 "findings": {"type": "array", "items": {"type": "object"},
                              "description": "Findings with rule_id, file, start_line, etc."},
                 "output_path": {"type": "string", "description": "Workspace-relative SARIF path."},
+                "code_root": {"type": "string",
+                              "description": "Directory the finding files are relative to (default repo)."},
                 "tool_name": {"type": "string"},
                 "tool_version": {"type": "string"},
             },

@@ -475,6 +475,106 @@ def test_secret_findings_reconcile_missing_report(tmp_path):
     assert res["passed"] is False
 
 
+# --- kit integration: jails, authored files, ledger sources ------------------
+
+def _mark_authored(ws: Path, *rels: str) -> None:
+    from agentkit.ledger import Ledger
+    ledger = Ledger(ws)
+    for rel in rels:
+        ledger.note_authored(rel)
+
+
+def test_build_sarif_uri_is_relative_to_code_root(tmp_path):
+    ws = _workspace(tmp_path)
+    findings = _sample_findings(ws)
+    findings[0]["file"] = "repo/transactions.py"      # as scan_secrets reports paths
+    params = _write_sarif(ws, findings)
+    log = json.loads((ws / params["path"]).read_text(encoding="utf-8"))
+    uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "transactions.py"
+    assert C.sarif_locations_exist(ws, {**params, "code_root": "repo"})["passed"] is True
+
+
+def test_build_sarif_output_path_is_jailed(tmp_path):
+    ws = _workspace(tmp_path)
+    with pytest.raises(ToolError):
+        T.build_sarif(ws, findings=_sample_findings(ws), output_path="../escape.sarif")
+    assert not (tmp_path / "escape.sarif").exists()
+
+
+def test_scan_secrets_skips_kit_internals_and_graders_only_inner_dirs(tmp_path):
+    # A workspace that itself lives under a "build" directory is still scanned.
+    ws = _workspace(tmp_path / "build")
+    (ws / ".agentkit").mkdir()
+    (ws / ".agentkit" / "journal.py").write_text('KEY = "' + _make_aws_key() + '"\n', encoding="utf-8")
+    out = T.scan_secrets(ws, root=".")
+    files = {f["file"] for f in out["findings"]}
+    assert "repo/config.py" in files
+    assert not any(f.startswith(".agentkit/") for f in files)
+
+
+def test_sarif_locations_exist_rejects_escape_from_code_root(tmp_path):
+    ws = _workspace(tmp_path)
+    findings = _sample_findings(ws)
+    findings[0]["file"] = "../inputs/scope.json"
+    findings[0]["start_line"] = 2
+    del findings[0]["snippet"]
+    params = _write_sarif(ws, findings)
+    res = C.sarif_locations_exist(ws, {**params, "code_root": "repo"})
+    assert res["passed"] is False and "code root" in res["details"]
+
+
+def test_sarif_locations_exist_rejects_agent_written_file(tmp_path):
+    ws = _workspace(tmp_path)
+    planted = "def handler(q):\n    return db.execute('SELECT * FROM t WHERE x = ' + q)\n"
+    (ws / "repo" / "planted.py").write_text(planted, encoding="utf-8")
+    _mark_authored(ws, "repo/planted.py")
+    findings = _sample_findings(ws)
+    findings[0].update(file="planted.py", start_line=2, snippet="SELECT * FROM t WHERE x = ")
+    params = _write_sarif(ws, findings)
+    res = C.sarif_locations_exist(ws, {**params, "code_root": "repo"})
+    assert res["passed"] is False and "written by the agent" in res["details"]
+
+
+def test_secret_findings_reconcile_ignores_agent_written_secrets(tmp_path):
+    ws = _workspace(tmp_path, with_secret=False)
+    (ws / "repo" / "settings.py").write_text('password = "' + _make_password_value() + '"\n',
+                                             encoding="utf-8")
+    _mark_authored(ws, "repo/settings.py")
+    claimed = T.scan_secrets(ws, root="repo")["findings"]
+    assert claimed, "the planted value should look like a secret to the scanner"
+    res = C.secret_findings_reconcile(ws, _write_secret_report(ws, claimed))
+    assert res["passed"] is False and "unverifiable" in res["details"]
+
+
+def test_secret_findings_reconcile_rejects_malformed_items(tmp_path):
+    ws = _workspace(tmp_path)
+    params = _write_secret_report(ws, [{"file": "repo/config.py", "line": "4",
+                                        "rule_id": "SECRET.AWS_ACCESS_KEY_ID"}, "junk"])
+    res = C.secret_findings_reconcile(ws, params)
+    assert res["passed"] is False and res["score"] == 0.0
+
+
+def test_checks_refuse_params_outside_workspace(tmp_path):
+    ws = _workspace(tmp_path)
+    assert C.sarif_valid(ws, {"path": "../../outside.sarif"})["passed"] is False
+    res = C.secret_findings_reconcile(ws, {"report": "../x.json", "code_root": "repo"})
+    assert res["passed"] is False and "refused" in res["details"]
+
+
+def test_audit_dependencies_registers_osv_sources(tmp_path):
+    from agentkit.ledger import Ledger
+    ws = _workspace(tmp_path)
+    ledger = Ledger(ws)
+    out = T.audit_dependencies(ws, manifest="repo/requirements.txt",
+                               fetch=_osv_fetch_factory("flask"), ledger=ledger)
+    vuln = out["vulnerabilities"][0]
+    src = ledger.source(vuln["source"])
+    assert src is not None and src.kind == "tool" and src.uri == "osv:PyPI/flask@2.0.1"
+    assert "GHSA-xxxx-yyyy-zzzz" in ledger.snapshot(src.id)
+    assert len(ledger.sources) == 1          # packages without advisories add no source
+
+
 # --- tool/check registries ---------------------------------------------------
 
 def test_tool_defs_wellformed():
