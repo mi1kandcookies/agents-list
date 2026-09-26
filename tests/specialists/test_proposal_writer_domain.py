@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from agentkit.errors import ToolError
+from agentkit.manifest import load_manifest
 from specialists.proposal_writer import checks as C
 from specialists.proposal_writer import tools as T
 
@@ -535,6 +536,8 @@ def _manifest() -> dict:
 
 
 def test_agent_yaml_parses_and_references_known_tools_and_checks():
+    strict = load_manifest(PACK / "agent.yaml")     # the kit's parser: unknown keys are errors
+    assert strict.slug == "proposal-writer" and len(strict.milestones) == 3
     m = _manifest()
     assert m["schema_version"] == 1 and m["slug"] == "proposal-writer" and m["profile"] == "docs"
     assert m["models"] == {"primary": "anthropic:claude-opus-5", "fallbacks": [],

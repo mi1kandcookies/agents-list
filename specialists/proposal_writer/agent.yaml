@@ -103,7 +103,7 @@ milestones:
       - {check: shred_complete, description: Every binding statement is shredded verbatim with section and page,
          params: {min_recall: 1.0}}
       - {check: matrix_consistent, description: One matrix row per requirement with its verbatim text}
-      - {check: format_rules_captured, description: Every page, word, font, margin and file rule is captured}
+      - {check: format_rules_captured, description: "Every page, word, font, margin and file rule is captured"}
       - {check: dates_match_source, description: Brief dates exist in the solicitation and no deadline is missing,
          params: {path: deliverables/m1-shred/bid-brief.md}}
       - {check: markdown_sections, params: {path: deliverables/m1-shred/bid-brief.md,
