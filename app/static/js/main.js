@@ -187,7 +187,7 @@ function initStarRating(containerId) {
 
 // ── Multi-step Form ───────────────────────────────────────────────────────────
 let currentStep = 1;
-const totalSteps = 4;
+const totalSteps = document.querySelectorAll('.form-step').length || 1;
 
 function goToStep(step) {
   if (step < 1 || step > totalSteps) return;

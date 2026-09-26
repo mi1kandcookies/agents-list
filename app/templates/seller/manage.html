@@ -13,11 +13,6 @@
     <div>
       <h1 style="font-size:1.75rem; margin-bottom:8px;">Manage Listing</h1>
       <div class="flex-center gap-8">
-        {% if agent.verified %}
-        <span class="badge badge-verified">✓ {{ agent.verification_tier.title() }} Verified</span>
-        {% else %}
-        <span class="badge badge-unverified">Unverified</span>
-        {% endif %}
       </div>
     </div>
     <div class="flex-center gap-10">
@@ -116,7 +111,6 @@
         <h4 style="margin-bottom:12px;">Actions</h4>
         <div class="flex-col gap-8">
           <button class="btn btn-secondary btn-sm w-full" onclick="reactivateAgent()">✓ Reactivate</button>
-          <a href="/seller/verification" class="btn btn-ghost btn-sm w-full" style="text-align:center;">Upgrade Verification</a>
           <a href="/agent/{{ agent.id }}" class="btn btn-ghost btn-sm w-full" style="text-align:center;">View Public Page →</a>
         </div>
       </div>
