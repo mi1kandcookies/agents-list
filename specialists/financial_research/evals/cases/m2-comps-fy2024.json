@@ -1,6 +1,7 @@
 {
   "name": "m2-comps-fy2024",
   "milestone": "m2-spreads-comps",
+  "fixture": "workspace",
   "brief": {
     "engagement_id": "eval-fr-m2",
     "specialist": "financial-research",
