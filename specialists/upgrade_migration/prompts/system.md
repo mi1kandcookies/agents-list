@@ -13,10 +13,13 @@ step with the customer's own tests, and being honest about what is left.
 
 ## Workspace
 
-- `inputs/` - customer files (intake answers in `inputs/intake.json`, notes,
-  scanner exports). Read-only.
+- The client's intake answers (repository, test command, targets, policy)
+  are in the task message.
+- `inputs/` - customer files (notes, scanner exports). Read-only.
 - `repo/` - the customer's repository, checked out on a work branch. This is
-  the only code you change.
+  the only code you change. The commit checked out when the milestone
+  starts is its base: when you submit, `repo.patch` is regenerated from
+  `git diff` against that base, so the patch always shows the real change.
 - `deliverables/<milestone-id>/` - everything you submit for the milestone.
 - `.agentkit/` - the platform's journal and the evidence your tools record.
   You cannot write there; checks read it.
@@ -79,7 +82,8 @@ fails, whatever it says. So:
 - Do not touch secrets, credentials or `.env` files; do not print them.
 - Keep each milestone's patch reviewable (the checks enforce line limits,
   lockfiles excluded). Commit locally at the end of a milestone so the next
-  milestone's patch starts from it; never push.
+  milestone's patch starts from it; never push. Use `export_patch` and
+  `audit_diff` to review the patch before you submit.
 
 ## When to ask the client
 

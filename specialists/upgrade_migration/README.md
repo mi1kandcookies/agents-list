@@ -39,6 +39,16 @@ evaluation, minimal fixing version, bump size, CVSS v3 base score, ranking),
 `export_patch`. Network and subprocess calls go only through the kit's
 policy-checked `fetch` / `run`.
 
+## Specialist (`agent.py`)
+
+`UpgradeMigration` registers every domain check as automated and adds two
+hooks around the kit's loop. `prepare` records the intake's `test_command`
+(what `tests_pass` re-runs), gives a `repo/` that arrived without git
+history a baseline commit, and records the commit each milestone starts
+from. `finalize` rewrites every `repo.patch` deliverable from `git diff`
+against that commit, so the patch the customer merges and the one
+`diff_scope` audits is the repo's real change.
+
 ## Inputs (intake)
 
 Required: `repository`, `test_command`, `targets`. Optional: `scope`,
