@@ -15,7 +15,7 @@ the runs that show it is stable.
     finalize  rebuilds every repo.patch deliverable as diff(base, repo/ now)
               from the private store and overwrites whatever the model wrote
               there, so diff_test_paths_only, patch_size_max and the other
-              patch checks grader the real change, whatever the model did to
+              patch checks grade the real change, whatever the model did to
               repo/.git. If the rebuild fails the unverifiable patch is
               removed, so those checks fail closed. A submitted milestone's
               tree becomes the next patch milestone's base.

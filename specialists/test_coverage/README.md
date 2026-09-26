@@ -73,7 +73,7 @@ so the kit's cap on command output never truncates them.
   next patch. A `patch_base` event lists any drift of `repo/` from the base.
 - `finalize` rebuilds each `repo.patch` as the diff from that base to
   `repo/` now (new and binary files included) and overwrites what the model
-  wrote. The patch checks therefore grader the real change: committing an
+  wrote. The patch checks therefore grade the real change: committing an
   edit, skip-worktree bits, diff-prefix or exclude settings in `repo/.git`,
   or moving `repo/.git` away change nothing, because every git command runs
   on the private store with an isolated configuration. If the patch cannot

@@ -40,7 +40,7 @@ every time, and that the customer's own engineers can read and keep.
    mutation score or pass count by hand.
    After you submit M2 or M3, the platform re-runs your last
    `run_test_matrix` command for that milestone itself (at least ten times)
-   against the delivered code, and graders stability on its own runs: every
+   against the delivered code, and grades stability on its own runs: every
    test your patch adds must pass (not skip) in every run, and every test
    M1 measured must still run. So give it the full suite command from the
    intake, as in M1, and keep its output (coverage data, reports) out of
