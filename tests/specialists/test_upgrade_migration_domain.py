@@ -380,3 +380,235 @@ def test_tool_defs_are_well_formed():
         assert callable(d["function"]) and d["description"]
         assert d["input_schema"]["type"] == "object"
         assert d["risk"] in ("read", "write", "exec", "network", "external")
+
+
+# === checks ======================================================================
+
+from specialists.upgrade_migration import checks as C  # noqa: E402
+
+
+def upgraded_workspace(ws: Path) -> Path:
+    """Baseline scan, a green baseline test run, two upgrades, rescan."""
+    make_repo(ws)
+    T.inventory_dependencies(ws)
+    T.osv_scan(ws, fetch=FakeOSV())
+    T.run_tests(ws, run=fake_run("5 passed in 0.1s"), argv=["pytest"], label="baseline")
+    make_repo(ws, fastjsonx="2.4.1")
+    T.run_tests(ws, run=fake_run("5 passed in 0.1s"), argv=["pytest"], label="step-1")
+    make_repo(ws, fastjsonx="2.4.1", trim="1.2.5")
+    T.run_tests(ws, run=fake_run("6 passed in 0.1s"), argv=["pytest"], label="step-2")
+    T.osv_scan(ws, fetch=FakeOSV())
+    return ws
+
+
+def write(ws: Path, rel: str, text: str) -> str:
+    path = ws / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return rel
+
+
+def test_inventory_matches_repo(tmp_path):
+    make_repo(tmp_path)
+    T.inventory_dependencies(tmp_path, output="deliverables/m1-assess/inventory.json")
+    assert C.inventory_matches_repo(tmp_path, {})["passed"] is True
+    inv = json.loads((tmp_path / "deliverables/m1-assess/inventory.json").read_text())
+    inv["dependencies"].append({"ecosystem": "PyPI", "name": "phantom", "version": "1.0"})
+    inv["dependencies"] = [d for d in inv["dependencies"] if d["name"] != "fastjsonx"]
+    write(tmp_path, "deliverables/m1-assess/inventory.json", json.dumps(inv))
+    res = C.inventory_matches_repo(tmp_path, {})
+    assert res["passed"] is False and "phantom" in res["details"] and "fastjsonx" in res["details"]
+    assert C.inventory_matches_repo(tmp_path, {"inventory": "deliverables/none.json"})["passed"] is False
+
+
+def test_findings_match_osv_and_forgeries(tmp_path):
+    make_repo(tmp_path)
+    T.osv_scan(tmp_path, fetch=FakeOSV())
+    T.plan_upgrades(tmp_path, findings_csv="deliverables/m1-assess/findings.csv")
+    assert C.findings_match_osv(tmp_path, {})["passed"] is True
+    path = tmp_path / "deliverables/m1-assess/findings.csv"
+    good = path.read_text()
+    path.write_text(good.replace("CRITICAL", "LOW"), encoding="utf-8")         # downplayed severity
+    assert "severity mismatch: GHSA-aaaa-0001" in C.findings_match_osv(tmp_path, {})["details"]
+    path.write_text(good + "PyPI,fastjsonx,2.2.0,GHSA-fake-9999,,HIGH,,,,,x\n", encoding="utf-8")
+    assert C.findings_match_osv(tmp_path, {})["passed"] is False
+    path.write_text("\n".join(l for l in good.splitlines() if "bbbb" not in l) + "\n", encoding="utf-8")
+    assert "GHSA-bbbb-0003" in C.findings_match_osv(tmp_path, {})["details"]
+
+
+def test_findings_check_requires_scan(tmp_path):
+    make_repo(tmp_path)
+    write(tmp_path, "deliverables/m1-assess/findings.csv", ",".join(T.FINDINGS_COLUMNS) + "\n")
+    res = C.findings_match_osv(tmp_path, {})
+    assert res["passed"] is False and "never scanned" in res["details"]
+
+
+def test_plan_covers_findings(tmp_path):
+    make_repo(tmp_path)
+    T.osv_scan(tmp_path, fetch=FakeOSV())
+    write(tmp_path, "deliverables/m1-assess/upgrade-plan.md",
+          "GHSA-aaaa-0001 GHSA-aaaa-0002 CVE-2099-0003 (alias)\n")
+    res = C.plan_covers_findings(tmp_path, {})
+    assert res["passed"] is False and "GHSA-cccc-0004" in res["details"] and res["score"] == 0.75
+    write(tmp_path, "deliverables/m1-assess/upgrade-plan.md",
+          "GHSA-aaaa-0001 GHSA-aaaa-0002 CVE-2099-0003 GHSA-cccc-0004 exception\n")
+    assert C.plan_covers_findings(tmp_path, {})["passed"] is True
+
+
+def test_tests_pass(tmp_path):
+    ws = upgraded_workspace(tmp_path)
+    assert C.tests_pass(ws, {})["passed"] is None                              # no runner
+    assert C.tests_pass(ws, {"argv": ["pytest"]}, run=fake_run("6 passed"))["passed"] is True
+    res = C.tests_pass(ws, {"argv": ["pytest"]}, run=fake_run("3 passed"))    # tests deleted
+    assert res["passed"] is False and "baseline" in res["details"]
+    assert C.tests_pass(ws, {"argv": ["pytest"]}, run=fake_run("1 failed, 5 passed", 1))["passed"] is False
+    write(ws, "inputs/intake.json", json.dumps({"test_command": "python -m pytest -x"}))
+    run = fake_run("7 passed")
+    assert C.tests_pass(ws, {}, run=run)["passed"] is True
+    assert run.calls[0][0] == ["python", "-m", "pytest", "-x"]
+
+
+def test_osv_delta(tmp_path):
+    ws = upgraded_workspace(tmp_path)
+    res = C.osv_delta(ws, {"min_resolved": 3})
+    assert res["passed"] is True and res["score"] == 0.75
+    assert C.osv_delta(ws, {"min_resolved": 4})["passed"] is False
+    make_repo(ws, fastjsonx="2.5.0", trim="1.2.5")                             # not rescanned
+    assert "never scanned" in C.osv_delta(ws, {})["details"]
+    extra = ADVISORIES + [vuln("GHSA-dddd-0005", "PyPI", "fastjsonx", "2.5.0", "2.6.0")]
+    T.osv_scan(ws, fetch=FakeOSV(extra))
+    res = C.osv_delta(ws, {})
+    assert res["passed"] is False and "GHSA-dddd-0005" in res["details"]
+    assert C.osv_delta(tmp_path / "nowhere", {})["passed"] is False
+
+
+def test_diff_scope(tmp_path):
+    write(tmp_path, "deliverables/m2-upgrade/repo.patch", CLEAN_PATCH)
+    params = {"patch": "deliverables/m2-upgrade/repo.patch", "allow": ["requirements*.txt", "app/*"],
+              "forbid": [".github/*"], "max_changed_lines": 400}
+    assert C.diff_scope(tmp_path, params)["passed"] is True
+    assert C.diff_scope(tmp_path, dict(params, max_changed_lines=2))["passed"] is False
+    write(tmp_path, "deliverables/m2-upgrade/repo.patch", HACKED_PATCH)
+    res = C.diff_scope(tmp_path, params)
+    assert res["passed"] is False and "skip" in res["details"] and "forbidden" in res["details"]
+    write(tmp_path, "deliverables/m2-upgrade/repo.patch", "")
+    assert C.diff_scope(tmp_path, params)["passed"] is False
+
+
+def test_patch_matches_repo(tmp_path):
+    write(tmp_path, "deliverables/p.patch", CLEAN_PATCH)
+    write(tmp_path, "repo/requirements.txt", "# app deps\nfastjsonx==2.4.1\nYamlette[fast]==5.0\n")
+    write(tmp_path, "repo/app/codec.py", "-- a comment line that starts with two dashes, reworded\nx = 1\n")
+    assert C.patch_matches_repo(tmp_path, {"patch": "deliverables/p.patch"})["passed"] is True
+    write(tmp_path, "repo/requirements.txt", "# app deps\nfastjsonx==2.2.0\n")   # patch claims an upgrade
+    res = C.patch_matches_repo(tmp_path, {"patch": "deliverables/p.patch"})
+    assert res["passed"] is False and "requirements.txt" in res["details"]
+    write(tmp_path, "deliverables/esc.patch", "--- a/../x\n+++ b/../../outside.txt\n@@ -0,0 +1 @@\n+x\n")
+    assert C.patch_matches_repo(tmp_path, {"patch": "deliverables/esc.patch"})["passed"] is False
+
+
+def good_log():
+    return {"steps": [
+        {"ecosystem": "PyPI", "name": "fastjsonx", "from": "2.2.0", "to": "2.4.1", "test_run": "run-2"},
+        {"ecosystem": "npm", "name": "left-trim-lite", "from": "1.1.0", "to": "1.2.5", "test_run": "run-3"}]}
+
+
+def test_upgrade_log_verified(tmp_path):
+    ws = upgraded_workspace(tmp_path)
+    rel = "deliverables/m2-upgrade/upgrade-log.json"
+    write(ws, rel, json.dumps(good_log()))
+    assert C.upgrade_log_verified(ws, {})["passed"] is True
+    forged = good_log()
+    forged["steps"][1]["test_run"] = "run-99"
+    write(ws, rel, json.dumps(forged))
+    assert "not in the test log" in C.upgrade_log_verified(ws, {})["details"]
+    reordered = good_log()
+    reordered["steps"][1]["test_run"] = "run-1"
+    write(ws, rel, json.dumps(reordered))
+    assert "not after" in C.upgrade_log_verified(ws, {})["details"]
+    unlogged = {"steps": good_log()["steps"][:1]}
+    write(ws, rel, json.dumps(unlogged))
+    assert "left-trim-lite" in C.upgrade_log_verified(ws, {})["details"]
+    wrong_from = good_log()
+    wrong_from["steps"][0]["from"] = "2.3.0"
+    write(ws, rel, json.dumps(wrong_from))
+    assert C.upgrade_log_verified(ws, {})["passed"] is False
+    T.run_tests(ws, run=fake_run("1 failed", 1), argv=["pytest"])
+    red = good_log()
+    red["steps"][1]["test_run"] = "run-4"
+    write(ws, rel, json.dumps(red))
+    assert "not green" in C.upgrade_log_verified(ws, {})["details"]
+    write(ws, rel, json.dumps({"steps": []}))
+    assert C.upgrade_log_verified(ws, {})["passed"] is False
+
+
+def registry_fetch(versions: dict):
+    body = {"info": {"version": max(versions, key=T.version_key) if versions else None},
+            "releases": {v: [{"upload_time_iso_8601": t}] for v, t in versions.items()}}
+    npm = {"dist-tags": {"latest": "1.2.5"}, "time": {"1.2.5": "2024-02-01T00:00:00Z"}, "versions": {}}
+    return lambda url, **k: SimpleNamespace(status=200, text=json.dumps(npm if "npmjs" in url else body))
+
+
+def test_release_age_ok(tmp_path):
+    ws = upgraded_workspace(tmp_path)
+    assert "no registry history" in C.release_age_ok(ws, {})["details"]
+    T.package_versions(ws, fetch=registry_fetch({"2.2.0": "2023-01-01T00:00:00Z", "2.4.1": "2024-01-01T00:00:00Z"}),
+                       ecosystem="PyPI", name="fastjsonx")
+    T.package_versions(ws, fetch=registry_fetch({}), ecosystem="npm", name="left-trim-lite")
+    assert C.release_age_ok(ws, {"min_age_days": 7})["passed"] is True
+    T.package_versions(ws, fetch=registry_fetch({"2.4.1": "2099-01-01T00:00:00Z"}), ecosystem="PyPI", name="fastjsonx")
+    res = C.release_age_ok(ws, {"min_age_days": 7})
+    assert res["passed"] is False and "fastjsonx" in res["details"]
+
+
+def test_new_dependencies_disclosed(tmp_path):
+    ws = upgraded_workspace(tmp_path)
+    write(ws, "repo/requirements.txt", (ws / "repo/requirements.txt").read_text() + "shinyparse==1.0.0\n")
+    write(ws, "deliverables/m2-upgrade/report.md", "Upgraded fastjsonx.\n")
+    params = {"report": "deliverables/m2-upgrade/report.md"}
+    res = C.new_dependencies_disclosed(ws, params)
+    assert res["passed"] is False and "shinyparse" in res["details"]
+    write(ws, "deliverables/m2-upgrade/report.md", "New dependency needing approval: shinyparse 1.0.0\n")
+    assert C.new_dependencies_disclosed(ws, params)["passed"] is True
+
+
+def test_detectors_cleared(tmp_path):
+    repo = make_repo(tmp_path)
+    write(tmp_path, "repo/app/codec.py", "fastjsonx.loads_legacy(s)\nfastjsonx.loads_legacy(t)\n")
+    det = [{"id": "legacy-loads", "regex": r"\.loads_legacy\(", "glob": "*.py"}]
+    rel = write(tmp_path, "deliverables/m3-migrate/detectors.json", json.dumps(det))
+    res = C.detectors_cleared(tmp_path, {})
+    assert res["passed"] is False and "never scanned" in res["details"]
+    T.scan_patterns(tmp_path, detectors=det)
+    assert "2 usages left" in C.detectors_cleared(tmp_path, {})["details"]
+    (repo / "app" / "codec.py").write_text("fastjsonx.loads(s)\nfastjsonx.loads(t)\n", encoding="utf-8")
+    assert C.detectors_cleared(tmp_path, {})["passed"] is True
+    write(tmp_path, rel, json.dumps([{"id": "legacy-loads", "regex": "NEVER_MATCHES", "glob": "*.py"}]))
+    assert "differs" in C.detectors_cleared(tmp_path, {})["details"]
+    write(tmp_path, rel, "[]")
+    assert C.detectors_cleared(tmp_path, {})["passed"] is False
+    trivial = [{"id": "nothing", "regex": "zzz_not_here", "glob": "*.py"}]
+    T.scan_patterns(tmp_path, detectors=trivial)
+    write(tmp_path, rel, json.dumps(trivial))
+    assert "proves nothing" in C.detectors_cleared(tmp_path, {})["details"]
+
+
+def test_residual_risks_registered(tmp_path):
+    ws = upgraded_workspace(tmp_path)
+    rel = "deliverables/m3-migrate/residual-risk.csv"
+    header = "vuln_id,package,status,justification,review_by\n"
+    row = ("GHSA-cccc-0004,yamlette,no_fix_available,"
+           "No fixed release exists; loader is only fed trusted config,2099-01-01\n")
+    write(ws, rel, header + row)
+    assert C.residual_risks_registered(ws, {})["passed"] is True
+    write(ws, rel, header + row.replace("no_fix_available", "approved"))
+    assert "only the customer approves" in C.residual_risks_registered(ws, {})["details"]
+    write(ws, rel, header)
+    assert "not registered" in C.residual_risks_registered(ws, {})["details"]
+    write(ws, rel, header + row +
+          "GHSA-aaaa-0001,fastjsonx,deferred,Listed although already resolved upstream,2099-01-01\n")
+    assert "not open" in C.residual_risks_registered(ws, {})["details"]
+
+
+def test_check_defs_callable():
+    assert set(C.CHECK_DEFS) and all(callable(f) for f in C.CHECK_DEFS.values())
