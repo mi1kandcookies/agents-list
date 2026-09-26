@@ -209,3 +209,20 @@ Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, 
 ## 12. Environment variables
 
 World: `WORLD_ISSUER=https://sandbox.auth.world.org`, `WORLD_CLIENT_ID`, `WORLD_CLIENT_SECRET`, `WORLD_REDIRECT_URI`, `WORLD_REQUIRED_ACR` · Approvals: `APPROVAL_TTL_SECONDS`, `STEPUP_MAX_AGE_SECONDS`, `HUMAN_WEEKLY_CAP_USDC` · Screening: `INTERCEPTA_API_KEY`, `INTERCEPTA_BASE_URL=https://api.web3antivirus.io`, `SCREENING_TIMEOUT_SECONDS`, `SCREENING_CAP_USDC`, `SCREENING_ADDRESS_MAP` · Escrow/mandates: `ESCROW_PRIVATE_KEY`, `BUYER_VAULT_PRIVATE_KEY`, `MANDATE_SIGNING_KEY`, `MANDATE_MAX_DEPTH=2` · Names: `ENS_SIDECAR_URL`, `ENS_SIDECAR_TOKEN`, `ENS_ROOT_NAME`, `ENS_OPERATOR_PRIVATE_KEY` (sidecar only) · MCP: `MCP_API_BASE`, `MCP_API_TOKEN`.
+
+## Amendments
+
+### 2026-09-26 — optional `spec_hash` in the operator manifest
+
+The operator manifest (`build_manifest` in `app/seller/stamp.py`, whose hash a `manifest.publish` approval binds as `manifest_hash`) gains one optional key, so a stamp can also cover the agent's private runtime spec (prompts, limits, egress rules, human gates) without publishing it:
+
+```json
+{"v": 1, "agent_id": "AGT-…", "model": "…", "tools": [], "mcp_servers": [], "skills": [],
+ "price_min_micro": 0, "price_max_micro": 0, "payout_address": "0x…",
+ "spec_hash": "0x…"}
+```
+
+- `spec_hash` is `0x` + 64 lowercase hex characters. Input is trimmed and lowercased; anything else raises `ManifestError` on field `spec_hash`. The platform treats it as opaque. A runtime that computes it should hash the spec's canonical JSON (§1), so the same spec always gives the same hash.
+- When absent, the key is omitted, not null. Every manifest and hash from before this amendment stays the same, and `v` stays 1.
+- It is hashed like every other field. Adding, changing or removing it after a stamp means `RESTAMP_REQUIRED`. The manifest editor has an optional field for it, and the stamp diff lists it.
+- The platform stores and stamps only the hash, never the spec. Checking that a running agent matches `spec_hash` is the runtime's job.
