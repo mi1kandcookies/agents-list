@@ -1,0 +1,22 @@
+diff --git a/tests/test_fares.py b/tests/test_fares.py
+new file mode 100644
+index 0000000..77aa001
+--- /dev/null
++++ b/tests/test_fares.py
+@@ -0,0 +1,6 @@
++from brambleway.fares import fare
++
++
++def test_fare_runs():
++    fare(2, "AB1 2CD")
++
+diff --git a/brambleway/fares.py b/brambleway/fares.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/brambleway/fares.py
++++ b/brambleway/fares.py
+@@ -7,5 +7,7 @@ BASE = {"A": 4.50, "B": 6.25, "C": 9.80}
+ def fare(weight_kg, postcode, express=False):
++    if weight_kg < 0:
++        raise ValueError("weight must be positive")
+     zone = zone_for(postcode)
+     price = BASE[zone] + 1.10 * weight_kg

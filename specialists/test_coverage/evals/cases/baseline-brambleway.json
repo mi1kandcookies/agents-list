@@ -1,0 +1,16 @@
+{
+  "name": "baseline-brambleway",
+  "milestone": "m1-baseline",
+  "brief": {
+    "engagement_id": "eval-tc-001",
+    "specialist": "test-coverage",
+    "objective": "Baseline coverage and flakiness for the brambleway pricing package and propose targets ahead of the fares.py rewrite.",
+    "intake": {
+      "repo": "fixtures/brambleway-freight/repo (uploaded archive)",
+      "test_command": "python -m pytest -q",
+      "language_stack": "Python 3.12, pytest, coverage.py",
+      "target_modules": ["brambleway/fares.py"]
+    }
+  },
+  "notes": "Expect fares.py ranked first (23 commits, 31% line coverage). The census must name tests.test_zones::test_zone_a as flaky (fails in run 3 of 5) and the report should trace it to the module-level _CACHE leaking between tests, not to network or time."
+}

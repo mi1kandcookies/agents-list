@@ -511,3 +511,36 @@ def test_rubrics_are_well_formed():
         assert r["name"] and 0 < r["threshold"] <= 1
         ids = [c["id"] for c in r["criteria"]]
         assert len(ids) == len(set(ids)) and all(c["weight"] > 0 and c["description"] for c in r["criteria"])
+
+
+# --- eval fixtures -----------------------------------------------------------
+
+FIXTURE = PACK / "evals" / "fixtures" / "brambleway-freight"
+
+
+def test_fixture_baseline_reports_are_consistent():
+    cov = T.summarize_coverage((FIXTURE / "coverage-baseline.xml").read_text(encoding="utf-8"))
+    assert cov["totals"]["lines_total"] == 21 and cov["totals"]["lines_covered"] == 11
+    ranked = T.rank_targets(FIXTURE, coverage="coverage-baseline.xml", churn="churn.csv")["targets"]
+    assert ranked[0]["path"] == "brambleway/fares.py"
+    census = T.census_from_runs([T.parse_junit_text(p.read_text(encoding="utf-8"))
+                                 for p in sorted((FIXTURE / "runs").glob("run-*.xml"))])
+    assert census["runs"] == 5 and census["flaky"] == ["tests.test_zones::test_zone_a"]
+    assert C.mutation_score_min(FIXTURE, {"report": "mutation.json", "min_score_pct": 60})["passed"]
+
+
+def test_fixture_patches_separate_good_from_bad():
+    for check in ("diff_test_paths_only", "no_assertion_free_tests", "patch_secret_free"):
+        assert C.CHECK_DEFS[check](FIXTURE, {"patch": "good.patch"})["passed"] is True, check
+    assert C.diff_test_paths_only(FIXTURE, {"patch": "bad.patch"})["passed"] is False
+    assert C.no_assertion_free_tests(FIXTURE, {"patch": "bad.patch"})["passed"] is False
+
+
+def test_eval_cases_target_manifest_milestones():
+    ids = {m["id"] for m in _manifest()["milestones"]}
+    cases = sorted((PACK / "evals" / "cases").glob("*.json"))
+    assert cases
+    for path in cases:
+        case = json.loads(path.read_text(encoding="utf-8"))
+        assert {"name", "brief", "milestone", "notes"} <= set(case)
+        assert case["milestone"] in ids and case["brief"]["specialist"] == "test-coverage"

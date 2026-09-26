@@ -1,0 +1,19 @@
+{
+  "name": "uplift-fares",
+  "milestone": "m3-coverage-uplift",
+  "brief": {
+    "engagement_id": "eval-tc-003",
+    "specialist": "test-coverage",
+    "objective": "Raise line coverage of brambleway/fares.py by at least 20pp with tests that reach a 60% mutation score.",
+    "intake": {
+      "repo": "fixtures/brambleway-freight/repo (uploaded archive)",
+      "test_command": "python -m pytest -q",
+      "language_stack": "Python 3.12, pytest, coverage.py, mutmut",
+      "target_modules": ["brambleway/fares.py"],
+      "coverage_target_pp": 20,
+      "mutation_floor_pct": 60,
+      "runtime_budget_pct": 15
+    }
+  },
+  "notes": "good.patch is a reference shape (test-only, asserting, cache isolated). The surviving mutants in mutation.json (boundary of weight_kg > 30 and parcels >= 10) should become explicit boundary tests at 30 and 10."
+}
