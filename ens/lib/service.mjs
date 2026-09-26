@@ -35,6 +35,7 @@ import { NameStore } from './store.mjs';
 const KINDS = ['root', 'agent', 'job', 'subjob'];
 const MAX_UINT64 = 2n ** 64n - 1n;
 const MIN_ROOT_DURATION_DAYS = 28;
+const COMMITMENT_REUSE_SECONDS = 23 * 3600; // registrar max commitment age is 24 h
 
 function serial() {
   let tail = Promise.resolve();
@@ -65,6 +66,8 @@ export class NamesService {
   }
 
   kindOf(name) {
+    if (typeof name !== 'string' || !name) throw badRequest('name is required', 'INVALID_NAME');
+    name.split('.').slice(0, -1).forEach((l) => assertLabel(l, 'name'));
     if (name !== this.rootName && !name.endsWith(`.${this.rootName}`)) {
       throw badRequest(`${name} is not under ${this.rootName}`, 'OUTSIDE_ROOT');
     }
@@ -120,8 +123,15 @@ export class NamesService {
             address: ADDRESSES.ethRegistrar, abi: ethRegistrarAbi, functionName: 'makeCommitment',
             args: [label, op, node.secret, zeroAddress, node.resolver, duration, zeroHash],
           });
-          await this._write(node, 'commit', ADDRESSES.ethRegistrar, ethRegistrarAbi, 'commit', [commitment]);
-          await this.exec.sleep(COMMIT_WAIT_SECONDS);
+          // A commitment stays valid for 24 h; on resume reuse it instead of
+          // re-committing (the registrar rejects a still-live duplicate).
+          if (!node.committed_at || this.now() - node.committed_at > COMMITMENT_REUSE_SECONDS) {
+            await this._write(node, 'commit', ADDRESSES.ethRegistrar, ethRegistrarAbi, 'commit', [commitment]);
+            node.committed_at = this.now();
+            this.store.save();
+          }
+          const wait = node.committed_at + COMMIT_WAIT_SECONDS - this.now();
+          if (wait > 0) await this.exec.sleep(wait);
           await this._write(node, 'register', ADDRESSES.ethRegistrar, ethRegistrarAbi, 'register',
             [label, op, node.secret, zeroAddress, node.resolver, duration, ADDRESSES.mockUsdc, zeroHash]);
           node.expiry = this.now() + Number(duration);
@@ -369,7 +379,7 @@ export class NamesService {
   }
 
   _view(node, extra = {}) {
-    const { secret, registered, subregistry_set, parent_set, children, ...rest } = node;
+    const { secret, committed_at, registered, subregistry_set, parent_set, children, ...rest } = node;
     return { ...rest, ...extra };
   }
 
