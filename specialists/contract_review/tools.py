@@ -689,6 +689,28 @@ def check_references(workspace: Path, *, fetch=None, run=None, resolve_path: Res
     return reference_report(load_paragraphs(_resolver(workspace, resolve_path)(path)))
 
 
+MAX_REVISION_FINDINGS = 40
+
+
+def _instruction_paragraphs(paragraphs: list[str]) -> list[int]:
+    """Paragraphs where INJECTION_RE matches, searching the text joined
+    across paragraph breaks so a hard-wrapped sentence is still caught (the
+    match is reported at the paragraph where it starts)."""
+    starts, parts, pos = [], [], 0
+    for i, text in enumerate(paragraphs):
+        norm = normalize(text)
+        if norm:
+            starts.append((pos, i))
+            parts.append(norm)
+            pos += len(norm) + 1
+    found: list[int] = []
+    for m in INJECTION_RE.finditer(" ".join(parts)):
+        para = max((s for s in starts if s[0] <= m.start()), key=lambda s: s[0])[1]
+        if para not in found:
+            found.append(para)
+    return found
+
+
 def scan_hidden_content(workspace: Path, *, fetch=None, run=None, resolve_path: Resolver | None = None,
                         path: str, **_: Any) -> dict:
     """Hidden or out-of-band content in counterparty paper that a human
@@ -703,20 +725,24 @@ def scan_hidden_content(workspace: Path, *, fetch=None, run=None, resolve_path: 
         findings.append({"kind": kind, "location": where, "excerpt": normalize(text)[:200]})
 
     if target.suffix.lower() != ".docx":
-        for i, text in enumerate(load_paragraphs(target)):
+        paragraphs = load_paragraphs(target)
+        for i, text in enumerate(paragraphs):
             if ZERO_WIDTH_RE.search(text):
                 flag("zero_width_characters", f"p{i}", text)
-            if INJECTION_RE.search(text):
-                flag("embedded_instruction", f"p{i}", text)
+        for i in _instruction_paragraphs(paragraphs):
+            flag("embedded_instruction", f"p{i}", paragraphs[i])
         return {"path": path, "findings": findings, "count": len(findings)}
 
     with _open_docx(target) as zf:
         names = zf.namelist()
         root = _parse_xml(zf.read("word/document.xml"))
+        for view in BASES:                  # text a pending deletion hides counts too
+            paragraphs = [_paragraph_text(p, view) for p in root.iter(W + "p")]
+            done = {f["location"] for f in findings}
+            for i in _instruction_paragraphs(paragraphs):
+                if f"p{i}" not in done:
+                    flag("embedded_instruction", f"p{i}", paragraphs[i])
         for i, p in enumerate(root.iter(W + "p")):
-            text = _paragraph_text(p, "accepted")
-            if INJECTION_RE.search(text):
-                flag("embedded_instruction", f"p{i}", text)
             for r in p.iter(W + "r"):
                 rpr = r.find(W + "rPr")
                 run_text = "".join(t.text or "" for t in r.iter(W + "t"))
@@ -731,9 +757,14 @@ def scan_hidden_content(workspace: Path, *, fetch=None, run=None, resolve_path: 
                 if size is not None and (size.get(W + "val") or "99").isdigit() \
                         and int(size.get(W + "val")) <= 4:
                     flag("tiny_text", f"p{i}", run_text)
-        for rev in _revisions(root):
+        revisions = _revisions(root)
+        for rev in revisions[:MAX_REVISION_FINDINGS]:
             flag("tracked_changes", rev["paragraph"],
                  f"{rev['kind']} by {rev['author']}: {rev['text'] or '(paragraph mark)'}")
+        if len(revisions) > MAX_REVISION_FINDINGS:
+            authors = ", ".join(sorted({r["author"] for r in revisions}))
+            flag("tracked_changes", "document", f"{len(revisions) - MAX_REVISION_FINDINGS} more "
+                                                f"pending tracked changes by {authors}")
         for instr in root.iter(W + "instrText"):
             if (instr.text or "").strip():
                 flag("field_code", "document", instr.text or "")
