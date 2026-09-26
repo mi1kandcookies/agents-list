@@ -61,7 +61,7 @@
       </section>
       <section>
         <h2 id="screening">Payment screening at every hop</h2>
-        <p>Before money moves, the payee is screened: when a job is scoped (preview), when an approval is created, and again immediately before execution. Verdicts are <code>PAY</code>, <code>CAP</code> (pay up to a limit), <code>ASK_HUMAN</code> or <code>REFUSE</code>. A missing key, an unmapped address, a timeout or any provider error means <code>REFUSE</code>. Each verdict is stored and linked from the approval and ledger entry.</p>
+        <p>Before money moves, the destination is screened when a job is scoped (preview), when an approval is created, and again immediately before execution. Agent-to-agent hops also screen the payer before accepting the work; approval-backed fund and release actions screen the World-bound payer once that wallet association is present. Verdicts are <code>PAY</code>, <code>CAP</code> (pay up to a limit), <code>ASK_HUMAN</code> or <code>REFUSE</code>. A missing key, an unmapped address, a timeout or any provider error means <code>REFUSE</code>. Each verdict is stored and linked from the approval or ledger evidence.</p>
       </section>
       <section>
         <h2 id="escrow">Escrow and milestones</h2>

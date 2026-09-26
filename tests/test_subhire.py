@@ -267,6 +267,20 @@ def test_refuse_blocks_with_no_allocation(client, root, agents, screener, named)
     assert client.get(f"/api/engagements/{eid}").get_json()["status"] == "funded"
 
 
+def test_parent_payer_screening_blocks_subhire_before_payee_screen(client, root, agents,
+                                                                   screener, named):
+    eid, token = root
+    screener.set(ROOT_PAYEE, "REFUSE")
+    before = len(screener.calls)
+    resp = _subhire(client, eid, token, agents["B"])
+    assert resp.status_code == 403
+    body = resp.get_json()
+    assert body["code"] == "SCREENING_REFUSED"
+    assert body["screening"]["hop"] == "payer.check"
+    assert [call["hop"] for call in screener.calls[before:]] == ["payer.check"]
+    assert not _children(eid) and not _allocs() and named == []
+
+
 def test_forged_screening_in_body_is_ignored(client, root, agents, screener):
     eid, token = root
     screener.set(B_ADDR, "REFUSE")

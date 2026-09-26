@@ -63,15 +63,17 @@ Design and reference: [decision 0001: chain of custody](docs/decisions/0001-cust
 
 Every payment hop is screened with the Intercepta (Web3 Antivirus) API before
 money moves, and the verdict (`PAY | CAP | ASK_HUMAN | REFUSE`) is stored as a
-`screenings` row, served at `GET /api/screening/<id>`. Risk data is mainnet
-only, so a Sepolia payee is screened as its mapped mainnet address
-(`agents.screening_address`, else `SCREENING_ADDRESS_MAP`). No key, an
+`screenings` row, served at `GET /api/screening/<id>`. Agent-to-agent tasks
+screen the payer and payee; approval-backed fund/release actions screen the
+World-bound payer when `Engagement.buyer_address` is present. Risk data is
+mainnet only, so a Sepolia payer or payee is screened as its mapped mainnet
+address (`agents.screening_address`, else `SCREENING_ADDRESS_MAP`). No key, an
 unmapped address, a timeout or any provider error means `REFUSE`
 (fail-closed). Traits drive the decision; the vendor publishes no toxic-score
 threshold, so the score thresholds are ours (see `.env.example`).
 
 Files that call the API: `app/screening/intercepta.py` (the only REST client),
-`app/screening/service.py` (persisted resource-side verdicts), and
+`app/screening/service.py` (persisted payer/payee verdicts), and
 `app/screening/presign.py` (payer-side pre-sign gate). The exact x402 signer
 hook is in `chain/x402_v2.py`; `scripts/intercepta_x402_smoke.py` demonstrates
 the 402 → three live scans → sign → retry path. `scripts/screening_smoke.py`

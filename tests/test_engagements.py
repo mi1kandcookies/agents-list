@@ -363,6 +363,46 @@ def test_rescreen_refusal_at_consume_blocks_funding(client, approve, screener, a
     assert not _ledger(eid)
 
 
+def test_bound_payer_screening_is_rechecked_before_funding(client, approve, screener,
+                                                            agent_public_id, db):
+    from app.models import Approval, Engagement
+
+    payer = "0x" + "c" * 40
+    eid = _engagement(client, agent_public_id)["engagement_id"]
+    eng = db.session.get(Engagement, eid)
+    eng.buyer_address = payer
+    db.session.commit()
+
+    apr = _hire(client, eid).get_json()
+    action = db.session.get(Approval, apr["approval_id"]).action
+    assert action["payer_screening_id"].startswith("SCR-")
+    screener.set(payer, "REFUSE")
+    row = approve(apr["approval_id"])
+    assert (row.state, row.failure_code) == ("blocked", "SCREENING_REFUSED")
+    assert not _ledger(eid)
+
+
+def test_bound_payer_screening_is_rechecked_before_release(client, approve, screener,
+                                                            agent_public_id, db):
+    from app.models import Approval, Engagement
+
+    eid = _funded(client, approve, agent_public_id)
+    payer = "0x" + "d" * 40
+    eng = db.session.get(Engagement, eid)
+    eng.buyer_address = payer
+    db.session.commit()
+    assert client.post(f"/api/engagements/{eid}/milestones/0/submit",
+                       json={"evidence": "delivered"}).status_code == 200
+
+    apr = _release(client, eid, 0).get_json()
+    action = db.session.get(Approval, apr["approval_id"]).action
+    assert action["payer_screening_id"].startswith("SCR-")
+    screener.set(payer, "REFUSE")
+    row = approve(apr["approval_id"])
+    assert (row.state, row.failure_code) == ("blocked", "SCREENING_REFUSED")
+    assert not [entry for entry in _ledger(eid) if entry.kind == "release"]
+
+
 # ── submit / release ──────────────────────────────────────────────────────
 def test_release_needs_a_fresh_approval_each_time(client, approve, screener, agent_public_id):
     eid = _funded(client, approve, agent_public_id)
