@@ -6,10 +6,11 @@ from flask import jsonify, request
 from app.approvals.executors import ApprovalConsumptionError, consume_approval
 from app.engagements import bp
 from app.engagements.service import (
-    EngagementError, create_engagement, fund_milestone, get_engagement,
-    release_milestone, serialize_engagement, submit_milestone,
+    EngagementError, create_action_approval, create_engagement, fund_milestone,
+    get_engagement, release_milestone, screen_action, serialize_engagement,
+    submit_milestone, validate_action_approval,
 )
-from app.screening.policy import ScreeningBlocked, enforce_verdict, normalize_verdict
+from app.screening.policy import ScreeningBlocked
 
 
 def _error(message, code="INVALID_REQUEST", status=400):
@@ -40,6 +41,37 @@ def status(engagement_id):
     return jsonify(serialize_engagement(row))
 
 
+def _approval_payload(approval, verdict, screening):
+    return {
+        "approvalId": approval.id,
+        "actionType": approval.action_type,
+        "actionHash": approval.action_hash,
+        "state": approval.state,
+        "expiresAt": approval.expires_at.isoformat(),
+        "screening": {**verdict.to_dict(), "recordId": screening.id},
+    }
+
+
+@bp.route("/<engagement_id>/milestones/<milestone_id>/approval", methods=["POST"])
+def action_approval(engagement_id, milestone_id):
+    row = get_engagement(engagement_id)
+    milestone = next((item for item in row.milestones if item.id == milestone_id), None) if row else None
+    if not row or not milestone:
+        return _error("engagement or milestone not found", "NOT_FOUND", 404)
+    body = request.get_json(silent=True) or {}
+    action_type = str(body.get("actionType") or "fund").lower()
+    if action_type not in {"fund", "release"}:
+        return _error("actionType must be fund or release", "INVALID_ACTION", 400)
+    try:
+        approval, screening, verdict = create_action_approval(
+            row, milestone, action_type=action_type, payee=str(body.get("payee") or ""))
+    except ScreeningBlocked as exc:
+        return _error(str(exc), "SCREENING_BLOCKED", 409)
+    except EngagementError as exc:
+        return _error(str(exc), "APPROVAL_REJECTED", 409)
+    return jsonify(_approval_payload(approval, verdict, screening)), 201
+
+
 @bp.route("/<engagement_id>/milestones/<milestone_id>/fund", methods=["POST"])
 def fund(engagement_id, milestone_id):
     row = get_engagement(engagement_id)
@@ -48,14 +80,17 @@ def fund(engagement_id, milestone_id):
         return _error("engagement or milestone not found", "NOT_FOUND", 404)
     body = request.get_json(silent=True) or {}
     try:
-        verdict = normalize_verdict(body.get("screening") or {}, address=str(body.get("payee") or ""), provider="api")
-        enforce_verdict(verdict, milestone.amount_atomic)
-        approval = consume_approval(str(body.get("approvalId") or ""), str(body.get("actionHash") or ""), human_id=row.human_id)
+        payee = str(body.get("payee") or "")
+        verdict, screening = screen_action(row, milestone, action_type="fund", payee=payee)
+        approval = validate_action_approval(
+            str(body.get("approvalId") or ""), str(body.get("actionHash") or ""),
+            row, milestone, action_type="fund", payee=payee, verdict_id=verdict.verdict_id)
+        approval = consume_approval(approval.id, approval.action_hash, human_id=row.human_id)
         receipt = fund_milestone(row, milestone, approval_id=approval.id, screening_id=verdict.verdict_id)
     except (ScreeningBlocked, ApprovalConsumptionError, EngagementError) as exc:
         return _error(str(exc), "FUND_BLOCKED", 409)
     return jsonify({"engagement": serialize_engagement(row), "receipt": receipt.to_dict(),
-                    "screening": verdict.to_dict()}), 200
+                    "screening": verdict.to_dict(), "screeningRecordId": screening.id}), 200
 
 
 @bp.route("/<engagement_id>/milestones/<milestone_id>/submit", methods=["POST"])
@@ -81,12 +116,15 @@ def release(engagement_id, milestone_id):
         return _error("engagement or milestone not found", "NOT_FOUND", 404)
     body = request.get_json(silent=True) or {}
     try:
-        verdict = normalize_verdict(body.get("screening") or {}, address=str(body.get("payee") or ""), provider="api")
-        enforce_verdict(verdict, milestone.amount_atomic)
-        approval = consume_approval(str(body.get("approvalId") or ""), str(body.get("actionHash") or ""), human_id=row.human_id)
+        payee = str(body.get("payee") or "")
+        verdict, screening = screen_action(row, milestone, action_type="release", payee=payee)
+        approval = validate_action_approval(
+            str(body.get("approvalId") or ""), str(body.get("actionHash") or ""),
+            row, milestone, action_type="release", payee=payee, verdict_id=verdict.verdict_id)
+        approval = consume_approval(approval.id, approval.action_hash, human_id=row.human_id)
         receipt = release_milestone(row, milestone, approval_id=approval.id,
-                                    screening_id=verdict.verdict_id, payee=str(body.get("payee") or ""))
+                                    screening_id=verdict.verdict_id, payee=payee)
     except (ScreeningBlocked, ApprovalConsumptionError, EngagementError) as exc:
         return _error(str(exc), "RELEASE_BLOCKED", 409)
     return jsonify({"engagement": serialize_engagement(row), "receipt": receipt.to_dict(),
-                    "screening": verdict.to_dict()}), 200
+                    "screening": verdict.to_dict(), "screeningRecordId": screening.id}), 200

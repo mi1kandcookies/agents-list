@@ -40,7 +40,12 @@ def normalize_verdict(payload: dict, *, address: str, provider: str,
     decision = mapping.get(raw, "ASK_HUMAN")
     verdict_id = str(payload.get("verdictId") or payload.get("id") or "")
     if not verdict_id:
-        verdict_id = "0x" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        # Provider timestamps are evidence metadata, not authorization terms.
+        # Excluding them keeps an otherwise identical recheck bound to the same
+        # provider decision while still retaining the fresh checked_at value.
+        stable_payload = {key: value for key, value in payload.items()
+                          if key not in {"checkedAt", "checked_at"}}
+        verdict_id = "0x" + hashlib.sha256(json.dumps(stable_payload, sort_keys=True).encode()).hexdigest()
     cap = payload.get("capAtomic")
     try:
         cap = int(cap) if cap is not None else None
