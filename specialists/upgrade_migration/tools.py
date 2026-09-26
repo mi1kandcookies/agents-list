@@ -30,6 +30,7 @@ import fnmatch
 import hashlib
 import json
 import math
+import os
 import re
 import tomllib
 from datetime import datetime, timezone
@@ -60,6 +61,19 @@ TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)(/|$)|(^|/)test_[^/]*\.py$|
 
 
 # --- small helpers ----------------------------------------------------------
+
+def walk_files(root: Path) -> list[Path]:
+    """Files under `root`, sorted, never descending into SKIP_DIRS."""
+    out = []
+    for here, dirs, names in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        out += [Path(here) / n for n in names]
+    return sorted(out)
+
+
+def registry_snapshot_path(workspace: Path, ecosystem: str, name: str) -> Path:
+    return Path(workspace) / STATE_DIR / "registry" / f"{ecosystem}__{_safe_id(normalize_name(ecosystem, name))}.json"
+
 
 def _state(workspace: Path) -> Path:
     path = Path(workspace) / STATE_DIR
@@ -112,7 +126,7 @@ def version_key(version: str) -> tuple:
     version = version.strip().split("+", 1)[0]
     m = _VERSION.match(version)
     if not m:
-        return ((0,), 0, version)
+        return ((0,), -1, ((1, version),))   # unparseable: lowest, still comparable
     release = tuple(int(p) for p in m.group(1).split("."))
     while len(release) > 1 and release[-1] == 0:
         release = release[:-1]
@@ -261,10 +275,7 @@ def collect_dependencies(repo: Path) -> list[dict]:
     """
     repo = Path(repo)
     found: list[dict] = []
-    for path in sorted(repo.rglob("*")):
-        rel_parts = path.relative_to(repo).parts
-        if any(p in SKIP_DIRS for p in rel_parts[:-1]) or not path.is_file():
-            continue
+    for path in walk_files(repo):
         name = path.name
         source = path.relative_to(repo).as_posix()
         try:
@@ -359,7 +370,7 @@ def load_osv_state(workspace: Path) -> tuple[dict, dict]:
 
 
 def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, path: str = "repo",
-             include_unpinned: bool = False, **_: Any) -> dict:
+             **_: Any) -> dict:
     """Query OSV for every pinned dependency currently in the repo and store
     the answers plus each advisory's full record as evidence."""
     if fetch is None:
@@ -404,8 +415,8 @@ def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, path: 
     return {"scanned": len(deps),
             "vulnerable_packages": len({(f["ecosystem"], f["name"], f["version"]) for f in findings}),
             "findings": findings, "errors": errors,
-            "skipped_unpinned": [d["name"] for d in collect_dependencies(_inside(workspace, path))
-                                 if not d.get("version")] if not include_unpinned else []}
+            "skipped_unpinned": sorted({d["name"] for d in collect_dependencies(_inside(workspace, path))
+                                        if not d.get("version")})}
 
 
 def _events_intervals(events: list[dict]) -> list[tuple[str, str | None, bool]]:
@@ -646,7 +657,7 @@ def package_versions(workspace: Path, *, fetch: Callable | None = None, run=None
                          "too_new": age is not None and age < min_age_days,
                          "yanked": version in yanked})
     snapshot = {"url": url, "retrieved_at": _now(), "latest": latest, "versions": versions}
-    _write_json(_state(workspace) / "registry" / f"{ecosystem}__{_safe_id(name)}.json", snapshot)
+    _write_json(registry_snapshot_path(workspace, ecosystem, name), snapshot)
     return {"ecosystem": ecosystem, "name": name, "latest": latest,
             "count": len(versions), "versions": versions[-40:]}
 
@@ -816,8 +827,7 @@ def count_pattern_matches(repo: Path, detectors: list[dict]) -> dict[str, dict]:
     """{detector id: {"count", "sites": [path:line, ...]}} over files matching
     each detector's glob (default: every text file)."""
     repo = Path(repo)
-    files = [p for p in sorted(repo.rglob("*")) if p.is_file()
-             and not any(part in SKIP_DIRS for part in p.relative_to(repo).parts[:-1])]
+    files = walk_files(repo)
     out: dict[str, dict] = {}
     for det in detectors:
         rx = re.compile(det["regex"])

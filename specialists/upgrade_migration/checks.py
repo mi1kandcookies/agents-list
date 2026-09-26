@@ -357,17 +357,8 @@ def release_age_ok(workspace: Path, params: dict, *, run=None) -> dict:
     upgraded = {k: v for k, v in now.items() if before.get(k) != v and k[0] in ("PyPI", "npm")}
     problems = []
     for (eco, name), version in sorted(upgraded.items()):
-        snap = None
-        for cand in (name, name.replace("-", "_")):
-            path = Path(workspace) / T.STATE_DIR / "registry" / f"{eco}__{T._safe_id(cand)}.json"
-            if path.is_file():
-                snap = json.loads(path.read_text(encoding="utf-8"))
-                break
-        if snap is None:
-            reg_dir = Path(workspace) / T.STATE_DIR / "registry"
-            for path in sorted(reg_dir.glob(f"{eco}__*.json")) if reg_dir.is_dir() else []:
-                if T.normalize_name(eco, path.stem.split("__", 1)[1]) == name:
-                    snap = json.loads(path.read_text(encoding="utf-8"))
+        path = T.registry_snapshot_path(workspace, eco, name)
+        snap = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
         if snap is None:
             problems.append(f"{name} {version}: no registry history recorded")
             continue

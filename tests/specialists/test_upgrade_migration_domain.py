@@ -105,6 +105,8 @@ def test_version_ordering_and_bumps():
     assert T.compare_versions("2.0", "2.0.0") == 0
     assert T.compare_versions("1.0.post1", "1.0") == 1
     assert T.compare_versions("v1.2.3", "1.2.3") == 0
+    assert T.compare_versions("not-a-version", "0rc1") == -1           # no TypeError
+    assert T.compare_versions("v0.0.0-20240101-abcdef", "v0.1.0") == -1  # Go pseudo-version
     assert T.bump_kind("1.2.3", "1.2.9") == "patch"
     assert T.bump_kind("1.2.3", "1.4.0") == "minor"
     assert T.bump_kind("1.2.3", "2.0.0") == "major"
@@ -245,11 +247,12 @@ def test_package_versions_pypi_and_npm(tmp_path):
     by = {v["version"]: v for v in out["versions"]}
     assert [v["version"] for v in out["versions"]] == ["2.2.0", "2.3.0", "2.4.1"]
     assert by["2.4.1"]["too_new"] and by["2.3.0"]["yanked"] and not by["2.2.0"]["too_new"]
-    assert (tmp_path / T.STATE_DIR / "registry" / "PyPI__FastJsonX.json").exists()
+    assert (tmp_path / T.STATE_DIR / "registry" / "PyPI__fastjsonx.json").exists()
     npm = {"dist-tags": {"latest": "1.2.5"}, "time": {"created": "x", "1.2.5": "2024-03-01T00:00:00.000Z"},
            "versions": {"1.2.5": {}}}
     out = T.package_versions(tmp_path, fetch=lambda url, **k: SimpleNamespace(status=200, text=json.dumps(npm)),
-                             ecosystem="npm", name="left-trim-lite")
+                             ecosystem="npm", name="@acme/left-trim-lite")
+    assert T.registry_snapshot_path(tmp_path, "npm", "@acme/left-trim-lite").exists()
     assert out["latest"] == "1.2.5" and out["count"] == 1
     assert "error" in T.package_versions(tmp_path, fetch=lambda u, **k: None, ecosystem="Cargo", name="x")
 
