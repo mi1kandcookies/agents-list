@@ -17,6 +17,11 @@ service's facilitator path (simulated without keys) and recorded in the
 root engagement's ledger. The callee must be hireable (operator-stamped
 manifest, ``assert_hireable``); its price is the stamped ``price_min_micro``.
 The payee comes from ``resolve_payee`` (ENS or profile; a mismatch refuses).
+
+On chain, settlement can come back ``pending``. When receipt polling
+(``ledger.refresh_receipts``) later finds that transaction failed,
+``settlement_failed`` marks the row failed and gives the charge back to the
+mandate, exactly once per row.
 """
 from __future__ import annotations
 
@@ -83,11 +88,57 @@ def _mandate_token() -> str | None:
     return token.strip() if scheme == "Mandate" and token.strip() else None
 
 
-def _unspend(mandate_id: str, amount: int) -> None:
-    """Give back a charge whose settlement failed before anything moved."""
+def _unspend(mandate_id: str, amount: int) -> bool:
+    """Give back a charge whose settlement failed (never below zero). Caller
+    commits. Returns whether the mandate was updated."""
     from app.models import Mandate
-    db.session.execute(update(Mandate).where(Mandate.id == mandate_id)
-                       .values(spent_micro=Mandate.spent_micro - amount))
+    result = db.session.execute(
+        update(Mandate).where(Mandate.id == mandate_id, Mandate.spent_micro >= amount)
+        .values(spent_micro=Mandate.spent_micro - amount))
+    return result.rowcount == 1
+
+
+def _charged_mandate(entry):
+    """The mandate a task payment row was charged to: a mandate on the row's
+    engagement granted to the agent whose wallet signed the payment (the
+    payer is checked against exactly these wallets before charging). If that
+    agent holds several there, the newest one that covers the amount."""
+    from sqlalchemy import func, or_
+    from app.models import Agent, Mandate
+    payer = (entry.from_addr or "").lower()
+    if not payer:
+        return None
+    grantees = [a.public_id for a in Agent.query.filter(or_(
+        func.lower(Agent.payout_address) == payer,
+        func.lower(Agent.deployer_wallet) == payer)).all() if a.public_id]
+    if not grantees:
+        return None
+    return (Mandate.query.filter(Mandate.engagement_id == entry.engagement_id,
+                                 Mandate.grantee_agent_public_id.in_(grantees),
+                                 Mandate.spent_micro >= entry.amount_micro)
+            .order_by(Mandate.expires_at.desc(), Mandate.id.desc()).first())
+
+
+def settlement_failed(entry) -> bool:
+    """Receipt polling found a task payment's transaction failed: mark the
+    ledger row ``failed`` and refund the mandate charge. Idempotent: the row
+    moves ``pending → failed`` with a conditional UPDATE, and only the caller
+    that wins it refunds, so repeated or concurrent polls refund once.
+    Caller commits. Returns whether this call changed the row."""
+    from app.models import LedgerEntry
+    result = db.session.execute(
+        update(LedgerEntry).where(LedgerEntry.id == entry.id, LedgerEntry.status == "pending")
+        .values(status="failed").execution_options(synchronize_session=False))
+    db.session.refresh(entry)
+    if result.rowcount != 1:
+        return False
+    row = _charged_mandate(entry)
+    if row is None or not _unspend(row.id, int(entry.amount_micro)):
+        log.warning("x402 payment %s failed on chain; no mandate charge found to refund", entry.id)
+    else:
+        log.info("x402 payment %s failed on chain; refunded %d to %s",
+                 entry.id, entry.amount_micro, row.id)
+    return True
 
 
 @bp.route("/agents/<agent_ref>/tasks", methods=["POST"])

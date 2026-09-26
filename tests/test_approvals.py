@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from app.approvals import actions, service
-from app.approvals.executors import EXECUTORS, ExecutionResult
+from app.approvals.executors import BEFORE_CONSUME, EXECUTORS, ExecutionResult
 
 MANIFEST = {"manifest_hash": "0x" + "a" * 64}
 OTHER_SUB = "0x" + "6" * 64
@@ -15,7 +15,10 @@ OTHER_SUB = "0x" + "6" * 64
 
 @pytest.fixture()
 def calls(monkeypatch):
-    """Fake executors for manifest.publish and engagement.fund; records calls."""
+    """Fake executors for manifest.publish and engagement.fund; records calls.
+    The real engagement.fund pre-consume check (the agent is still hireable)
+    is replaced too: these tests use unstamped agents and exercise only the
+    approval service; tests/test_engagements.py covers that check."""
     calls = []
 
     def fake(approval, action):
@@ -24,6 +27,7 @@ def calls(monkeypatch):
 
     monkeypatch.setitem(EXECUTORS, "manifest.publish", fake)
     monkeypatch.setitem(EXECUTORS, "engagement.fund", fake)
+    monkeypatch.setitem(BEFORE_CONSUME, "engagement.fund", [])
     return calls
 
 
