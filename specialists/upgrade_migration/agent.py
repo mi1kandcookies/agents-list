@@ -71,7 +71,8 @@ class UpgradeMigration(Specialist):
 
     def _start_commit(self, ctx: ToolContext) -> str | None:
         if not T.is_git_repo(ctx.workspace / REPO):
-            for argv in (["git", "init", "-q"], ["git", "add", "--all"], ["git", *BASELINE_COMMIT]):
+            for argv in (["git", "init", "-q"], ["git", "add", "--all", "--", ".", *T.PATCH_EXCLUDES],
+                         ["git", *BASELINE_COMMIT]):
                 res = ctx.run(argv, cwd=REPO)
                 if res.exit_code != 0:
                     raise ToolError(f"{' '.join(argv[:3])} failed: {res.stderr.strip()[:300]}")
@@ -100,6 +101,7 @@ class UpgradeMigration(Specialist):
             return outcome
         base = self.base_commit(ctx.workspace, milestone.id) or "HEAD"
         staged = ctx.workspace / T.STATE_DIR / "patches" / f"{safe_name(milestone.id)}.patch"
+        staged.unlink(missing_ok=True)     # never ship an earlier attempt's diff
         try:
             res = T.git_diff(ctx.run, REPO, staged, base)
         except (ToolError, PolicyViolation) as exc:

@@ -419,6 +419,8 @@ def test_export_patch_writes_deliverable(tmp_path):
     assert f"--output={target.resolve()}" in argv                     # git writes the file, never cut
     assert any("__pycache__" in a for a in argv)                    # generated trees excluded
     assert "error" in T.export_patch(tmp_path, run=run, output="repo/x.patch")
+    assert "error" in T.export_patch(tmp_path, run=run, output="deliverables/../repo/x.patch")
+    assert not (tmp_path / "repo" / "x.patch").exists()
     assert "error" in T.export_patch(tmp_path, run=run, output="deliverables/x.patch", base_ref="HEAD; rm -rf /")
     assert "error" in T.export_patch(tmp_path, run=run, output="deliverables/x.patch", base_ref="-R")
 

@@ -952,14 +952,14 @@ def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, re
     """Write `git diff <base_ref>` of repo/ (new files included) to a deliverable."""
     if run is None:
         return {"error": "command execution is not available to this tool"}
-    if not output.startswith("deliverables/"):
-        return {"error": "output must be under deliverables/"}
     if not re.fullmatch(r"[A-Za-z0-9._/~^][A-Za-z0-9._/~^-]*", base_ref):   # never an option
         return {"error": "invalid base_ref"}
     resolve = _resolver(workspace, resolve_path)
+    target = resolve(output, write=True)
+    if target.relative_to(Path(workspace).resolve()).parts[0] != "deliverables":
+        return {"error": "output must be under deliverables/"}
     if not is_git_repo(resolve(path)):
         return {"error": f"{path}/ is not a git repository"}
-    target = resolve(output, write=True)
     res = git_diff(run, path, target, base_ref)
     if res.exit_code != 0 or not target.is_file():
         return {"error": f"git diff failed: {(res.stderr or '').strip()[:400]}"}
