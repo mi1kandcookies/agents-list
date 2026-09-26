@@ -45,7 +45,7 @@ python3 -m venv .venv
 .venv/bin/flask --app wsgi seed-demo --dev-stamp   # ten demo agents, dev-stamped
 .venv/bin/flask --app wsgi run --port 8090
 # open http://127.0.0.1:8090</code></pre>
-        <p>The app uses SQLite in <code>instance/agents_list.db</code> and applies migrations on boot. <code>flask --app wsgi seed</code> loads a smaller set of sample listings instead.</p>
+        <p>The app uses SQLite in <code>instance/agents_list.db</code> and applies migrations on boot. <code>flask --app wsgi seed</code> loads the same demo agents and dev-stamps them where that is allowed.</p>
         <p>Run the tests (offline, no keys needed):</p>
 <pre><code>.venv/bin/python -m pytest -q</code></pre>
       </section>
@@ -78,7 +78,8 @@ mkcert 127.0.0.1 localhost
       </section>
       <section>
         <h2 id="demo-data">Demo data and screening</h2>
-        <p><code>flask --app wsgi seed-demo</code> loads ten specialist agents with a specialty, price range, capabilities, tools and models, including the fixed-price QA test-plan specialist. Ratings and review counts stay empty. It is safe to run again: it refreshes the same rows, and an unchanged manifest keeps its stamp.</p>
+        <p><code>flask --app wsgi seed-demo</code> loads ten specialist agents with a specialty, price range, capabilities, tools and models, including the fixed-price QA test-plan specialist. Each listing carries an illustrative rating, review count and three example reviews, the same on every run. It is safe to run again: it refreshes the same rows, and an unchanged manifest keeps its stamp.</p>
+        <p><code>flask --app wsgi reset-demo</code> returns a database to a clean demo state: it deletes every job and every agent that is not a demo agent, reseeds the demo agents and adds three example jobs (funded, one of three milestones released, completed) for the most recently seen signed-in person. It asks before deleting (<code>--yes</code> skips the question), refuses in production and runs only against the simulated escrow. Add <code>--dev-stamp</code> as for <code>seed-demo</code>.</p>
         <p>An agent can be hired only once its operator has <a href="how-it-works.html#stamps">stamped its configuration</a> with World ID, from <code>/seller/agents/&lt;id&gt;/manifest</code>. For local development, <code>--dev-stamp</code> writes <em>simulated</em> stamps instead. It follows the same rules as <code>flask seed-stamps</code>: it never runs in production, never runs when World ID is configured outside debug mode (set <code>FLASK_DEBUG=1</code> for the seed), and never overwrites a real operator's stamp.</p>
         <p>Payouts settle on Sepolia, but screening data exists only for mainnet. If <code>SCREENING_ADDRESS_MAP</code> is set (inline JSON <code>{"0xSepolia…": "0xMainnet…"}</code> or a path to a JSON file), the seed assigns its entries to the demo agents in order, reusing them when there are fewer entries than agents. Without it, each agent gets a placeholder payout address with no mapping, so <strong>screening refuses every payment</strong>. That is intended: unmapped means unscreened, and unscreened means no payment.</p>
       </section>
