@@ -167,3 +167,154 @@ def test_tool_defs_are_well_formed():
     for d in tools.TOOL_DEFS:
         assert callable(d["function"]) and d["description"] and d["input_schema"]["type"] == "object"
         assert d["risk"] in ("read", "write", "exec", "network", "external")
+
+
+# --- checks -------------------------------------------------------------------
+
+from specialists.support_automation import checks as C  # noqa: E402
+
+M1 = "deliverables/m1-discovery"
+M2 = "deliverables/m2-knowledge"
+M3 = "deliverables/m3-agent-config"
+M1_PARAMS = {"tickets": f"{M1}/tickets_redacted.csv", "rules": f"{M1}/intent_rules.json",
+             "taxonomy": f"{M1}/intent_taxonomy.csv", "kb_dir": "inputs/help_center"}
+
+
+def _rewrite_csv(path: Path, mutate) -> None:
+    rows = list(csv.DictReader(path.open(encoding="utf-8")))
+    mutate(rows)
+    _write_csv(path, rows)
+
+
+def test_pii_checks(ws):
+    tools.redact_tickets(ws)
+    assert C.no_pii_remaining(ws, {"paths": [M1]})["passed"] is True
+    assert C.redaction_complete(ws, {"redacted": f"{M1}/tickets_redacted.csv"})["passed"] is True
+    assert C.no_pii_remaining(ws, {"paths": ["inputs"]})["passed"] is False
+    # forged: a dropped row fails even though no PII remains
+    _rewrite_csv(ws / M1 / "tickets_redacted.csv", lambda rows: rows.pop())
+    assert C.redaction_complete(ws, {"redacted": f"{M1}/tickets_redacted.csv"})["passed"] is False
+    assert C.redaction_complete(ws, {"redacted": f"{M1}/missing.csv"})["passed"] is False
+
+
+def test_taxonomy_reconciles_detects_forgery(ws):
+    _m1(ws)
+    ok = C.taxonomy_reconciles(ws, {**M1_PARAMS, "min_coverage": 0.8})
+    assert ok["passed"] is True and ok["score"] == round(5 / 6, 4)
+    assert C.taxonomy_reconciles(ws, {**M1_PARAMS, "min_coverage": 0.9})["passed"] is False
+
+    def inflate(rows):
+        rows[0]["volume"] = str(int(rows[0]["volume"]) + 3)
+    _rewrite_csv(ws / M1 / "intent_taxonomy.csv", inflate)
+    bad = C.taxonomy_reconciles(ws, {**M1_PARAMS, "min_coverage": 0.5})
+    assert bad["passed"] is False and "reported" in bad["details"]
+
+
+def test_gap_map_consistent_detects_forgery(ws):
+    _m1(ws)
+    params = {**M1_PARAMS, "gap_map": f"{M1}/kb_gap_map.csv"}
+    assert C.gap_map_consistent(ws, params)["passed"] is True
+
+    def hide_gaps(rows):
+        for r in rows:
+            r["status"] = "covered"
+    _rewrite_csv(ws / M1 / "kb_gap_map.csv", hide_gaps)
+    assert C.gap_map_consistent(ws, params)["passed"] is False
+
+
+def _m2(ws: Path, *, source: str = "inputs/tickets.csv#T4") -> None:
+    arts = ws / M2 / "articles"
+    arts.mkdir(parents=True, exist_ok=True)
+    (arts / "track-delivery.md").write_text(
+        f"---\ntitle: Track your delivery\nintents: delivery_status\nsources: {source}\n---\n"
+        "Deliveries arrive within 5 business days.\n", encoding="utf-8")
+    (ws / M2 / "macros.json").write_text(json.dumps({"macros": [
+        {"id": "m-delivery", "title": "Delivery delay", "intents": ["delivery_status"],
+         "body": "Sorry for the wait - here is your tracking link.", "sources": [source]}]}), encoding="utf-8")
+
+
+def test_m2_checks_pass_and_fail(ws):
+    _m1(ws)
+    _m2(ws)
+    p = {**M1_PARAMS, "articles_dir": f"{M2}/articles", "macros": f"{M2}/macros.json", "top_n": 5}
+    assert C.top_gaps_addressed(ws, p)["passed"] is True     # legal_threat is human_only, skipped
+    assert C.articles_grounded(ws, {"articles_dir": f"{M2}/articles", "rules": p["rules"]})["passed"] is True
+    assert C.macros_valid(ws, {"macros": p["macros"], "rules": p["rules"]})["passed"] is True
+    assert C.kb_consistent(ws, {"terms": ["deliver"], "articles_dir": f"{M2}/articles",
+                                "paths": [p["macros"]]})["passed"] is True
+    # an article that contradicts the first on delivery time
+    (ws / M2 / "articles" / "late.md").write_text(
+        "---\nintents: delivery_status\nsources: inputs/tickets.csv#T99\n---\nDeliveries arrive within "
+        "7 business days.\n", encoding="utf-8")
+    assert C.kb_consistent(ws, {"terms": ["deliver"], "articles_dir": f"{M2}/articles"})["passed"] is False
+    grounded = C.articles_grounded(ws, {"articles_dir": f"{M2}/articles"})
+    assert grounded["passed"] is False and "T99" in grounded["details"]
+    (ws / M2 / "macros.json").write_text(json.dumps([{"id": "x", "intents": ["nope"], "body": ""}]),
+                                         encoding="utf-8")
+    assert C.macros_valid(ws, {"macros": p["macros"], "rules": p["rules"]})["passed"] is False
+    for f in (ws / M2 / "articles").glob("*.md"):
+        f.unlink()
+    miss = C.top_gaps_addressed(ws, {**p, "macros": None})
+    assert miss["passed"] is False and "delivery_status" in miss["details"]
+
+
+def _m3(ws: Path, rules: list[dict] | None = None) -> dict:
+    cfg = {"instructions": "Be accurate; answer only from the knowledge base.",
+           "ai_disclosure": "You are chatting with an AI assistant.",
+           "handoff_message": "Connecting you with a teammate.",
+           "knowledge_paths": ["inputs/help_center"],
+           "escalation_rules": rules if rules is not None else [
+               {"category": "billing_dispute", "keywords": ["chargeback", "dispute"]},
+               {"category": "legal_threat", "keywords": ["attorney", "lawyer"]},
+               {"category": "safety", "keywords": ["unsafe", "injury"]},
+               {"category": "account_security", "keywords": ["hacked"]},
+               {"category": "vulnerable_user", "keywords": ["bereavement"]}]}
+    path = ws / M3 / "agent_config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+    return cfg
+
+
+def test_agent_config_valid(ws):
+    _m3(ws)
+    assert C.agent_config_valid(ws, {"config": f"{M3}/agent_config.json"})["passed"] is True
+    _m3(ws, rules=[{"category": "legal_threat", "keywords": ["attorney"]}])
+    bad = C.agent_config_valid(ws, {"config": f"{M3}/agent_config.json"})
+    assert bad["passed"] is False and "billing_dispute" in bad["details"]
+
+
+def test_eval_holdout_sealed(ws):
+    _m1(ws)
+    tools.split_eval_set(ws, holdout_fraction=0.5)
+    base = {"tickets": f"{M1}/tickets_labeled.csv", "holdout": f"{M3}/eval_holdout.csv",
+            "build": f"{M3}/build_split.csv", "holdout_fraction": 0.5, "min_size": 1}
+    assert C.eval_holdout_sealed(ws, base)["passed"] is True
+    held = [r["ticket_id"] for r in csv.DictReader((ws / M3 / "eval_holdout.csv").open(encoding="utf-8"))]
+    _m2(ws, source=f"inputs/tickets.csv#{held[0]}")        # leak a held-out ticket into the KB
+    leak = C.eval_holdout_sealed(ws, {**base, "articles_dir": f"{M2}/articles"})
+    assert leak["passed"] is False and held[0] in leak["details"]
+    assert C.eval_holdout_sealed(ws, {**base, "holdout_fraction": 0.1})["passed"] is False
+
+
+def test_escalation_recall_recomputes_and_rejects_forged_report(ws):
+    _m1(ws)
+    _m3(ws)
+    params = {"config": f"{M3}/agent_config.json", "eval": f"{M1}/tickets_labeled.csv",
+              "report": f"{M3}/escalation_replay.json"}
+    tools.replay_escalations(ws, eval_path=params["eval"])
+    assert C.escalation_recall(ws, params)["passed"] is True
+    report = ws / params["report"]
+    forged = json.loads(report.read_text(encoding="utf-8"))
+    forged["false_neg"] = 0
+    forged["must_escalate_recall"] = 1.0
+    _m3(ws, rules=[{"category": "legal_threat", "keywords": ["attorney"]}])
+    report.write_text(json.dumps(forged), encoding="utf-8")
+    bad = C.escalation_recall(ws, params)
+    assert bad["passed"] is False and bad["score"] == 0.5
+
+
+def test_check_defs_are_callable():
+    assert set(C.CHECK_DEFS) >= {"taxonomy_reconciles", "escalation_recall", "no_pii_remaining"}
+    for fn in C.CHECK_DEFS.values():
+        out = fn(Path("."), {}, run=None)
+        assert set(out) == {"passed", "details", "score"} and out["passed"] is False
