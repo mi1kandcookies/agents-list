@@ -109,9 +109,16 @@ turn one into a pending check.
 ```bash
 python -m agentkit validate contract-review
 python -m agentkit estimate contract-review --intake specialists/contract_review/evals/fixtures/northwind_intake.json
-python -m agentkit run contract-review --brief brief.json --milestone m1-playbook --workspace WORKDIR
+python -m agentkit spec-hash contract-review
+python -m agentkit run contract-review --brief brief.json --milestone m1-playbook --milestone-idx 0 \
+    --workspace WORKDIR --spec-hash 0x...
 python -m agentkit check contract-review --milestone m1-playbook --workspace WORKDIR
 ```
+
+`--milestone-idx` is the milestone's SOW index, which the evidence names;
+`--spec-hash` is the value from the operator-stamped manifest, and the run
+refuses a package that hashes differently. Runs use the models in
+`agent.yaml` (no fallbacks), so production runs the stamped model.
 
 Milestones run in order on one workspace: m2 reviews against the approved
 `deliverables/m1-playbook/playbook.yaml`, m3 redlines the issues in
