@@ -81,7 +81,7 @@ def test_home_box_starts_the_guided_flow(client):
     assert 'action="/new"' in form and 'method="get"' in form and 'name="q"' in form
     hero = html[html.index('class="home-search"'):]
     assert 'href="/marketplace"' in hero[:hero.index("</section>")]   # Browse agents
-    assert "ENSv2" in hero and "Intercepta" in hero and "x402 exact" in hero
+    assert "protection-row" not in hero   # integration strip was removed on request
 
 
 def test_catalog_placeholder_new_view_is_gone(app):
