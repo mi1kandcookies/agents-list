@@ -160,6 +160,8 @@ milestones:
       - {check: questionnaire_answers_grounded, description: Questionnaire answers are grounded or abstain,
          params: {path: deliverables/m3-draft/questionnaire_answers.csv}}
       - {check: ledger_verified, description: Key claims recorded in the claim ledger quote their source verbatim}
+      - {check: citations_resolve, description: Every claim id cited in the draft is in the claim ledger,
+         params: {paths: [deliverables/m3-draft/proposal.md], min_citations: 0}}
       - {check: no_placeholders, params: {paths: [deliverables/m3-draft/proposal.md,
           deliverables/m3-draft/submission-checklist.md]}}
       - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/draft.yaml,
