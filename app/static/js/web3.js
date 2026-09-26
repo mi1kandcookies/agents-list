@@ -1,10 +1,14 @@
 // Agent's List - Web3 integration layer.
-// Depends on: ethers (UMD CDN), contracts.js
+// Depends on: ethers v6 (UMD CDN), /config.js, contracts.js
+//
+// Payments: the buyer signs an EIP-3009 TransferWithAuthorization for USDC
+// (EIP-712 domain read from the token contract by the server), and the
+// platform facilitator submits it and pays gas via /api/x402/pay.
 
 (() => {
-  const CHAIN = window.AGENTSLIST_CHAIN;
-  const ADDR = window.AGENTSLIST_ADDRESSES;
-  const ABI = window.AGENTSLIST_ABIS;
+  const CHAIN = window.AGENTSLIST_CHAIN || {};
+  const ADDR = window.AGENTSLIST_ADDRESSES || {};
+  const ABI = window.AGENTSLIST_ABIS || {};
 
   // ── STATE ────────────────────────────────────────────────────────────────
   window.AgentsList = {
@@ -18,30 +22,29 @@
   // ── HELPERS ──────────────────────────────────────────────────────────────
   const short = (a) => a ? a.slice(0, 6) + '...' + a.slice(-4) : '';
   const toUSDC = (n) => Number(n) / 1e6;
-  const fromUSDC = (n) => BigInt(Math.floor(Number(n) * 1e6));
+  const fromUSDC = (n) => BigInt(Math.round(Number(n) * 1e6));
 
   async function ensureChain() {
+    if (!CHAIN.chainIdHex) return;
     const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-    if (chainId !== CHAIN.chainIdHex) {
-      try {
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: CHAIN.chainIdHex }],
-        });
-      } catch (e) {
-        if (e.code === 4902) {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: CHAIN.chainIdHex,
-              chainName: CHAIN.name,
-              rpcUrls: [CHAIN.rpcUrl],
-              nativeCurrency: CHAIN.nativeCurrency,
-              blockExplorerUrls: [CHAIN.explorer],
-            }],
-          });
-        } else { throw e; }
-      }
+    if (chainId === CHAIN.chainIdHex) return;
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: CHAIN.chainIdHex }],
+      });
+    } catch (e) {
+      if (e.code !== 4902) throw e;
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: CHAIN.chainIdHex,
+          chainName: CHAIN.name,
+          rpcUrls: [CHAIN.rpcUrl],
+          nativeCurrency: CHAIN.nativeCurrency,
+          blockExplorerUrls: [CHAIN.explorer],
+        }],
+      });
     }
   }
 
@@ -57,13 +60,8 @@
     const signer = await provider.getSigner();
     const address = await signer.getAddress();
 
-    window.AgentsList.provider = provider;
-    window.AgentsList.signer = signer;
-    window.AgentsList.address = address;
-    window.AgentsList.connected = true;
-
-    // Instantiate all contracts
-    for (const name of Object.keys(ADDR || {})) {
+    Object.assign(window.AgentsList, { provider, signer, address, connected: true, contracts: {} });
+    for (const name of Object.keys(ADDR)) {
       if (ABI[name]) window.AgentsList.contracts[name] = new ethers.Contract(ADDR[name], ABI[name], signer);
     }
 
@@ -71,20 +69,14 @@
     if (window.showToast) showToast(`Connected: ${short(address)}`, 'success');
     window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address } }));
 
-    // Persist address so buyer/seller pages load this wallet's on-chain activity.
-    // /active-jobs, /past-jobs, /seller/earnings all read the buyer_wallet/seller_wallet
-    // cookie so you don't have to paste your address into a query param after connecting.
-    document.cookie = `buyer_wallet=${address}; path=/; max-age=${60*60*24*7}; SameSite=Lax`;
-    document.cookie = `seller_wallet=${address}; path=/; max-age=${60*60*24*7}; SameSite=Lax`;
-
-    // If we're on a page that renders wallet-scoped data, redirect with the
-    // wallet param so the server-side render picks up this address.
-    const wallet_pages = ['/active-jobs', '/past-jobs', '/seller/earnings'];
+    // Wallet-scoped pages read these cookies server-side.
+    document.cookie = `buyer_wallet=${address}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+    document.cookie = `seller_wallet=${address}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+    const walletPages = ['/active-jobs', '/past-jobs', '/seller/earnings'];
     const path = window.location.pathname;
-    if (wallet_pages.includes(path) && !new URLSearchParams(window.location.search).get('wallet')) {
+    if (walletPages.includes(path) && !new URLSearchParams(window.location.search).get('wallet')) {
       window.location.href = `${path}?wallet=${address}`;
     }
-
     return address;
   }
 
@@ -101,214 +93,66 @@
   }
 
   // ── READS ────────────────────────────────────────────────────────────────
-  async function getUsdcBalance() {
-    if (!window.AgentsList.connected) return 0n;
-    // If we're in demo-wallet mode (connected via inline handler, no ethers
-    // contract bound), instantiate a read-only contract against the public RPC
-    // so balance reads still work without a browser wallet extension.
-    if (!window.AgentsList.contracts || !window.AgentsList.contracts.MockUSDC) {
-      try {
-        const provider = new ethers.JsonRpcProvider(CHAIN.rpcUrl);
-        const c = new ethers.Contract(ADDR.MockUSDC, ABI.MockUSDC, provider);
-        return await c.balanceOf(window.AgentsList.address);
-      } catch (e) { return 0n; }
+  async function getUsdcBalance(address) {
+    const who = address || window.AgentsList.address;
+    if (!who || !ADDR.USDC) return 0n;
+    try {
+      const provider = window.AgentsList.provider || new ethers.JsonRpcProvider(CHAIN.rpcUrl);
+      const usdc = new ethers.Contract(ADDR.USDC, ABI.USDC, provider);
+      return await usdc.balanceOf(who);
+    } catch (e) {
+      return 0n;
     }
-    return window.AgentsList.contracts.MockUSDC.balanceOf(window.AgentsList.address);
   }
 
-  async function getAgentProfile(agentId) {
-    // Read-only - works without connect via public RPC
-    const provider = window.AgentsList.provider || new ethers.JsonRpcProvider(CHAIN.rpcUrl);
-    const reg = new ethers.Contract(ADDR.AgentRegistry, ABI.AgentRegistry, provider);
-    const rep = new ethers.Contract(ADDR.ReputationContract, ABI.ReputationContract, provider);
-    const stake = new ethers.Contract(ADDR.StakingSlashing, ABI.StakingSlashing, provider);
-
-    const [agent, listing, profile, stakeInfo] = await Promise.all([
-      reg.getAgent(agentId),
-      reg.getListing(agentId),
-      rep.getCreditProfile(agentId),
-      stake.getStake(agentId),
-    ]);
-    return {
-      id: Number(agentId),
-      wallet: agent.wallet,
-      name: agent.name,
-      endpoint: agent.endpointURL,
-      active: agent.active,
-      banned: agent.banned,
-      listing: {
-        minPricePerToken: listing.minPricePerToken.toString(),
-        maxTokensPerSession: listing.maxTokensPerSession.toString(),
-        acceptingWork: listing.acceptingWork,
-      },
-      reputation: {
-        score: Number(profile.score),
-        tier: Number(profile.tier),
-        tasks: Number(profile.tasksCompleted),
-        incidents: Number(profile.incidentCount),
-        projectedScore: Number(profile.projectedScore),
-      },
-      stake: {
-        amountUSDC: toUSDC(stakeInfo[0]),
-        incidents: Number(stakeInfo[1]),
-        banned: stakeInfo[2],
-      },
-    };
-  }
-
-  // ── MINT USDC (testnet only) ─────────────────────────────────────────────
-  async function mintUSDC(amountUSDC = 1000) {
-    if (!window.AgentsList.connected) await connectWallet();
-    const amt = fromUSDC(amountUSDC);
-    const tx = await window.AgentsList.contracts.MockUSDC.mint(window.AgentsList.address, amt);
-    if (window.showToast) showToast(`Minting ${amountUSDC} USDC...`, 'info');
-    await tx.wait();
-    if (window.showToast) showToast(`+${amountUSDC} USDC`, 'success');
-    return tx.hash;
-  }
-
-  // ── x402 PAYMENT - sign EIP-3009, call backend, open escrow ──────────────
-  async function payWithX402({ agentId, depositUSDC, tokenBudget, categoryId = 0, facilitator }) {
-    if (!window.AgentsList.connected) await connectWallet();
+  // ── x402 PAYMENT: sign EIP-3009 TransferWithAuthorization, submit via backend ──
+  async function payWithX402({ agentId, depositUSDC, task = '' }) {
+    // The nav can mark the wallet "connected" from a cookie without a signer.
+    if (!window.AgentsList.signer) await connectWallet();
     const { signer, address } = window.AgentsList;
+
+    const meta = await fetch('/api/x402/domain').then(r => r.json());
+    const to = meta.recipient || window.AGENTSLIST_PAYMENT_RECIPIENT;
+    if (!to) throw new Error('Payments are not configured on this server (PAYMENT_RECIPIENT unset).');
+
     const value = fromUSDC(depositUSDC);
-    const now = Math.floor(Date.now() / 1000);
-    const validBefore = now + 3600;
-    const nonce = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const validBefore = Math.floor(Date.now() / 1000) + 3600;
+    const nonce = ethers.hexlify(crypto.getRandomValues(new Uint8Array(32)));
+    const message = { from: address, to, value, validAfter: 0, validBefore, nonce };
 
-    // EIP-712 domain for MockUSDC
-    const domain = {
-      name: 'Mock USDC',
-      version: '1',
-      chainId: CHAIN.chainId,
-      verifyingContract: ADDR.MockUSDC,
-    };
-    const types = {
-      TransferWithAuthorization: [
-        { name: 'from', type: 'address' },
-        { name: 'to', type: 'address' },
-        { name: 'value', type: 'uint256' },
-        { name: 'validAfter', type: 'uint256' },
-        { name: 'validBefore', type: 'uint256' },
-        { name: 'nonce', type: 'bytes32' },
-      ],
-    };
-    const msg = {
-      from: address,
-      to: facilitator,
-      value,
-      validAfter: 0,
-      validBefore,
-      nonce,
-    };
-
-    if (window.showToast) showToast('Sign the payment permit in your wallet...', 'info');
-    const sig = await signer.signTypedData(domain, types, msg);
+    if (window.showToast) showToast('Sign the USDC payment authorization in your wallet...', 'info');
+    const sig = await signer.signTypedData(meta.domain, meta.types, message);
     const { v, r, s } = ethers.Signature.from(sig);
 
-    // POST to backend facilitator endpoint.
-    // Backend is expected to call transferWithAuthorization + depositFunds.
-    const body = {
-      ...msg,
-      value: value.toString(),
-      v, r, s,
-      agentId,
-      tokenBudget: String(tokenBudget),
-      categoryId,
-    };
     const res = await fetch('/api/x402/pay', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...message, value: value.toString(), v, r, s, agentId, task }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'unknown' }));
-      throw new Error(err.error || `backend rejected payment (${res.status})`);
-    }
-    return res.json();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `backend rejected payment (${res.status})`);
+    return body;
   }
 
-  // ── DIRECT ESCROW DEPOSIT (non-x402 fallback) ────────────────────────────
-  async function depositDirect({ agentId, depositUSDC, tokenBudget, categoryId = 0 }) {
-    if (!window.AgentsList.connected) await connectWallet();
-    const amt = fromUSDC(depositUSDC);
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
-    if (window.showToast) showToast('Approving USDC spend...', 'info');
-    const tx1 = await window.AgentsList.contracts.MockUSDC.approve(ADDR.EscrowPayment, amt);
-    await tx1.wait();
-    if (window.showToast) showToast('Opening escrow session...', 'info');
-    const tx2 = await window.AgentsList.contracts.EscrowPayment.depositFunds(
-      agentId, amt, BigInt(tokenBudget), categoryId, expiresAt
-    );
-    const rc = await tx2.wait();
-    if (window.showToast) showToast('Session opened on-chain', 'success');
-    return { txHash: tx2.hash, blockNumber: rc.blockNumber };
-  }
-
-  // ── WIRE UP GLOBAL HANDLERS ──────────────────────────────────────────────
-  function _wireWallet() {
+  // ── WIRE UP ──────────────────────────────────────────────────────────────
+  function wireWallet() {
     const btn = document.getElementById('wallet-btn');
-    if (!btn) { console.warn('[agents-list] wallet-btn not in DOM on this page'); return; }
-    if (btn.dataset.wired === 'true') return;
+    if (!btn || btn.dataset.wired === 'true') return;
     btn.dataset.wired = 'true';
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      console.log('[agents-list] wallet-btn clicked');
-      if (window.AgentsList.connected) { console.log('[agents-list] already connected, ignoring click'); return; }
-      if (!window.ethereum) {
-        const msg = 'No wallet extension detected. Install MetaMask, Rabby, or Coinbase Wallet and refresh.';
-        console.error('[agents-list]', msg);
-        if (window.showToast) showToast(msg, 'error');
-        else alert(msg);
-        return;
-      }
-      try {
-        await connectWallet();
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        console.error('[agents-list] connect failed:', err);
-        if (window.showToast) showToast('Connect failed: ' + msg, 'error');
-        else alert('Connect failed: ' + msg);
-      }
-    });
-    console.log('[agents-list] wallet-btn wired');
   }
 
-  // Try wiring immediately and again on DOM ready — some pages (landing)
-  // include this script at the bottom of body so DOMContentLoaded may have
-  // already fired before we get here.
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _wireWallet);
-  } else {
-    _wireWallet();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireWallet);
+  else wireWallet();
 
-  // Restore state + listen for wallet events once everything else is ready.
-  (function _setupEthereumListeners() {
-    function go() {
-      if (window.ethereum && window.ethereum.selectedAddress) {
-        connectWallet().catch((e) => console.warn('[agents-list] auto-restore failed:', e));
-      }
-      if (window.ethereum) {
-        try {
-          window.ethereum.on('accountsChanged', () => window.location.reload());
-          window.ethereum.on('chainChanged', () => window.location.reload());
-        } catch (_) {}
-      }
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
-    else go();
-  })();
+  if (window.ethereum && window.ethereum.on) {
+    try {
+      window.ethereum.on('accountsChanged', () => window.location.reload());
+      window.ethereum.on('chainChanged', () => window.location.reload());
+    } catch (_) {}
+  }
 
   // Expose API
-  window.AgentsList.connectWallet = connectWallet;
-  window.AgentsList.getUsdcBalance = getUsdcBalance;
-  window.AgentsList.getAgentProfile = getAgentProfile;
-  window.AgentsList.mintUSDC = mintUSDC;
-  window.AgentsList.payWithX402 = payWithX402;
-  window.AgentsList.depositDirect = depositDirect;
-  window.AgentsList.short = short;
-  window.AgentsList.toUSDC = toUSDC;
-  window.AgentsList.fromUSDC = fromUSDC;
+  Object.assign(window.AgentsList, {
+    connectWallet, getUsdcBalance, payWithX402, ensureChain, short, toUSDC, fromUSDC,
+  });
 })();

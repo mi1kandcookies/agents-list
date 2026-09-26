@@ -65,7 +65,9 @@ def build_challenge(price_usdc: float, recipient: str, resource_id: str,
     from chain.config import get_chain_config
     chain = chain or get_chain_config()
     chain_id = chain.chain_id
-    domain = domain or {"name": "USDC", "version": "2"}
+    if domain is None:
+        from chain.usdc import fallback_domain
+        domain = fallback_domain(usdc_address or None, chain_id)
     now = int(time.time())
     value_micro = int(price_usdc * 1_000_000)
     return {
@@ -184,10 +186,10 @@ def require_x402(
     def wrap(view):
         @wraps(view)
         def inner(*args, **kwargs):
-            from chain.client import _usdc_address
-            from chain.config import get_chain_config, payment_recipient
+            from chain.config import get_address, get_chain_config, payment_recipient
+            from chain.usdc import get_usdc_domain
             chain = get_chain_config()
-            usdc = _usdc_address() or ""
+            usdc = get_address("USDC") or ""
             default_recipient = payment_recipient() or ""
             recipient = default_recipient
             if recipient_resolver:
@@ -206,6 +208,7 @@ def require_x402(
                     resource_id=rid,
                     usdc_address=usdc,
                     chain=chain,
+                    domain=get_usdc_domain(),
                     notes=notes,
                 )
                 resp = jsonify({

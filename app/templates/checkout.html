@@ -21,10 +21,12 @@
           <h3>Wallet</h3>
           <span class="badge badge-pending" id="wallet-status-badge">Not Connected</span>
         </div>
-        <p class="text-sm mb-16" id="checkout-wallet-desc">Connect a wallet to pay in USDC.</p>
+        <p class="text-sm mb-16" id="checkout-wallet-desc">Connect a wallet to pay in USDC on {{ chain.name }}.</p>
         <button class="btn btn-secondary w-full" id="checkout-wallet-btn" type="button" onclick="__walletClick(event)">Connect Wallet</button>
         <div class="flex-between mt-12 text-xs text-muted" style="font-family:var(--font-mono);">
-          <span>Token</span><span id="checkout-token">USDC</span>
+          <span>Token</span>
+          {% if usdc_address %}<a id="checkout-token" href="{{ explorer_url('token', usdc_address) }}" target="_blank" rel="noopener" style="color:var(--accent);">USDC · {{ usdc_address[:6] }}…{{ usdc_address[-4:] }} ↗</a>
+          {% else %}<span id="checkout-token">USDC (not configured)</span>{% endif %}
         </div>
       </div>
 
