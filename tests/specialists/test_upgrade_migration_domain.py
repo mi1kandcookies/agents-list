@@ -267,6 +267,21 @@ def test_osv_scan_rejects_mismatched_record(tmp_path):
     assert any("mismatch" in e for e in out["errors"])
 
 
+def test_osv_scan_covers_the_baseline_versions_too(tmp_path):
+    """A pin changed before the first scan does not leave the baseline
+    versions unscannable (osv_delta needs both sides)."""
+    make_repo(tmp_path)
+    T.inventory_dependencies(tmp_path)                                  # baseline: fastjsonx 2.2.0
+    make_repo(tmp_path, fastjsonx="2.4.1", trim="1.2.5")
+    out = T.osv_scan(tmp_path, fetch=FakeOSV())
+    assert out["baseline_versions_scanned"] == 2
+    assert {f["name"] for f in out["findings"]} == {"yamlette"}           # findings: the repo as it is
+    queries, vulns = T.load_osv_state(tmp_path)
+    assert queries[T.dep_key("PyPI", "fastjsonx", "2.2.0")]["ids"] == ["GHSA-aaaa-0001", "GHSA-aaaa-0002"]
+    assert "GHSA-bbbb-0003" in vulns
+    assert C.osv_delta(tmp_path, {})["details"].startswith("baseline 4 open, now 1; resolved 3")
+
+
 def test_plan_reports_unscanned_versions(tmp_path):
     make_repo(tmp_path)
     T.osv_scan(tmp_path, fetch=FakeOSV())

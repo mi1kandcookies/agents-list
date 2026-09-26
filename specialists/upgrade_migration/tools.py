@@ -700,17 +700,27 @@ def load_osv_state(workspace: Path) -> tuple[dict, dict]:
 
 def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, resolve_path=None,
              path: str = "repo", **_: Any) -> dict:
-    """Query OSV for every pinned dependency currently in the repo and store
-    the answers plus each advisory's full record as evidence."""
+    """Query OSV for every pinned dependency currently in the repo, and for
+    the baseline's pinned versions (so the before/after comparison never
+    lacks evidence), and store the answers plus each advisory's full record
+    as evidence."""
     if fetch is None:
         return {"error": "network access is not available to this tool"}
     all_deps = collect_dependencies(_resolver(workspace, resolve_path)(path))
-    deps = [d for d in all_deps if d.get("version") and d["ecosystem"] in ("PyPI", "npm", "Go")]
+    scannable = ("PyPI", "npm", "Go")
+    deps = [d for d in all_deps if d.get("version") and d["ecosystem"] in scannable]
+    seen = {dep_key(d["ecosystem"], d["name"], d["version"]) for d in deps}
+    base = json.loads(baseline_path(workspace).read_text(encoding="utf-8")).get("dependencies", []) \
+        if baseline_path(workspace).is_file() else []
+    extra = {dep_key(d["ecosystem"], d["name"], d["version"]): d for d in base
+             if d.get("version") and d["ecosystem"] in scannable}
+    extra = [d for k, d in sorted(extra.items()) if k not in seen]
     state = _state(workspace) / "osv"
     queries, known = load_osv_state(workspace)
     errors: list[str] = []
-    for start in range(0, len(deps), 500):
-        chunk = deps[start:start + 500]
+    to_query = deps + extra
+    for start in range(0, len(to_query), 500):
+        chunk = to_query[start:start + 500]
         body = {"queries": [{"package": {"ecosystem": d["ecosystem"], "name": d["name"]},
                              "version": d["version"]} for d in chunk]}
         resp = fetch(f"{OSV_API}/querybatch", method="POST",
@@ -726,7 +736,7 @@ def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, resolv
             if (res or {}).get("next_page_token"):
                 entry["truncated"] = True
             queries[dep_key(dep["ecosystem"], dep["name"], dep["version"])] = entry
-    wanted = sorted({i for d in deps for i in queries.get(
+    wanted = sorted({i for d in to_query for i in queries.get(
         dep_key(d["ecosystem"], d["name"], d["version"]), {}).get("ids", [])} - set(known))
     for vuln_id in wanted:
         resp = fetch(f"{OSV_API}/vulns/{vuln_id}")
@@ -741,7 +751,7 @@ def osv_scan(workspace: Path, *, fetch: Callable | None = None, run=None, resolv
         _write_json(state / "vulns" / f"{_safe_id(vuln_id)}.json", record)
     _write_json(state / "queries.json", {"api": OSV_API, "queries": queries})
     findings = findings_for(deps, *load_osv_state(workspace))
-    return {"scanned": len(deps),
+    return {"scanned": len(deps), "baseline_versions_scanned": len(extra),
             "vulnerable_packages": len({(f["ecosystem"], f["name"], f["version"]) for f in findings}),
             "findings": findings, "errors": errors,
             "skipped_unpinned": sorted({d["name"] for d in all_deps
