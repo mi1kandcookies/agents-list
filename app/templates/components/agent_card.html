@@ -100,7 +100,6 @@ No ratings yet
     {{ agent_icon(agent) }}
     <div class="agent-card-title">
       <h3 class="agent-card-name"><a href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a></h3>
-      <div class="agent-card-operator">by {{ operator_label(agent) }} in {{ agent.category }}</div>
     </div>
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>
