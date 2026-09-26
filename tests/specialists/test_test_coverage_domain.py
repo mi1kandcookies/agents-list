@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
 from specialists.test_coverage import checks as C
 from specialists.test_coverage import tools as T
 
@@ -144,13 +144,23 @@ def test_coverage_include_filter_and_bad_input(tmp_path):
 
 
 def test_paths_are_jailed(tmp_path):
-    with pytest.raises(ToolError):
+    # Direct calls apply the kit's PolicyGate path rules, like a run's resolve_path.
+    with pytest.raises(PolicyViolation):
         T.parse_coverage(tmp_path, path="../outside.xml")
     write(tmp_path, "inputs/coverage.xml", COBERTURA_BEFORE)
-    with pytest.raises(ToolError):
+    with pytest.raises(PolicyViolation):
         T.parse_coverage(tmp_path, path="inputs/coverage.xml", out="inputs/summary.json")
-    with pytest.raises(ToolError):
+    with pytest.raises(PolicyViolation):
         T.parse_coverage(tmp_path, path="inputs/coverage.xml", out=".agentkit/x.json")
+    write(tmp_path, ".agentkit/journal.xml", COBERTURA_BEFORE)
+    with pytest.raises(PolicyViolation):  # the kit's own files are not readable either
+        T.parse_coverage(tmp_path, path=".agentkit/journal.xml")
+    write(tmp_path, ".agentkit/run-01.xml", junit([("a", "passed")]))
+    write(tmp_path, "deliverables/run-02.xml", junit([("a", "passed")]))
+    # nor matched by a glob
+    assert T.parse_test_results(tmp_path, paths="*/run-*.xml")["files"] == ["deliverables/run-02.xml"]
+    with pytest.raises(PolicyViolation):
+        T.parse_test_results(tmp_path, paths="//evil-host/share/*.xml")
 
 
 def test_coverage_delta_scoped(tmp_path):

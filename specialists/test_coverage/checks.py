@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from agentkit.errors import ToolError
+from agentkit.errors import PolicyViolation, ToolError
 from specialists.test_coverage import tools as T
 
 
@@ -31,11 +31,12 @@ def _need(params: dict, *keys: str) -> None:
 
 
 def _guard(fn: Callable) -> Callable:
-    """Turn missing files / bad input into a failed check instead of a crash."""
+    """Turn missing files, refused paths and bad input into a failed check
+    instead of a crash."""
     def wrapper(workspace: Path, params: dict, *, run=None) -> dict[str, Any]:
         try:
             return fn(Path(workspace), dict(params or {}), run=run)
-        except ToolError as exc:
+        except (ToolError, PolicyViolation) as exc:
             return _result(False, str(exc))
         except (OSError, ValueError, KeyError, TypeError) as exc:
             return _result(False, f"{type(exc).__name__}: {exc}")

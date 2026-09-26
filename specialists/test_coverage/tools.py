@@ -4,18 +4,21 @@ test-coverage specialist.
 
 Every tool is a plain function
 
-    fn(workspace: Path, *, fetch=None, run=None, **args) -> dict | str
+    fn(workspace: Path, *, fetch=None, run=None, resolve_path=None, **args) -> dict | str
 
-listed in TOOL_DEFS; agent.py wraps them as kit tools. The model decides what
-to test, these functions do the counting: coverage reports (Cobertura, LCOV,
-JaCoCo, Go cover profiles), JUnit run results, unified diffs, mutation
-reports (the open mutation-testing-elements JSON schema), risk ranking and a
-secret scan of added lines. Subprocess work goes through the injected `run`
-(the kit's shell-policy-checked runner); nothing here opens a socket or
-spawns a process itself.
+listed in TOOL_DEFS; the kit wraps them as tools (agentkit.tools.tools_from_defs).
+The model decides what to test, these functions do the counting: coverage
+reports (Cobertura, LCOV, JaCoCo, Go cover profiles), JUnit run results,
+unified diffs, mutation reports (the open mutation-testing-elements JSON
+schema), risk ranking and a secret scan of added lines. Subprocess work goes
+through the injected `run` (the kit's shell-policy-checked runner); nothing
+here opens a socket or spawns a process itself.
 
-Paths in arguments are workspace-relative; outputs are written only under
-the workspace and never under inputs/.
+Paths in arguments are workspace-relative and go through the kit's
+resolve_path during a run (the PolicyGate: no escape, inputs/ read-only,
+.agentkit/ refused; files written are marked agent-authored). Direct calls,
+as the acceptance checks make, apply the same rules through a bare
+PolicyGate. Either way a bad path raises PolicyViolation.
 """
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from agentkit.errors import ToolError
+from agentkit.policy import INTERNAL_DIR, PolicyGate
 
 # Paths that count as "test code" when no globs are given. `**/` matches any
 # number of directories (including none); `*` stays inside one path segment.
@@ -46,25 +50,23 @@ MAX_REPORT_BYTES = 50 * 1024 * 1024
 
 # --- helpers -----------------------------------------------------------------
 
-def _ws_path(workspace: Path, rel: str, *, write: bool = False) -> Path:
-    """Resolve a workspace-relative path, refusing escapes (and inputs/ writes)."""
+Resolver = Callable[..., Path]   # the kit's resolve_path(p, *, write=False) -> Path
+
+
+def _ws_path(workspace: Path, rel: str, *, write: bool = False,
+             resolve_path: Resolver | None = None) -> Path:
+    """Resolve a workspace-relative path through the kit's path rules: the
+    run's resolve_path when given, otherwise a bare PolicyGate's (same
+    jail, inputs/ read-only, .agentkit/ refused). Raises PolicyViolation."""
     if not rel or not isinstance(rel, str):
         raise ToolError("path is required")
-    root = Path(workspace).resolve()
-    target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        raise ToolError(f"path escapes the workspace: {rel}")
-    if write:
-        inputs = root / "inputs"
-        if target == inputs or inputs in target.parents:
-            raise ToolError("inputs/ is read-only")
-        if (root / ".agentkit") in target.parents:
-            raise ToolError(".agentkit/ is internal to the kit")
-    return target
+    if resolve_path is not None:
+        return resolve_path(rel, write=write)
+    return PolicyGate().resolve_path(Path(workspace), rel, write=write)
 
 
-def _read_text(workspace: Path, rel: str) -> str:
-    path = _ws_path(workspace, rel)
+def _read_text(workspace: Path, rel: str, resolve_path: Resolver | None = None) -> str:
+    path = _ws_path(workspace, rel, resolve_path=resolve_path)
     if not path.is_file():
         raise ToolError(f"file not found: {rel}")
     if path.stat().st_size > MAX_REPORT_BYTES:
@@ -72,8 +74,8 @@ def _read_text(workspace: Path, rel: str) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def _write_json(workspace: Path, rel: str, data: Any) -> str:
-    path = _ws_path(workspace, rel, write=True)
+def _write_json(workspace: Path, rel: str, data: Any, resolve_path: Resolver | None = None) -> str:
+    path = _ws_path(workspace, rel, write=True, resolve_path=resolve_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return rel
@@ -326,13 +328,14 @@ def summarize_coverage(text: str, fmt: str = "auto",
     return {"format": fmt, "files": dict(sorted(files.items())), "totals": totals}
 
 
-def parse_coverage(workspace: Path, *, fetch=None, run=None, path: str, format: str = "auto",
-                   include: list[str] | None = None, out: str | None = None) -> dict:
+def parse_coverage(workspace: Path, *, fetch=None, run=None, resolve_path=None, path: str,
+                   format: str = "auto", include: list[str] | None = None,
+                   out: str | None = None) -> dict:
     """Summarize a coverage report; optionally write the summary JSON to `out`."""
-    summary = summarize_coverage(_read_text(workspace, path), format, include)
+    summary = summarize_coverage(_read_text(workspace, path, resolve_path), format, include)
     summary["source"] = path
     if out:
-        _write_json(workspace, out, summary)
+        _write_json(workspace, out, summary, resolve_path)
         summary["written"] = out
     return summary
 
@@ -373,14 +376,14 @@ def compare_coverage(before: dict, after: dict, scope: Iterable[str] | None = No
     return out
 
 
-def coverage_delta(workspace: Path, *, fetch=None, run=None, before: str, after: str,
-                   scope: list[str] | None = None, out: str | None = None) -> dict:
+def coverage_delta(workspace: Path, *, fetch=None, run=None, resolve_path=None, before: str,
+                   after: str, scope: list[str] | None = None, out: str | None = None) -> dict:
     """Compare two coverage reports (any supported format) over a scope."""
-    result = compare_coverage(summarize_coverage(_read_text(workspace, before)),
-                              summarize_coverage(_read_text(workspace, after)), scope)
+    result = compare_coverage(summarize_coverage(_read_text(workspace, before, resolve_path)),
+                              summarize_coverage(_read_text(workspace, after, resolve_path)), scope)
     result.update(before=before, after=after)
     if out:
-        _write_json(workspace, out, result)
+        _write_json(workspace, out, result, resolve_path)
     return result
 
 
@@ -430,33 +433,42 @@ def census_from_runs(runs: list[dict[str, str]]) -> dict[str, Any]:
             "all_green": bool(runs) and bool(ids) and runs_failed == 0}
 
 
-def _glob_files(workspace: Path, pattern: str) -> list[Path]:
+def _glob_files(workspace: Path, pattern: str, resolve_path: Resolver | None = None) -> list[Path]:
     root = Path(workspace).resolve()
-    _ws_path(workspace, pattern.split("*")[0] or ".")  # refuse ../ in the fixed part
+    # The fixed part goes through the path rules (no ../, UNC or drive tricks).
+    _ws_path(workspace, pattern.split("*")[0] or ".", resolve_path=resolve_path)
     try:
         found = list(root.glob(pattern))
     except (NotImplementedError, ValueError) as exc:
         raise ToolError(f"invalid glob {pattern!r}: {exc}") from exc
-    return sorted(p for p in found if p.is_file() and root in p.resolve().parents)
+    files = []
+    for p in found:
+        real = p.resolve()
+        if not p.is_file() or root not in real.parents:
+            continue
+        if real.relative_to(root).parts[0].lower() == INTERNAL_DIR:
+            continue  # the kit's own files are never tool input
+        files.append(p)
+    return sorted(files)
 
 
-def parse_test_results(workspace: Path, *, fetch=None, run=None, paths: str,
+def parse_test_results(workspace: Path, *, fetch=None, run=None, resolve_path=None, paths: str,
                        out: str | None = None) -> dict:
     """Parse one or more JUnit XML files (a glob) into a flake census."""
-    files = _glob_files(workspace, paths)
+    files = _glob_files(workspace, paths, resolve_path)
     if not files:
         raise ToolError(f"no JUnit files match {paths}")
     runs = [parse_junit_text(p.read_text(encoding="utf-8", errors="replace"), p.name) for p in files]
     census = census_from_runs(runs)
     census["files"] = [p.relative_to(Path(workspace).resolve()).as_posix() for p in files]
     if out:
-        _write_json(workspace, out, census)
+        _write_json(workspace, out, census, resolve_path)
     return census
 
 
 def run_test_matrix(workspace: Path, *, fetch=None, run: Callable | None = None,
-                    argv: list[str], runs: int = 5, runs_dir: str, cwd: str = "repo",
-                    base_seed: int = 1000, timeout: int | None = None) -> dict:
+                    resolve_path=None, argv: list[str], runs: int = 5, runs_dir: str,
+                    cwd: str = "repo", base_seed: int = 1000, timeout: int | None = None) -> dict:
     """Run the suite `runs` times, each writing JUnit XML, and build a census.
 
     argv placeholders: {junit} -> absolute path of this run's JUnit file,
@@ -468,15 +480,16 @@ def run_test_matrix(workspace: Path, *, fetch=None, run: Callable | None = None,
         raise ToolError("argv must be a non-empty list")
     if not 1 <= int(runs) <= 30:
         raise ToolError("runs must be between 1 and 30")
-    out_dir = _ws_path(workspace, runs_dir, write=True)
+    out_dir = _ws_path(workspace, runs_dir, write=True, resolve_path=resolve_path)
     out_dir.mkdir(parents=True, exist_ok=True)
-    work = _ws_path(workspace, cwd)
+    work = _ws_path(workspace, cwd, resolve_path=resolve_path)
     # Start clean: stale files from an earlier matrix must not count as runs.
     for old in out_dir.glob("run-*.xml"):
         old.unlink()
+    runs_dir = runs_dir.replace("\\", "/").rstrip("/")
     log, results = [], []
     for i in range(1, int(runs) + 1):
-        junit = out_dir / f"run-{i:02d}.xml"
+        junit = _ws_path(workspace, f"{runs_dir}/run-{i:02d}.xml", write=True, resolve_path=resolve_path)
         subs = {"{junit}": str(junit), "{seed}": str(base_seed + i), "{run}": str(i)}
         args = [_sub_all(str(a), subs) for a in argv]
         res = run(args, cwd=str(work), timeout=timeout)
@@ -489,7 +502,7 @@ def run_test_matrix(workspace: Path, *, fetch=None, run: Callable | None = None,
         log.append(entry)
     census = census_from_runs(results)
     census["log"] = log
-    _write_json(workspace, f"{runs_dir.rstrip('/')}/matrix.json", census)
+    _write_json(workspace, f"{runs_dir}/matrix.json", census, resolve_path)
     return census
 
 
@@ -596,27 +609,27 @@ def scope_report(files: list[dict[str, Any]], test_globs: list[str] | None = Non
     }
 
 
-def diff_scope(workspace: Path, *, fetch=None, run=None, patch: str,
+def diff_scope(workspace: Path, *, fetch=None, run=None, resolve_path=None, patch: str,
                test_globs: list[str] | None = None, allow: list[str] | None = None) -> dict:
     """Which files a patch touches, its size, and anything outside test paths."""
-    return scope_report(parse_patch(_read_text(workspace, patch)), test_globs, allow)
+    return scope_report(parse_patch(_read_text(workspace, patch, resolve_path)), test_globs, allow)
 
 
-def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, out: str,
-                 base: str = "HEAD", cwd: str = "repo") -> dict:
+def export_patch(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
+                 out: str, base: str = "HEAD", cwd: str = "repo") -> dict:
     """Write `git diff <base>` (including new files) of repo/ to `out`."""
     if run is None:
         raise ToolError("export_patch needs the kit's command runner")
     if not re.fullmatch(r"[A-Za-z0-9._/~^-]{1,100}", base) or base.startswith("-"):
         raise ToolError("invalid base revision")
-    work = str(_ws_path(workspace, cwd))
+    work = str(_ws_path(workspace, cwd, resolve_path=resolve_path))
     # Mark untracked files intent-to-add so they appear in the diff.
     run(["git", "add", "-N", "."], cwd=work)
     res = run(["git", "diff", "--no-color", "--no-ext-diff", base], cwd=work)
     if _get(res, "exit_code") != 0:
         raise ToolError(f"git diff failed: {(_get(res, 'stderr') or '')[:500]}")
     text = _get(res, "stdout") or ""
-    target = _ws_path(workspace, out, write=True)
+    target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
     report = scope_report(parse_patch(text))
@@ -724,7 +737,7 @@ def _added_test_names(added_lines: list[str]) -> set[str]:
     return names
 
 
-def find_assertion_free_tests(workspace: Path, *, fetch=None, run=None,
+def find_assertion_free_tests(workspace: Path, *, fetch=None, run=None, resolve_path=None,
                               patch: str | None = None, paths: list[str] | None = None,
                               repo_dir: str = "repo", helpers: list[str] | None = None,
                               test_globs: list[str] | None = None) -> dict:
@@ -734,13 +747,13 @@ def find_assertion_free_tests(workspace: Path, *, fetch=None, run=None,
     checked = 0
     if patch:
         globs = list(test_globs or DEFAULT_TEST_GLOBS)
-        for f in parse_patch(_read_text(workspace, patch)):
+        for f in parse_patch(_read_text(workspace, patch, resolve_path)):
             if f["status"] == "deleted" or not path_matches(f["path"], globs):
                 continue
             names = None if f["status"] == "added" else _added_test_names(f["added_lines"])
             if names is not None and not names:
                 continue
-            on_disk = _ws_path(workspace, f"{repo_dir}/{f['path']}")
+            on_disk = _ws_path(workspace, f"{repo_dir}/{f['path']}", resolve_path=resolve_path)
             if on_disk.is_file():
                 source = on_disk.read_text(encoding="utf-8", errors="replace")
             elif f["status"] == "added":
@@ -752,7 +765,7 @@ def find_assertion_free_tests(workspace: Path, *, fetch=None, run=None,
             found += assertion_free_in_source(f["path"], source, names, helpers)
     for rel in paths or []:
         checked += 1
-        found += assertion_free_in_source(rel, _read_text(workspace, rel), None, helpers)
+        found += assertion_free_in_source(rel, _read_text(workspace, rel, resolve_path), None, helpers)
     return {"files_checked": checked, "assertion_free": found, "clean": not found}
 
 
@@ -793,16 +806,16 @@ def summarize_mutation(data: dict, scope: Iterable[str] | None = None) -> dict[s
             "score_pct": _pct(tot_d, tot_d + tot_u), "survivors": survivors}
 
 
-def parse_mutation_report(workspace: Path, *, fetch=None, run=None, path: str,
+def parse_mutation_report(workspace: Path, *, fetch=None, run=None, resolve_path=None, path: str,
                           scope: list[str] | None = None, out: str | None = None) -> dict:
     """Score a mutation report and list surviving mutants (the next test targets)."""
     try:
-        data = json.loads(_read_text(workspace, path))
+        data = json.loads(_read_text(workspace, path, resolve_path))
     except json.JSONDecodeError as exc:
         raise ToolError(f"mutation report is not JSON: {exc}") from exc
     result = summarize_mutation(data, scope)
     if out:
-        _write_json(workspace, out, result)
+        _write_json(workspace, out, result, resolve_path)
     return result
 
 
@@ -852,15 +865,15 @@ TARGET_COLUMNS = ["rank", "path", "lines_total", "line_pct", "branch_pct", "chur
                   "risk_score", "proposed_floor_pct"]
 
 
-def rank_targets(workspace: Path, *, fetch=None, run=None, coverage: str, churn: str | None = None,
-                 include: list[str] | None = None, top_n: int | None = None,
-                 out: str | None = None) -> dict:
+def rank_targets(workspace: Path, *, fetch=None, run=None, resolve_path=None, coverage: str,
+                 churn: str | None = None, include: list[str] | None = None,
+                 top_n: int | None = None, out: str | None = None) -> dict:
     """Risk-rank files (churn x size x uncovered share); optionally write targets CSV."""
-    summary = summarize_coverage(_read_text(workspace, coverage), "auto", include)
-    churn_map = _churn_map(_read_text(workspace, churn)) if churn else {}
+    summary = summarize_coverage(_read_text(workspace, coverage, resolve_path), "auto", include)
+    churn_map = _churn_map(_read_text(workspace, churn, resolve_path)) if churn else {}
     rows = ranked_targets(summary, churn_map, top_n)
     if out:
-        target = _ws_path(workspace, out, write=True)
+        target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         buf = io.StringIO()
         writer = csv.DictWriter(buf, fieldnames=TARGET_COLUMNS, lineterminator="\n")
@@ -871,8 +884,8 @@ def rank_targets(workspace: Path, *, fetch=None, run=None, coverage: str, churn:
     return {"targets": rows, "written": out}
 
 
-def git_churn(workspace: Path, *, fetch=None, run: Callable | None = None, out: str,
-              since_days: int = 180, cwd: str = "repo") -> dict:
+def git_churn(workspace: Path, *, fetch=None, run: Callable | None = None, resolve_path=None,
+              out: str, since_days: int = 180, cwd: str = "repo") -> dict:
     """Commits per file over the last N days, from `git log`, as path,commits CSV."""
     if run is None:
         raise ToolError("git_churn needs the kit's command runner")
@@ -880,7 +893,7 @@ def git_churn(workspace: Path, *, fetch=None, run: Callable | None = None, out: 
     if not 1 <= days <= 3650:
         raise ToolError("since_days must be between 1 and 3650")
     res = run(["git", "log", f"--since={days}.days", "--name-only", "--pretty=format:", "--no-renames"],
-              cwd=str(_ws_path(workspace, cwd)))
+              cwd=str(_ws_path(workspace, cwd, resolve_path=resolve_path)))
     if _get(res, "exit_code") != 0:
         raise ToolError(f"git log failed: {(_get(res, 'stderr') or '')[:500]}")
     counts: dict[str, int] = {}
@@ -888,7 +901,7 @@ def git_churn(workspace: Path, *, fetch=None, run: Callable | None = None, out: 
         line = _norm(line)
         if line:
             counts[line] = counts.get(line, 0) + 1
-    target = _ws_path(workspace, out, write=True)
+    target = _ws_path(workspace, out, write=True, resolve_path=resolve_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     rows = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     target.write_text("path,commits\n" + "".join(f"{p},{c}\n" for p, c in rows), encoding="utf-8")
@@ -924,10 +937,11 @@ def scan_lines(lines: Iterable[tuple[str, int, str]]) -> list[dict]:
     return hits
 
 
-def scan_patch_secrets(workspace: Path, *, fetch=None, run=None, patch: str) -> dict:
+def scan_patch_secrets(workspace: Path, *, fetch=None, run=None, resolve_path=None,
+                       patch: str) -> dict:
     """Secret-looking strings in lines a patch adds (values are never echoed)."""
     lines = []
-    for f in parse_patch(_read_text(workspace, patch)):
+    for f in parse_patch(_read_text(workspace, patch, resolve_path)):
         lines += [(f["path"], i + 1, t) for i, t in enumerate(f["added_lines"])]
     hits = scan_lines(lines)
     return {"added_lines_scanned": len(lines), "findings": hits, "clean": not hits}
