@@ -26,7 +26,7 @@ def test_cli_seeds_and_is_idempotent(app, db):
     assert second.exit_code == 0, second.output
     assert "0 added" in second.output
     assert [(a.id, a.public_id) for a in _demo_rows()] == ids_before
-    assert 8 <= len(ids_before) <= 10
+    assert len(ids_before) == len(DEMO_AGENTS)
 
 
 def test_agents_have_valid_agt_ids_and_full_profiles(db):
@@ -174,7 +174,14 @@ def test_demo_agents_render_and_list_with_agt_ids(client, db):
     rows = _demo_rows()
     for a in rows:
         assert client.get(f"/agent/{a.id}").status_code == 200
-    listed = client.get("/api/agents?per_page=50").get_json()["agents"]
+    listed = []
+    page = 1
+    while True:
+        body = client.get(f"/api/agents?per_page=50&page={page}").get_json()
+        listed.extend(body["agents"])
+        if len(body["agents"]) < 50:
+            break
+        page += 1
     assert {a.public_id for a in rows} <= {x["agent_id"] for x in listed}
 
 
@@ -208,3 +215,76 @@ def test_demo_icon_overrides_are_known_icons(db):
     assert rows["Keelhaul Audit"].icon is None
     assert icon_for(rows["Keelhaul Audit"]) == "shield-check"     # from its category
     assert all(icon_for(a) in ICONS for a in rows.values())
+
+
+def test_150_demo_agents_no_skew_across_model_tier_or_provider(db):
+    """The catalog spans frontier, mid-tier, small and open-weight models
+    across many providers, evenly — not concentrated on one lab or tier."""
+    from collections import Counter
+    from app.demo_seed import DEMO_AGENTS
+
+    assert len(DEMO_AGENTS) == 150
+    assert len({a["name"] for a in DEMO_AGENTS}) == 150
+    assert len({a["slug"] for a in DEMO_AGENTS}) == 150
+
+    providers = Counter(a["model"][0] for a in DEMO_AGENTS)
+    assert len(providers) >= 8, providers          # many distinct labs, not one or two
+    assert max(providers.values()) <= 30, providers  # no provider dominates (150/8 ~= 19)
+
+    open_source_providers = {"Meta", "DeepSeek", "Alibaba", "Moonshot AI"}
+    open_count = sum(n for p, n in providers.items() if p in open_source_providers)
+    assert open_count >= 30, "expected a substantial open-source share, not token representation"
+
+    categories = Counter(a["category"] for a in DEMO_AGENTS)
+    assert len(categories) >= 6
+    assert max(categories.values()) - min(categories.values()) <= 5  # roughly even spread
+
+
+def test_seed_demo_reviews_is_idempotent_and_never_overwrites(db):
+    from app.demo_seed import DEMO_AGENTS, seed_demo_agents, seed_demo_reviews
+    from app.models import Agent, Review
+
+    seed_demo_agents(db, Agent)
+    result = seed_demo_reviews(db, Agent, Review)
+    assert result["agents_rated"] == len(DEMO_AGENTS)
+    assert result["reviews_added"] == Review.query.count()
+    assert Review.query.count() > 0
+
+    rows = _demo_rows()
+    for a in rows:
+        assert a.rating is not None and 3.6 <= a.rating <= 5.0
+        assert a.reviews and a.reviews > 0
+        assert a.tasks_completed >= a.reviews         # never fewer jobs than reviews
+        assert Review.query.filter_by(agent_id=a.id).count() == a.reviews
+
+    # A real operator's own rating (or a previous run's) is never overwritten.
+    first_row = rows[0]
+    first_row.rating, first_row.reviews = 4.6, 400
+    db.session.commit()
+    Review.query.filter_by(agent_id=first_row.id).delete()
+    db.session.commit()
+    second = seed_demo_reviews(db, Agent, Review)
+    assert second["agents_rated"] == 0        # every agent already has a rating
+    db.session.refresh(first_row)
+    assert (first_row.rating, first_row.reviews) == (4.6, 400)
+
+
+def test_seed_demo_reviews_is_deterministic(db):
+    from app.demo_seed import seed_demo_agents, seed_demo_reviews
+    from app.models import Agent, Review
+
+    seed_demo_agents(db, Agent)
+    seed_demo_reviews(db, Agent, Review)
+    first = {a.name: (a.rating, a.reviews) for a in _demo_rows()}
+    first_comments = sorted(r.comment for r in Review.query.all())
+
+    db.session.query(Review).delete()
+    for a in _demo_rows():
+        a.rating, a.reviews = 0.0, 0
+    db.session.commit()
+
+    seed_demo_reviews(db, Agent, Review)
+    second = {a.name: (a.rating, a.reviews) for a in _demo_rows()}
+    second_comments = sorted(r.comment for r in Review.query.all())
+    assert first == second
+    assert first_comments == second_comments

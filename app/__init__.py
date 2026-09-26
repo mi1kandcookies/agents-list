@@ -179,6 +179,8 @@ def _register_cli(app: Flask) -> None:
         print(f"SIMULATED dev stamps written for {len(names)} sample agents: {', '.join(names) or '-'}")
 
     app.cli.add_command(__import__("app.demo_seed", fromlist=["seed_demo"]).seed_demo)
+    app.cli.add_command(
+        __import__("app.demo_seed", fromlist=["seed_demo_reviews_command"]).seed_demo_reviews_command)
 
 
 def _init_database(app: Flask) -> None:
