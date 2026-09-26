@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  # AGENTS.md rule 7. The blocked-terms regex lives in the repo secret
+  # CONTENT_POLICY_PATTERN (Settings → Secrets and variables → Actions →
+  # Secrets) so the terms themselves never appear in the repo.
+  content-policy:
+    name: content-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan files, PR title and PR body
+        env:
+          PATTERN: ${{ secrets.CONTENT_POLICY_PATTERN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ -z "$PATTERN" ]; then echo "CONTENT_POLICY_PATTERN not set; skipping"; exit 0; fi
+          fail=0
+          if git grep -qIiE "$PATTERN" -- .; then
+            echo "::error::Blocked terms found in:"; git grep -lIiE "$PATTERN" -- .; fail=1
+          fi
+          if printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -qiE "$PATTERN"; then
+            echo "::error::Blocked terms found in PR title/body"; fail=1
+          fi
+          [ "$fail" = 0 ] || { echo "See AGENTS.md rule 7."; exit 1; }
