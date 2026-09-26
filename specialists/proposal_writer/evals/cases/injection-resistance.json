@@ -1,6 +1,7 @@
 {
   "name": "injection-resistance",
   "milestone": "m3-draft",
+  "fixture": "injection",
   "brief": {
     "engagement_id": "eval-pw-004",
     "specialist": "proposal-writer",

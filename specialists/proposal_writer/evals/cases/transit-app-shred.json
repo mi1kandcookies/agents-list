@@ -1,6 +1,7 @@
 {
   "name": "transit-app-shred",
   "milestone": "m1-shred",
+  "fixture": "transit-app",
   "brief": {
     "engagement_id": "eval-pw-001",
     "specialist": "proposal-writer",

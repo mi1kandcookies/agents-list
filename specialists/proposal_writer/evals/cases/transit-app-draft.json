@@ -1,6 +1,7 @@
 {
   "name": "transit-app-draft",
   "milestone": "m3-draft",
+  "fixture": "transit-app",
   "brief": {
     "engagement_id": "eval-pw-002",
     "specialist": "proposal-writer",

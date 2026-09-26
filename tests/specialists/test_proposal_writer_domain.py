@@ -593,16 +593,26 @@ def test_prompts_and_rubrics_exist_and_are_well_formed():
 
 # --- evals ---------------------------------------------------------------------
 
-def test_eval_cases_are_well_formed():
+def test_eval_cases_are_well_formed(tmp_path):
+    from agentkit.evals import case_brief, load_cases, prepare_workspace
+    from agentkit.registry import load_specialist
+
+    spec = load_specialist("proposal-writer")
     milestones = {ms["id"] for ms in _manifest()["milestones"]}
-    cases = sorted((PACK / "evals" / "cases").glob("*.json"))
+    cases = load_cases(spec)                         # the kit's schema: unknown keys raise
     assert len(cases) >= 3
-    for path in cases:
-        case = json.loads(path.read_text(encoding="utf-8"))
-        assert set(case) == {"name", "brief", "milestone", "notes"}, path.name
-        assert case["milestone"] in milestones and case["brief"]["specialist"] == "proposal-writer"
-        fixture = case["notes"].split("evals/fixtures/")[1].split()[0].rstrip(".(")
-        assert (FIXTURES / fixture / "inputs").is_dir(), path.name
+    for case in cases:
+        assert set(json.loads(case.path.read_text(encoding="utf-8"))) == {
+            "name", "brief", "milestone", "notes", "fixture"}, case.path.name
+        assert case.milestone in milestones and case.brief["specialist"] == "proposal-writer"
+        assert f"evals/fixtures/{case.fixture}" in case.notes, case.path.name
+        ws = tmp_path / case.name
+        prepare_workspace(spec, case, ws)            # the fixture becomes the workspace
+        brief = case_brief(spec, case)
+        for rel in brief.intake["solicitation_files"]:
+            assert (ws / rel).is_file(), (case.name, rel)
+        assert (ws / "inputs" / "kb").is_dir()
+        assert [m for m in spec.validate_intake(brief.intake) if m.blocking] == []
 
 
 def test_injection_fixture_is_not_shredded_and_fails_grounding(tmp_path):
