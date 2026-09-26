@@ -70,6 +70,14 @@ def test_paths_are_jailed_and_outputs_go_to_deliverables(ws):
         t.resolve(ws, "../outside.csv")
     with pytest.raises(ToolError):
         t.categorize_transactions(ws, output="inputs/categorized.csv")
+    # refused lexically, before the filesystem (or an SMB share) is touched
+    for bad in ("//fileserver/share/gl.csv", "\\\\fileserver\\share\\gl.csv"):
+        with pytest.raises(ToolError, match="UNC"):
+            t.resolve(ws, bad)
+    with pytest.raises(ToolError, match="internal to the kit"):
+        t.resolve(ws, ".agentkit/ledger.json")
+    with pytest.raises(ToolError, match="deliverables/"):
+        t.resolve(ws, "deliverables", write=True)
     assert t.period_bounds("2026-12")[1].isoformat() == "2026-12-31"
     with pytest.raises(ToolError):
         t.period_bounds("August")
