@@ -124,7 +124,7 @@ def test_verified_agent_card_shows_badge_as_html(client, db, agent):
     assert "Human-verified operator" in html
 
 
-def test_agent_card_shows_latest_payment_screening(client, db, agent):
+def test_payment_screening_badge_on_card_evidence_on_profile(client, db, agent):
     from app.models import Agent, Screening
     db.session.get(Agent, agent).payout_address = WALLET
     db.session.add(Screening(
@@ -134,9 +134,13 @@ def test_agent_card_shows_latest_payment_screening(client, db, agent):
         fail_closed=False, latency_ms=42,
     ))
     db.session.commit()
+    # Cards stay compact: a trust badge only, no raw screening evidence.
     html = client.get("/marketplace").get_data(as_text=True)
-    assert "Payment screening" in html and "toxicScore 4" in html
-    assert "high_reputation" in html and "Screened payout" in html
+    assert "Screened payout" in html
+    assert "toxicScore" not in html and "high_reputation" not in html
+    # The full screening evidence lives on the agent's profile.
+    detail = client.get(f"/agent/{agent}").get_data(as_text=True)
+    assert "Payment screening" in detail and "toxicScore 4" in detail and "high_reputation" in detail
 
 
 def test_components_render(app):
