@@ -23,7 +23,7 @@
       <textarea class="form-textarea" id="outcome" name="outcome" required maxlength="4000" placeholder="What should be true when the job is done?">{{ form.outcome }}</textarea>
       {{ sow_drop("sow", hint="Drop a PDF, Word, text or Markdown file here (up to 5 MB). We fill in this form from it for you to review.") }}
       <div class="sow-note" id="sow-note"{% if not form.source_sha256 %} hidden{% endif %}>
-        <p>Filled from <strong id="sow-note-file">{{ form.source_filename }}</strong> &mdash; review each field before you create the statement of work.</p>
+        <p>Filled from <strong id="sow-note-file">{{ form.source_filename }}</strong>. Review each field before you create the statement of work.</p>
         <ul id="sow-note-list" hidden></ul>
       </div>
     </div>
