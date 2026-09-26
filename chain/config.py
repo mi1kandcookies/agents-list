@@ -13,7 +13,9 @@ change env vars:
     EXPLORER_URL        default https://sepolia.etherscan.io
     NATIVE_CURRENCY_SYMBOL / NATIVE_CURRENCY_NAME   default ETH / Sepolia Ether
 
-    USDC_ADDRESS        payment token (default: Circle USDC on Sepolia)
+    USDC_ADDRESS        payment token override (default: Circle USDC on Sepolia)
+    PAYMENT_TOKEN_MODE  `circle` (default) or explicit development-only `mock`
+    MOCK_USDC_ADDRESS   deployed MockUSDC3009 address used in `mock` mode
     <NAME>_ADDRESS      per-contract address override, see CONTRACTS below.
 
 Nothing in this module touches the network.
@@ -39,6 +41,9 @@ CONTRACTS: dict[str, dict] = {
     # transferWithAuthorization / receiveWithAuthorization natively. Point
     # USDC_ADDRESS at a mintable EIP-3009 mock for CI and load tests only.
     "USDC":               {"env": "USDC_ADDRESS", "default": CIRCLE_USDC_SEPOLIA},
+    # Development-only EIP-3009 token. It is selected only when
+    # PAYMENT_TOKEN_MODE=mock; it is never the default payment asset.
+    "MockUSDC":           {"env": "MOCK_USDC_ADDRESS", "default": None},
     # Canonical ERC-8004 registries on Sepolia (erc-8004/erc-8004-contracts).
     "IdentityRegistry":   {"env": "ERC8004_IDENTITY_REGISTRY",
                            "default": "0x8004A818BFB912233c491871b3d84c89A494BD9e"},
@@ -110,10 +115,20 @@ def get_address(name: str) -> str | None:
     """Configured address for a known contract, or None when not deployed.
     Invalid overrides are ignored rather than crashing the app."""
     spec = CONTRACTS[name]
-    value = (os.environ.get(spec["env"]) or "").strip() or spec["default"]
+    if name == "USDC" and payment_token_mode() == "mock":
+        value = (os.environ.get("MOCK_USDC_ADDRESS") or
+                 os.environ.get("USDC_ADDRESS") or "").strip()
+    else:
+        value = (os.environ.get(spec["env"]) or "").strip() or spec["default"]
     if value and _ADDRESS_RE.match(value):
         return value
     return None
+
+
+def payment_token_mode() -> str:
+    """Return the explicit payment-token mode, defaulting safely to Circle."""
+    value = (os.environ.get("PAYMENT_TOKEN_MODE") or "circle").strip().lower()
+    return value if value in {"circle", "mock"} else "circle"
 
 
 def get_addresses(include_missing: bool = False) -> dict[str, str | None]:
@@ -166,5 +181,6 @@ def get_deployment() -> dict:
         "nativeCurrency": cfg.native_currency,
         "contracts": {k: v for k, v in contracts.items() if v},
         "paymentRecipient": payment_recipient(),
+        "paymentTokenMode": payment_token_mode(),
         "notDeployed": sorted(k for k, v in contracts.items() if not v),
     }

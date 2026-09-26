@@ -11,7 +11,7 @@ from chain.config import (
 CHAIN_ENV = ("CHAIN_ID", "CHAIN_NAME", "RPC_URL", "EXPLORER_URL", "NATIVE_CURRENCY_SYMBOL",
              "NATIVE_CURRENCY_NAME", "ESCROW_ADDRESS", "AGENT_REGISTRY_ADDRESS",
              "REPUTATION_ADDRESS", "STAKING_ADDRESS", "ERC8004_IDENTITY_REGISTRY",
-             "PAYMENT_RECIPIENT")
+             "PAYMENT_RECIPIENT", "PAYMENT_TOKEN_MODE", "MOCK_USDC_ADDRESS", "USDC_ADDRESS")
 TX = "ab" * 32
 ADDR = "0x" + "1" * 40
 
@@ -79,6 +79,22 @@ def test_contract_addresses():
     for legacy in ("AgentRegistry", "ReputationContract", "StakingSlashing", "EscrowPayment"):
         assert addrs[legacy] is None
     assert "EscrowPayment" in get_deployment()["notDeployed"]
+
+
+def test_mock_payment_token_is_opt_in(monkeypatch):
+    mock = "0x" + "2" * 40
+    monkeypatch.setenv("MOCK_USDC_ADDRESS", mock)
+    assert get_address("USDC") == "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+    monkeypatch.setenv("PAYMENT_TOKEN_MODE", "mock")
+    assert get_address("USDC") == mock
+    assert get_address("MockUSDC") == mock
+    assert get_deployment()["paymentTokenMode"] == "mock"
+
+
+def test_invalid_payment_token_mode_falls_back_to_circle(monkeypatch):
+    monkeypatch.setenv("PAYMENT_TOKEN_MODE", "not-a-mode")
+    monkeypatch.setenv("MOCK_USDC_ADDRESS", "0x" + "2" * 40)
+    assert get_address("USDC") == "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
 
 
 def test_invalid_address_override_is_ignored(monkeypatch):

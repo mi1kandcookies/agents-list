@@ -75,7 +75,8 @@ class FakeW3:
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     usdc_mod.clear_cache()
-    for var in ("USDC_ADDRESS", "CHAIN_ID", "MAX_FEE_GWEI", "PRIORITY_FEE_GWEI", "PAYMENT_RECIPIENT"):
+    for var in ("USDC_ADDRESS", "PAYMENT_TOKEN_MODE", "MOCK_USDC_ADDRESS", "CHAIN_ID",
+                "MAX_FEE_GWEI", "PRIORITY_FEE_GWEI", "PAYMENT_RECIPIENT"):
         monkeypatch.delenv(var, raising=False)
     yield
     usdc_mod.clear_cache()
