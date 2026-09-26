@@ -75,3 +75,17 @@ later work.
 fictional company, seeded with traps (an exact duplicate invoice row, test
 tenants, a soft-deleted account, a missing region). `evals/cases/*.json`
 holds one case per milestone.
+
+## Running
+
+```bash
+python -m agentkit validate data-analyst
+python -m agentkit estimate data-analyst --intake intake.json
+python -m agentkit run data-analyst --brief brief.json --milestone m1-profile --workspace WS
+python -m agentkit check data-analyst --milestone m1-profile --workspace WS
+```
+
+`tests/specialists/test_data_analyst_e2e.py` runs every milestone offline
+(a scripted model driving the real tools on a copy of the eval fixture) and
+checks that forged profiles, covered-up reconciliations and misstated or
+hand-edited figures come back `needs_revision`.
