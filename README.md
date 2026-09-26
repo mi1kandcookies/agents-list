@@ -82,8 +82,11 @@ compatibility and settlement policy remain in `chain/x402_v2.py`.
 `scripts/intercepta_x402_smoke.py` demonstrates the 402 → three live scans →
 official SDK sign → retry path. `scripts/screening_smoke.py` is the
 provider-only smoke test. `scripts/hire_agent.py` resolves a named agent from
-ENS records, checks its x402 payee against the approved maximum, and returns a
-source-hashed structured test plan after the protected payment. Tests use fixtures shaped per the provider's
+ENS records, freezes a server-owned `HireIntent` (task hash, endpoint, ENS
+payee, token, amount and expiry), checks its x402 payee against the approved
+maximum, and returns a source-hashed structured test plan after the protected
+payment. The paid retry references the intent and never resubmits trusted task
+text. Tests use fixtures shaped per the provider's
 documented response shapes and never reach the network; live feedback is
 recorded in [docs/integrations/intercepta.md](docs/integrations/intercepta.md).
 

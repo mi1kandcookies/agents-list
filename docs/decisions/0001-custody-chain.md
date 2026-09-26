@@ -142,7 +142,14 @@ through `chain/x402_official.py`. Its pre-payment lifecycle hook binds the
 selected requirements to the approved terms, and a guarded signer submits the
 exact typed authorization to the risk gate before signing. The resource-side
 route still performs the local mandate, nonce, screening and escrow checks
-before accepting the SDK-compatible payload.
+before accepting the SDK-compatible payload. The first 402 response also
+creates a server-owned `HireIntent` with the named specialist, resolved ENS
+payee, endpoint, task hash, integer amount, token, network and expiry. The
+intent hash is advertised in x402 `extensions.hireIntent` and `X-HIRE-INTENT`;
+the paid request must reference that intent, and the route retrieves the task
+from the stored row rather than trusting replacement request text. Only one
+attempt can atomically claim an intent; pending settlement stays pending and
+is reconciled from the ledger.
 
 ## 7. JSON API (used by the MCP server)
 
@@ -156,7 +163,7 @@ before accepting the SDK-compatible payload.
 | `GET /api/engagements/<id>` | | engagement + milestones, ledger (explorer links), approvals, mandate, chain_url |
 | `POST /api/engagements/<id>/subhire` (`Authorization: Mandate …`) | `{agent_id, outcome, budget_usdc, category}` | 201 child engagement or 202 approval (ASK_HUMAN) |
 | `GET /api/engagements/<id>/chain` | | `{nodes, edges}` |
-| `POST /api/agents/<AGT>/tasks` (`X-PAYMENT`, `Authorization: Mandate …`) | `{task}` | 402 x402 v2 PaymentRequirements without payment; 200 task receipt once the payment verifies, the payer is the mandate's agent, payer and payee screening pass, and the mandate is charged (amendment; `chain/x402_v2.py`) |
+| `POST /api/agents/<AGT>/tasks` | first request `{task}`; paid retry `{intent_id}` with `X-HIRE-INTENT`, `X-PAYMENT`/`PAYMENT-SIGNATURE`, and `Authorization: Mandate …` | 402 x402 v2 requirements plus `extensions.hireIntent`; 200 task receipt only when the immutable intent, mandate, payer/payee screening, payment, and settlement all pass. The paid route never accepts replacement task text. |
 | `GET /api/approvals/<id>`, `POST …/cancel` | | approval |
 
 Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`, plus (amendment) `PAYEE_MISMATCH` (403: the agent's ENS payout record differs from its profile) and `PAYEE_UNRESOLVED` (503). MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).
@@ -191,6 +198,7 @@ Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, 
 - `approval_events`: id, approval_id, event, detail (JSON), at
 - `mandates`: id (MND-…), parent_id, root_id, engagement_id, human_id, grantee_agent_public_id, budget_micro, spent_micro, categories, max_depth, depth, expires_at, token, approval_id, revoked_at
 - `screenings`: id (SCR-…), hop, engagement_id, agent_id, chain_address, screened_address, network, verdict, cap_micro, reasons, toxic_score, traits, risk_group, raw, provider, fail_closed, latency_ms, created_at, expires_at
+- `hire_intents`: id (HIT-…), immutable intent_hash, specialist and ENS name, endpoint path, server-owned task text and task_hash, Sepolia network/token/payee, integer amount, expiry, state (`created|payment_pending|delivered|expired|failed`), payer/mandate/ledger binding, stored deliverable and failure code
 - `ens_names`: name (PK), node, kind (`root|agent|job|subjob`), parent_name, engagement_id, agent_id, owner, expiry, records, status (`pending|active|revoked|failed`), tx_hashes, updated_at
 - `used_id_token_jtis`: jti (PK), seen_at
 
