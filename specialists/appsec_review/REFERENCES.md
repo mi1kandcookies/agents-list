@@ -17,6 +17,16 @@ be reused.
   the specification and equations openly.
 - **CWE** (MITRE Common Weakness Enumeration) and **OWASP Top 10** - taxonomies
   used to class findings. Public references.
+- **GitHub code scanning SARIF support** (public documentation) - idea: code
+  scanning reads `security-severity` from the rule's properties, only for
+  rules tagged `security`, and CWE tags in the `external/cwe/cwe-N` form.
+- **Token formats** published by the issuing vendors (AWS access key ids,
+  GitHub `ghp_`/`github_pat_` tokens, Stripe `sk_live_` keys, Google `AIza`
+  API keys, Slack `xox*` tokens) and the PEM private-key header - the secret
+  patterns are written from these public format descriptions, not from any
+  scanner's rule set.
+- **PEP 440** and **Semantic Versioning** - the version ordering used to
+  place an installed version inside an OSV affected range.
 - **OSV** (osv.dev, Open Source Vulnerabilities) - queried via the public
   `api.osv.dev` query API for the dependency audit. Idea used: query-by-package
   request shape and the affected-ranges/fixed-version structure. Data is

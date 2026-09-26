@@ -472,13 +472,26 @@ def test_secret_reconcile_requires_every_hit_accounted_for(tmp_path):
     assert res["passed"] is True and "rotated key kept as a regression fixture" in res["details"]
 
 
+def test_secret_reconcile_counts_two_secrets_on_one_line(tmp_path):
+    ws = _ws(tmp_path)
+    _write(ws, "repo/config.json", '{"password": "' + PW + 'a", "apiKey": "' + PW + 'b"}\n')
+    hits = T.scan_secrets(ws, root="repo")["findings"]
+    assert len(hits) == 2
+    assert C.secret_findings_reconcile(ws, _secrets_report(ws, hits))["passed"] is True
+    res = C.secret_findings_reconcile(ws, _secrets_report(ws, hits[:1]))
+    assert res["passed"] is False and "neither reported nor dismissed" in res["details"]
+
+
 def test_no_secret_values_catches_a_pasted_secret(tmp_path):
     ws = _ws(tmp_path)
     key_body = _tok("MIIEvQIBADANBgkqhkiG9w0BAQEFAASC", "BKcwggSjAgEAAoIBAQC7")
     _write(ws, "repo/deploy.pem", "-----BEGIN " + "PRIVATE KEY-----\n" + key_body + "\n")
     _write(ws, "inputs/prod.env", "DB_PASSWORD=" + PW + "\n")
-    _write(ws, "deliverables/m2-findings/findings.md", "Found a private key block in repo/deploy.pem.\n")
-    assert C.no_secret_values(ws, {"path": "deliverables"})["passed"] is True
+    _write(ws, "repo/deploy.yaml", "secret_name: ledger-db-credentials\ntoken_issuer: auth.northwind.example\n")
+    _write(ws, "deliverables/m2-findings/findings.md", "Found a private key block in repo/deploy.pem; "
+                                                       "tokens come from auth.northwind.example and the "
+                                                       "ledger-db-credentials secret.\n")
+    assert C.no_secret_values(ws, {"path": "deliverables"})["passed"] is True     # names, not secrets
 
     _write(ws, "deliverables/m3-report/report.md", f"Key starts {key_body}; password {PW}.\n")
     res = C.no_secret_values(ws, {"path": "deliverables"})

@@ -567,20 +567,31 @@ def secret_findings_reconcile(workspace: Path, params: dict, *, run=None) -> dic
         return _result(False, f"code_root refused: {exc}", 0.0)
     root = code_root.replace("\\", "/").strip("/")
 
+    covered: set[int] = set()
+
     def match(item: Any) -> int | None:
+        """The fresh hit an item stands for: same file and rule within a
+        line, preferring the same column and a hit no other item took (two
+        secrets on one line are two hits)."""
         if not isinstance(item, dict) or not isinstance(item.get("file"), str):
             return None
+        line, rule = item.get("line"), str(item.get("rule_id") or "").upper()
+        if not isinstance(line, int) or isinstance(line, bool):
+            return None
         f = item["file"].replace("\\", "/").removeprefix("./")
-        hit = _hit_near(fresh, f, item.get("rule_id"), item.get("line"))
-        if hit is None and root not in ("", ".") and not f.startswith(root + "/"):
-            hit = _hit_near(fresh, f"{root}/{f}", item.get("rule_id"), item.get("line"))
-        return None if hit is None else fresh.index(hit)
+        names = {f} | ({f"{root}/{f}"} if root not in ("", ".") and not f.startswith(root + "/") else set())
+        found = [i for i, h in enumerate(fresh)
+                 if h["file"] in names and h["rule_id"] == rule and abs(h["line"] - line) <= 1]
+        if not found:
+            return None
+        found.sort(key=lambda i: (i in covered, fresh[i]["column"] != item.get("column"),
+                                  abs(fresh[i]["line"] - line)))
+        return found[0]
 
     def label(item: Any) -> str:
         item = item if isinstance(item, dict) else {}
         return f"{item.get('file')}:{item.get('line')} [{item.get('rule_id')}]"
 
-    covered: set[int] = set()
     bogus, bad_dismissals, dismissals = [], [], []
     for item in claimed:
         i = match(item)
@@ -619,13 +630,20 @@ def secret_findings_reconcile(workspace: Path, params: dict, *, run=None) -> dic
     return _result(True, details, 1.0)
 
 
+# Lowercase words joined by '-', '_' or '.': a resource or host name that a
+# keyword-named setting points at, not a literal secret worth hiding.
+_NAME_LIKE = re.compile(r"^[a-z]+(?:[-_.][a-z]+)+$")
+
+
 def no_secret_values(workspace: Path, params: dict, *, run=None) -> dict:
     """No raw secret value from the customer's files appears in a deliverable.
 
     params: roots (default ['repo', 'inputs']) to scan for secrets, path
     (default 'deliverables') to search. Re-runs the scanner, takes each hit's
     raw value (for a private key, its first body line) and fails if any of
-    them appears in any text file under path. The details name the rule and
+    them appears in any text file under path. Generic assignments whose value
+    is only lowercase words joined by '-', '_' or '.' (a resource or host
+    name) are not treated as secret values. The details name the rule and
     location, never the value.
     """
     roots = params.get("roots") or ["repo", "inputs"]
@@ -636,8 +654,11 @@ def no_secret_values(workspace: Path, params: dict, *, run=None) -> dict:
         except ToolError as exc:
             return _result(False, f"scan root refused: {exc}", 0.0)
         for h in hits:
-            if len(h["probe"]) >= MIN_PROBE_CHARS:
-                probes.setdefault(h["probe"], h)
+            if len(h["probe"]) < MIN_PROBE_CHARS:
+                continue
+            if h["rule_id"] == "SECRET.GENERIC_ASSIGNMENT" and _NAME_LIKE.match(h["probe"]):
+                continue        # e.g. secret_name: db-credentials, token_issuer: auth.example.com
+            probes.setdefault(h["probe"], h)
     target_rel = str(params.get("path", "deliverables"))
     try:
         target = jail_path(Path(workspace), target_rel)
