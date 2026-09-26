@@ -114,9 +114,13 @@ def _approval_view(approval: dict, *, engagement_id) -> dict:
         "failure_code": approval.get("failure_code"),
         "money_moved": False,
     }
+    if state in ("approved", "consumed"):
+        view["instruction"] = ("The human approved this action and the app is executing it. Money has moved "
+                               "only once get_engagement_status reports money_moved=true for this approval.")
+        return view
     if state in TERMINAL_APPROVAL_STATES:
         why = approval.get("failure_code") or (f"screening verdict {verdict}" if state == "blocked" else state)
-        view["instruction"] = (f"This approval ended as '{state}' ({why}). No money moved. "
+        view["instruction"] = (f"This approval ended as '{state}' ({why}). No money moved for it. "
                                "Tell the human; do not retry automatically.")
         return view
     link = approval.get("verification_uri_complete") or approval.get("verification_uri")
@@ -134,9 +138,19 @@ def _approval_view(approval: dict, *, engagement_id) -> dict:
     return view
 
 
-def _money_moved(ledger) -> list[dict]:
+def _settled(ledger) -> list[dict]:
     return [e for e in (ledger or []) if isinstance(e, dict)
             and e.get("kind") in _MONEY_KINDS and e.get("status") in _SETTLED]
+
+
+def _for_approval(entries, approval: dict | None) -> list[dict]:
+    """Ledger entries produced by ``approval`` (by approval_id or result.ledger_ids).
+    Without an approval, every entry counts."""
+    if approval is None:
+        return list(entries)
+    ids = set(((approval.get("result") or {}).get("ledger_ids")) or [])
+    aid = approval.get("approval_id")
+    return [e for e in entries if (aid and e.get("approval_id") == aid) or e.get("id") in ids]
 
 
 def _price(agent: dict):
@@ -302,9 +316,11 @@ def get_engagement_status(client, engagement_id: str, wait_seconds: float = 0, *
 
 
 def _status_view(body, eng, approval, engagement_id, *, timed_out: bool) -> dict:
-    ledger = body.get("ledger") or eng.get("ledger") or []
-    moved = _money_moved(ledger)
-    pending_tx = [e for e in ledger if isinstance(e, dict) and e.get("status") == "pending"]
+    ledger = [e for e in (body.get("ledger") or eng.get("ledger") or []) if isinstance(e, dict)]
+    # money_moved is about the approval being watched, so an earlier funding
+    # never makes a pending release look paid.
+    moved = _for_approval(_settled(ledger), approval)
+    pending_tx = _for_approval([e for e in ledger if e.get("status") == "pending"], approval)
     status = eng.get("status")
     state = approval.get("state") if approval else None
     if approval is None:
@@ -322,11 +338,11 @@ def _status_view(body, eng, approval, engagement_id, *, timed_out: bool) -> dict
         for e in moved:
             label = "simulated, no on-chain tx" if e.get("status") == "simulated" else "confirmed on-chain"
             parts.append(f"{e.get('kind')} {e.get('amount_micro')} micro-USDC ({label})")
-        message += " Ledger shows: " + "; ".join(parts) + "."
+        message += " Ledger shows for this approval: " + "; ".join(parts) + "."
     elif pending_tx:
         message += " A transaction is submitted but not yet confirmed; money has not settled yet."
     else:
-        message += " No money has moved."
+        message += " No money has moved for this approval." if approval else " No money has moved."
     return {
         "ok": True,
         "engagement_id": _engagement_id(eng) or engagement_id,
@@ -334,14 +350,24 @@ def _status_view(body, eng, approval, engagement_id, *, timed_out: bool) -> dict
         "terminal": approval is None or state in TERMINAL_APPROVAL_STATES,
         "engagement_terminal": status in TERMINAL_ENGAGEMENT_STATUSES,
         "timed_out": timed_out,
-        "approval": _approval_view(approval, engagement_id=engagement_id) if approval else None,
+        "approval": _nested(approval, engagement_id),
         "milestones": body.get("milestones") or eng.get("milestones"),
         "ledger": ledger,
         "money_moved": bool(moved),
         "money_moved_entries": moved,
+        "settled_entries": _settled(ledger),
         "chain_url": body.get("chain_url") or eng.get("chain_url"),
         "message": message,
     }
+
+
+def _nested(approval, engagement_id):
+    if approval is None:
+        return None
+    view = _approval_view(approval, engagement_id=engagement_id)
+    view.pop("money_moved")  # the status view's top-level money_moved is authoritative
+    view.pop("ok")
+    return view
 
 
 def subhire(client, parent_engagement_id: str, agent_id: str, budget_usdc, category: str,
