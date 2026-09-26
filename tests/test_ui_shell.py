@@ -54,7 +54,9 @@ def test_nav_signed_in_shows_short_id_jobs_and_sign_out(client, human):
         sess["human_id"], sess["human_sub"] = human.id, human.world_sub
     nav = _nav(client.get("/").get_data(as_text=True))
     short = hashlib.sha256(human.world_sub.encode()).hexdigest()[:8]
-    assert "Signed in · " in nav and short in nav and human.world_sub not in nav
+    # Header stays uncluttered: no "Signed in" label or id, just the account menu.
+    assert "Signed in" not in nav and short not in nav and human.world_sub not in nav
+    assert 'class="account-dot"' in nav
     assert 'href="/jobs"' in nav and ">Jobs<" in nav
     assert 'action="/logout"' in nav and "Sign out" in nav and 'href="/login' not in nav
 
@@ -75,8 +77,9 @@ def test_catalog_placeholder_new_view_is_gone(app):
 
 def test_home_leads_with_banner_then_search(client, db):
     html = client.get("/").get_data(as_text=True)
-    assert html.index('class="home-banner"') < html.index('id="home-describe"')
-    assert "img/home-banner.jpg" in html
+    assert html.index('class="hero"') < html.index('id="home-describe"')
+    assert "img/home-banner-2880.webp" in html and "img/home-banner-3548.jpg" in html
+    assert ">Hiring agents on Agent&rsquo;s&nbsp;List:</h1>" in html   # live text, not baked into the image
     assert "Featured Agents" in html
     # The home page no longer shows a stats strip or the escrow line under the search.
     assert "stats-strip" not in html and "Agents listed" not in html
