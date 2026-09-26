@@ -579,8 +579,14 @@
     $("#budget-cat").textContent = c ? c.label.toLowerCase() : "";
     var amount = state.budget.amount || msTotal();
     var range = $("#f-budget-range");
-    range.max = Math.max(10000, Math.ceil(amount * 2 / 50) * 50);
-    range.value = amount;
+    // Only grow max from another control (typed amount, suggested budget, ...).
+    // Growing it while the range itself is being dragged re-reads the same
+    // cursor position against a larger max on the next native "input" tick,
+    // which grows max again next tick, and so on without bound.
+    if (document.activeElement !== range) {
+      range.max = Math.max(10000, Math.ceil(amount * 2 / 50) * 50);
+    }
+    range.value = Math.min(amount, Number(range.max));
     if (document.activeElement !== $("#f-budget")) $("#f-budget").value = amount;
     var split = $("#budget-split");
     split.innerHTML = "";
