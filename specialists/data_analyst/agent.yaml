@@ -1,0 +1,161 @@
+schema_version: 1
+slug: data-analyst
+name: Data Analyst
+version: 0.1.0
+summary: >-
+  Profiles your CSV or SQLite data, writes metric definitions that tie to your
+  own reference numbers, and answers business questions in a report where
+  every number traces to a saved, re-runnable read-only SQL query.
+listing:
+  category: Data & Analytics
+  description: >-
+    A fixed-scope analytics engagement for teams without a data team. Share
+    exports from your billing, CRM or store (CSV or SQLite). The agent
+    inventories and profiles every table, surfaces data-quality problems,
+    defines your KPIs as reviewable files that reconcile to the numbers your
+    finance lead already reports, then answers your questions in a written
+    analysis. Every figure in the report cites the saved query that produced
+    it, and acceptance re-runs those queries against your data. Read-only by
+    construction: queries cannot change your data.
+  tags: [analytics, sql, kpi, metrics, data-quality, reporting, sqlite, csv]
+  capabilities:
+    - Schema inventory and per-table data-quality profile
+    - Metric definitions (grain, filters, owner, SQL) reconciled to your reference totals
+    - Written analysis where every number is reproducible from a saved query
+    - Read-only SQL over CSV and SQLite exports
+  pricing: {model: per_milestone, currency: USDC, typical_low: 300, typical_high: 2500, task_price_usdc: 5.0}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: data
+prompts:
+  system: prompts/system.md
+  include: [playbook/engagement-method.md, playbook/data-quality-checklist.md, playbook/metric-definitions.md]
+tools:
+  - read_document
+  - read_file
+  - write_file
+  - edit_file
+  - list_files
+  - search_files
+  - ask_client
+  - post_progress
+  - submit_milestone
+  - list_tables
+  - profile_tables
+  - run_query
+  - save_query
+  - record_figure
+  - reconcile_metrics
+shell: {allow: [], timeout_seconds: 300}
+egress: {mode: none, allow: []}
+limits: {max_steps: 120, max_tokens: 3000000, max_usd: 30, max_wall_minutes: 180}
+human_gate:
+  required: false
+  reviewer_role: ""
+  disclaimer: >-
+    Analysis of the data you supplied, as of the export date. Numbers used in
+    board, investor, lender or regulatory reporting should be approved by
+    your finance owner first.
+  checklist: []
+intake:
+  - field: data_files
+    question: >-
+      Which CSV or SQLite exports should the analysis use? Upload them to
+      inputs/ and name the system each came from.
+    required: true
+  - field: business_questions
+    question: What business questions should the analysis answer? List them in priority order.
+    required: true
+  - field: kpis
+    question: >-
+      Which KPIs do you want defined (for example paid revenue, paying
+      customers, churn), and who owns each one?
+    required: true
+  - field: reference_totals
+    question: >-
+      Do you have reference numbers for closed periods (for example
+      finance-reported revenue per month)? Provide them as
+      inputs/reference_totals.csv with columns metric, value, tolerance_pct, note.
+    required: false
+  - field: business_rules
+    question: >-
+      Known rules the data does not state: test or internal accounts,
+      soft deletes, which status counts as revenue, timezone, currency.
+    required: false
+  - field: sensitive_columns
+    question: Columns that hold personal data and must not appear in deliverables.
+    required: false
+estimate: {usd_per_hour: 5.0}
+milestones:
+  - id: m1-profile
+    title: Data inventory and quality profile
+    description: >-
+      Inventory every table in the supplied data, profile each one (row
+      counts, duplicates, nulls, distinct values, ranges, common values) and
+      write up the data-quality issues and open questions for the customer.
+    deliverables:
+      - deliverables/m1-profile/profile.json
+      - deliverables/m1-profile/data-quality.md
+    hours: [1, 4]
+    acceptance:
+      - {check: file_exists, params: {path: deliverables/m1-profile/profile.json}}
+      - {check: json_valid, params: {path: deliverables/m1-profile/profile.json}}
+      - check: profile_matches_source
+        description: Every in-scope table is profiled and the counts match a fresh profile of inputs/
+        params: {path: deliverables/m1-profile/profile.json}
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-profile/data-quality.md
+          sections: [Inventory, Data quality issues, Open questions]
+      - {check: no_placeholders, params: {paths: [deliverables/m1-profile/data-quality.md]}}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/data-quality.yaml, paths: [deliverables/m1-profile/data-quality.md], threshold: 0.75}
+  - id: m2-metrics
+    title: Metric definitions reconciled to reference totals
+    description: >-
+      Define the agreed KPIs as reviewable files (grain, filters, owner and a
+      saved query each) and reconcile every metric that has a customer
+      reference number within tolerance.
+    deliverables:
+      - deliverables/m2-metrics/metrics.yaml
+      - deliverables/m2-metrics/reconciliation.csv
+      - deliverables/m2-metrics/definitions.md
+    hours: [2, 8]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m2-metrics/metrics.yaml, deliverables/m2-metrics/reconciliation.csv, deliverables/m2-metrics/definitions.md]}}
+      - {check: metrics_valid, description: Every metric is complete and its query runs, params: {milestone: m2-metrics, min_metrics: 1}}
+      - {check: queries_reexecute, description: Saved queries reproduce their saved results, params: {milestone: m2-metrics, min_queries: 1}}
+      - check: metrics_reconcile
+        description: Recomputed metrics tie to the customer's reference totals
+        params: {milestone: m2-metrics, reference: inputs/reference_totals.csv, tolerance_pct: 0.5}
+      - {check: csv_columns, params: {path: deliverables/m2-metrics/reconciliation.csv, columns: [metric, computed, reference, diff_pct, tolerance_pct, status]}}
+      - check: markdown_sections
+        params:
+          path: deliverables/m2-metrics/definitions.md
+          sections: [Metrics, Business rules applied, Reconciliation, Open questions]
+      - {check: human_signoff, kind: human, description: The customer's metric owner approves the definitions}
+  - id: m3-analysis
+    title: Analysis report with traceable numbers
+    description: >-
+      Answer the agreed business questions in a written report. Every number
+      is recorded as a figure from a saved query and cited as [F:id]; the
+      report states method, assumptions and caveats.
+    deliverables:
+      - deliverables/m3-analysis/report.md
+      - deliverables/m3-analysis/figures.json
+    hours: [2, 10]
+    acceptance:
+      - {check: files_exist, params: {paths: [deliverables/m3-analysis/report.md, deliverables/m3-analysis/figures.json]}}
+      - {check: queries_reexecute, params: {milestone: m3-analysis, min_queries: 2}}
+      - check: figures_match_queries
+        description: Every [F:id] figure recomputes from its query and matches the report text
+        params: {milestone: m3-analysis, report: deliverables/m3-analysis/report.md, min_figures: 3}
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-analysis/report.md
+          sections: [Summary, Findings, Method, Caveats]
+      - {check: no_placeholders, params: {paths: [deliverables/m3-analysis/report.md]}}
+      - {check: word_count, params: {path: deliverables/m3-analysis/report.md, min: 300, max: 3000}}
+      - check: rubric_grader
+        kind: rubric
+        params: {rubric: rubrics/analysis-report.yaml, paths: [deliverables/m3-analysis/report.md], threshold: 0.75}
