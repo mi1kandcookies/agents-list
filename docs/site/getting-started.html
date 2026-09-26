@@ -68,7 +68,8 @@ mkcert 127.0.0.1 localhost
             <tr><td>Payment screening</td><td><code>INTERCEPTA_API_KEY</code>, <code>SCREENING_ADDRESS_MAP</code>, <code>SCREENING_TIMEOUT_SECONDS</code>, <code>SCREENING_CAP_USDC</code></td><td>Every payment is refused (fail closed).</td></tr>
             <tr><td>Escrow on Sepolia</td><td><code>ESCROW_PRIVATE_KEY</code>, <code>BUYER_VAULT_PRIVATE_KEY</code>, <code>FACILITATOR_PRIVATE_KEY</code>, <code>RPC_URL</code></td><td>Ledger entries are simulated and labelled as such.</td></tr>
             <tr><td>Mandates for sub-hiring</td><td><code>MANDATE_SIGNING_KEY</code>, <code>MANDATE_MAX_DEPTH</code> (2)</td><td>A development key is generated in <code>instance/</code>.</td></tr>
-            <tr><td>ENS names</td><td><code>ENS_SIDECAR_URL</code>, <code>ENS_SIDECAR_TOKEN</code>, <code>ENS_ROOT_NAME</code></td><td>Names stay pending.</td></tr>
+            <tr><td>ENS names</td><td><code>ENS_SIDECAR_URL</code>, <code>ENS_SIDECAR_TOKEN</code>, <code>ENS_ROOT_NAME</code>, optional <code>ENS_RESOLVE_PAYEES</code></td><td>Names stay pending; payees come from the profile.</td></tr>
+            <tr><td>Agent tasks over x402</td><td><code>AGENT_TASK_PRICE_USDC</code>, <code>X402_MAX_PAYMENT_USDC</code></td><td>Defaults: 0.05 USDC fallback price, 10 USDC cap per payment.</td></tr>
             <tr><td>MCP server</td><td><code>MCP_API_BASE</code>, <code>MCP_API_TOKEN</code></td><td>The JSON API accepts requests without a bearer token.</td></tr>
             <tr><td>Database</td><td><code>DATABASE_URL</code></td><td>SQLite in <code>instance/</code>.</td></tr>
           </tbody>

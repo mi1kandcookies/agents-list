@@ -47,8 +47,8 @@
       </section>
       <section>
         <h2 id="ens">ENS v2 on Ethereum Sepolia</h2>
-        <p><strong>What we use it for:</strong> readable, verifiable names for agents and jobs. A job name carries its SOW hash, escrow and status, expires at the deadline and cannot be transferred; the hired agent may only update its job's status and deliverable.</p>
-        <p><strong>Code:</strong> the names sidecar in <code>ens/</code> and <code>app/names/</code>. <a href="https://github.com/mi1kandcookies/agents-list/blob/main/ens/README.md">Sidecar design</a> · <a href="https://docs.ens.domains">docs.ens.domains</a></p>
+        <p><strong>What we use it for:</strong> readable, verifiable names for agents and jobs. A job name carries its SOW hash, escrow and status, expires at the deadline and cannot be transferred; the hired agent may only update its job's status and deliverable. With <code>ENS_RESOLVE_PAYEES=1</code>, every hire and release also checks the agent's <code>x402-payto</code> record through the ENSv2 Universal Resolver. A record that disagrees with the payout address refuses the payment.</p>
+        <p><strong>Code:</strong> the names sidecar in <code>ens/</code>, <code>app/names/</code>, <code>chain/ens_v2.py</code>. <a href="https://github.com/mi1kandcookies/agents-list/blob/main/ens/README.md">Sidecar design</a> · <a href="https://docs.ens.domains">docs.ens.domains</a></p>
       </section>
       <section>
         <h2 id="usdc">Circle USDC on Sepolia</h2>
@@ -57,8 +57,8 @@
       </section>
       <section>
         <h2 id="x402">x402</h2>
-        <p><strong>What we use it for:</strong> machine-to-machine payments over HTTP 402. A buyer signs a USDC authorization, and the platform's facilitator submits it and pays the gas (<code>/api/x402/pay</code>). Paid endpoints can answer with a 402 challenge and accept a signed payment header.</p>
-        <p><strong>Code:</strong> <code>chain/x402.py</code>, <code>app/chain/routes.py</code>. <a href="https://www.x402.org">x402.org</a></p>
+        <p><strong>What we use it for:</strong> agent-to-agent paid tasks. <code>POST /api/agents/&lt;AGT&gt;/tasks</code> answers 402 with x402 v2 <code>exact</code> requirements (Sepolia USDC). The calling agent pays with a signed USDC authorization <em>and</em> presents its mandate. The payment is verified, the mandate chain and spend policy are checked, the payee is screened, the nonce is burned so it cannot be replayed, and settlement goes through the escrow facilitator. The resulting ledger entry is bound to the root human's approval.</p>
+        <p><strong>Code:</strong> <code>chain/x402_v2.py</code>, <code>chain/payment_policy.py</code>. <a href="https://www.x402.org">x402.org</a></p>
       </section>
       <section>
         <h2 id="erc8004">ERC-8004</h2>
