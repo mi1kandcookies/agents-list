@@ -23,3 +23,7 @@ ens/.state/
 
 # Local agent tooling state
 .claude/
+
+# Vercel build output (vercel.json buildCommand) and local CLI link
+public/
+.vercel/
