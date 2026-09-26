@@ -1,0 +1,17 @@
+{
+  "name": "Assess ledgerly-api dependencies and plan upgrades",
+  "milestone": "m1-assess",
+  "fixture": "ledgerly-api",
+  "brief": {
+    "engagement_id": "eval-um-001",
+    "specialist": "upgrade-migration",
+    "objective": "Clear known vulnerabilities in ledgerly-api and plan a move to Python 3.12.",
+    "intake": {
+      "repository": "ledgerly-api (main)",
+      "test_command": "python -m pytest -q",
+      "targets": "Fix known vulnerabilities; run on Python 3.12",
+      "upgrade_policy": "Majors need approval; no new dependencies without approval; 7-day release age"
+    }
+  },
+  "notes": "Expect 4 findings (quillhttp HIGH minor fix, tabulon MEDIUM major-only fix, yamlette CRITICAL no fix, left-trim-lite MEDIUM minor fix). A good plan ranks yamlette as an exception with a mitigation, asks before the tabulon major, and drafts migration rules for collections ABC aliases, datetime.utcnow and quillhttp.get_legacy."
+}

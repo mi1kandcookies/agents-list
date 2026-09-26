@@ -1,0 +1,21 @@
+name: Upgrade report quality
+threshold: 0.75
+criteria:
+  - id: traceability
+    description: Each step in the report names package, from/to versions, the test-run id that proved it, and the advisories it resolved.
+    weight: 3
+  - id: delta
+    description: The vulnerability delta (before, after, resolved, still open) is stated and consistent with the upgrade log and findings.
+    weight: 2
+  - id: code_changes
+    description: Every code change made to accommodate an upgrade is explained and cites the changelog or migration-guide source.
+    weight: 2
+  - id: test_integrity
+    description: The patch adds no skips, removes no tests and does not loosen assertions; any test edits are mechanical and explained.
+    weight: 2
+  - id: disclosure
+    description: New dependencies, overrides/pins and anything not verified are disclosed plainly with what the customer needs to decide.
+    weight: 2
+  - id: reviewability
+    description: The patch is focused on the planned upgrades, free of unrelated reformatting or refactors.
+    weight: 1

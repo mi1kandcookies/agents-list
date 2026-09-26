@@ -1,0 +1,24 @@
+name: Upgrade plan quality
+threshold: 0.75
+criteria:
+  - id: evidence
+    description: Every advisory, version and severity in the plan traces to the inventory, findings CSV or plan JSON; nothing is asserted from memory.
+    weight: 3
+  - id: minimal_changes
+    description: Targets are the smallest versions that fix the advisories (or a justified newer patch release); major bumps are justified by a named need.
+    weight: 2
+  - id: ordering
+    description: Steps are ordered by severity and advisories fixed per change, coupled packages are grouped, and each step is small enough to verify on its own.
+    weight: 2
+  - id: breaking_changes
+    description: For each minor/major bump the plan names the breaking changes that affect this repo, with the files or APIs involved and the changelog source.
+    weight: 2
+  - id: exceptions
+    description: Advisories that will not be fixed are listed with a concrete reason (no fix, unapproved major, dev-only, unreachable with how it was checked) and a review date; none are marked approved.
+    weight: 2
+  - id: migration_rules
+    description: If a framework/runtime target was requested, each retired API has a rule with its replacement, a detector regex and edge cases.
+    weight: 1
+  - id: questions
+    description: Decisions the customer must make (new dependencies, majors, behavior changes) are asked as precise questions with a recommendation.
+    weight: 1

@@ -1,0 +1,299 @@
+schema_version: 1
+slug: upgrade-migration
+name: Dependency Upgrade & Migration Engineer
+version: 0.1.0
+summary: >-
+  Inventories a repository's dependencies against the OSV vulnerability
+  database, plans the smallest safe set of upgrades, applies them in small
+  test-verified steps, then carries out a framework or runtime migration with
+  old-API detectors driven to zero. Every milestone ships a patch the customer
+  merges, plus evidence the platform re-checks.
+listing:
+  category: Development
+  description: >-
+    Clears vulnerable and end-of-life dependencies and finishes the framework
+    or runtime upgrade your team keeps postponing. You get an evidence-backed
+    upgrade plan, then patches applied one small step at a time with the full
+    test suite green after each step, a before/after vulnerability delta, and
+    a residual-risk register for anything that cannot be fixed yet. Nothing is
+    merged or deployed for you.
+  tags: [dependencies, cve, osv, upgrade, migration, python, npm, go, supply-chain]
+  capabilities:
+    - Dependency inventory from pip (hashed pins included), Poetry, uv, Pipenv, npm, yarn, pnpm and Go
+    - OSV vulnerability scan with CVSS v3 severity and minimal fixing versions
+    - Upgrade plan ranked by severity and advisories fixed per change
+    - Small upgrade steps, each proven by a logged green test run
+    - Framework/runtime migration with old-API detectors driven to zero
+    - Test-integrity diff audit (no skipped, deleted or weakened tests)
+    - Residual-risk register for advisories without a fix
+  # typical_low/high: the engagement range, billed per milestone through the
+  # SOW. task_price_usdc: the flat x402 price of one agent-to-agent task,
+  # stamped as the platform manifest's price (placeholder until priced).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 1500, typical_high: 15000,
+            task_price_usdc: 5.0}
+models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
+profile: code
+prompts:
+  system: prompts/system.md
+  include:
+    - playbook/method.md
+    - playbook/dependency-upgrades.md
+    - playbook/framework-migrations.md
+    - playbook/test-integrity.md
+tools:
+  - read_document
+  - read_file
+  - write_file
+  - edit_file
+  - list_files
+  - search_files
+  - run_command
+  - http_fetch
+  - record_source
+  - record_claim
+  - ask_client
+  - post_progress
+  - submit_milestone
+  - inventory_dependencies
+  - osv_scan
+  - plan_upgrades
+  - package_versions
+  - run_tests
+  - audit_diff
+  - scan_patterns
+  - export_patch
+shell:
+  allow: [git, python, python3, pip, uv, poetry, pytest, node, npm, yarn, pnpm, go]
+  timeout_seconds: 1200
+egress:
+  mode: allowlist
+  allow:
+    - api.osv.dev
+    - pypi.org
+    - files.pythonhosted.org
+    - registry.npmjs.org
+    - registry.yarnpkg.com
+    - proxy.golang.org
+    - sum.golang.org
+    - github.com
+    - raw.githubusercontent.com
+# Per milestone, resumed runs included. Milestone hours stay within them
+# (hours x usd_per_hour <= max_usd, hours <= max_wall_minutes / 60); a larger
+# migration is scoped as several migration milestones, one per group of rules.
+limits: {max_steps: 160, max_tokens: 6000000, max_usd: 90, max_wall_minutes: 600}
+human_gate:
+  required: false
+  reviewer_role: customer engineering lead
+  disclaimer: >-
+    Patches are proposals. The customer reviews and merges them and runs any
+    deployment; this agent never pushes to protected branches, merges, deploys
+    or approves its own exceptions.
+  checklist:
+    - Review repo.patch and merge it through your normal pull-request process
+    - Approve or reject every new direct dependency listed in the report
+    - Approve or reject each residual-risk exception before its review date
+intake:
+  - field: repository
+    question: Which repository and branch should be upgraded? It will be checked out into repo/.
+    required: true
+  - field: test_command
+    question: What command runs the full test suite (for example "python -m pytest -q" or "npm test")?
+    required: true
+  - field: targets
+    question: >-
+      What is the goal: clear known vulnerabilities, reach a runtime version (e.g. Python 3.12,
+      Node 22), a framework major (e.g. Django 5), or all of these?
+    required: true
+  - field: scope
+    question: Which paths, packages or services are in scope, and which must not be touched?
+    required: false
+  - field: upgrade_policy
+    question: >-
+      Are major-version bumps allowed? May new dependencies be added (with your approval)?
+      Minimum release age for new versions (default 7 days)?
+    required: false
+  - field: deadlines
+    question: Is there a compliance deadline or patch SLA driving this work?
+    required: false
+estimate: {usd_per_hour: 8.0}
+milestones:
+  - id: m1-assess
+    title: Dependency inventory, vulnerability findings and upgrade plan
+    description: >-
+      Read-only assessment. Inventory every dependency, scan each pinned
+      version against OSV, compute minimal fixing versions and bump sizes, and
+      write an upgrade and migration plan the customer approves before any
+      code changes. Records the baseline the later milestones are measured
+      against.
+    deliverables:
+      - deliverables/m1-assess/inventory.json
+      - deliverables/m1-assess/findings.csv
+      - deliverables/m1-assess/plan.json
+      - deliverables/m1-assess/upgrade-plan.md
+    hours: [2, 6]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m1-assess/inventory.json
+            - deliverables/m1-assess/findings.csv
+            - deliverables/m1-assess/plan.json
+            - deliverables/m1-assess/upgrade-plan.md
+      - check: json_valid
+        params: {path: deliverables/m1-assess/plan.json}
+      - check: inventory_matches_repo
+        description: Inventory lists exactly the dependencies in the repo's lockfiles and manifests
+        params: {inventory: deliverables/m1-assess/inventory.json, repo: repo}
+      - check: findings_match_osv
+        description: Findings equal those recomputed from the recorded OSV evidence, severities included
+        params: {findings: deliverables/m1-assess/findings.csv, repo: repo}
+      - check: plan_covers_findings
+        description: Every advisory is addressed in the plan (upgrade step or proposed exception)
+        params: {plan: deliverables/m1-assess/upgrade-plan.md, repo: repo}
+      - check: markdown_sections
+        params:
+          path: deliverables/m1-assess/upgrade-plan.md
+          sections: [Summary, Inventory, Findings, Upgrade steps, Migration rules, Risks, Exceptions, Questions]
+      - check: no_placeholders
+        params: {paths: [deliverables/m1-assess/upgrade-plan.md]}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/upgrade-plan.yaml
+          paths: [deliverables/m1-assess/upgrade-plan.md, deliverables/m1-assess/plan.json]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Customer engineering lead approves the plan, migration rules and any proposed new dependency
+  - id: m2-upgrade
+    title: Dependency upgrades in small, test-verified steps
+    description: >-
+      Apply the approved upgrades one package (or one tightly coupled group)
+      at a time, adapting call sites where needed, with the full suite run and
+      logged after every step. Ends with a patch, an upgrade log and a report
+      including the before/after vulnerability delta.
+    deliverables:
+      - deliverables/m2-upgrade/repo.patch
+      - deliverables/m2-upgrade/upgrade-log.json
+      - deliverables/m2-upgrade/report.md
+    hours: [4, 10]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m2-upgrade/repo.patch
+            - deliverables/m2-upgrade/upgrade-log.json
+            - deliverables/m2-upgrade/report.md
+      - check: tests_pass
+        description: >-
+          Client's full suite green now, with no fewer passing and no more skipped tests than
+          its baseline run
+        params: {cwd: repo}
+      - check: osv_delta
+        description: >-
+          No new advisories and at least one resolved, both recomputed from OSV evidence; a
+          vulnerable package that is unpinned, or removed without a logged removal, stays open
+        params: {repo: repo, min_resolved: 1, log: deliverables/m2-upgrade/upgrade-log.json}
+      - check: upgrade_log_verified
+        description: >-
+          Every version change is logged, and each step cites a green run of the client's test
+          command, in order, that tested exactly that step's versions
+        params: {log: deliverables/m2-upgrade/upgrade-log.json, repo: repo}
+      - check: diff_scope
+        description: No skipped, deleted or weakened tests; CI config untouched; reviewable size
+        params:
+          patch: deliverables/m2-upgrade/repo.patch
+          forbid: [".github/*", ".gitlab-ci.yml", ".circleci/*", "Jenkinsfile", "azure-pipelines.yml",
+                   ".travis.yml", "bitbucket-pipelines.yml", ".buildkite/*", ".drone.yml"]
+          max_changed_lines: 400
+      - check: patch_generated
+        description: repo.patch is the git diff generated at submission, not a hand-written file
+        params: {patch: deliverables/m2-upgrade/repo.patch}
+      - check: patch_matches_repo
+        params: {patch: deliverables/m2-upgrade/repo.patch, repo: repo}
+      - check: release_age_ok
+        description: >-
+          Every new version had been public for the minimum release age (7 days, or longer if
+          the client's policy says so) and is not yanked
+        params: {repo: repo, min_age_days: 7}
+      - check: new_dependencies_disclosed
+        params: {report: deliverables/m2-upgrade/report.md, repo: repo}
+      - check: markdown_sections
+        params:
+          path: deliverables/m2-upgrade/report.md
+          sections: [Summary, Steps, Vulnerability delta, Code changes, New dependencies, Follow-ups]
+      - check: no_placeholders
+        params: {paths: [deliverables/m2-upgrade/report.md]}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/upgrade-report.yaml
+          paths: [deliverables/m2-upgrade/report.md, deliverables/m2-upgrade/repo.patch]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Customer engineering lead approves any new dependency and merges the patch
+  - id: m3-migrate
+    title: Framework / runtime migration and residual-risk register
+    description: >-
+      Carry out the approved framework or runtime migration: write detectors
+      for every old API the migration rules retire, record their baseline,
+      rewrite call sites until each detector reports zero, keep the suite
+      green, and register every advisory that remains open.
+    deliverables:
+      - deliverables/m3-migrate/repo.patch
+      - deliverables/m3-migrate/detectors.json
+      - deliverables/m3-migrate/residual-risk.csv
+      - deliverables/m3-migrate/migration-report.md
+    hours: [5, 10]
+    acceptance:
+      - check: files_exist
+        params:
+          paths:
+            - deliverables/m3-migrate/repo.patch
+            - deliverables/m3-migrate/detectors.json
+            - deliverables/m3-migrate/residual-risk.csv
+            - deliverables/m3-migrate/migration-report.md
+      - check: tests_pass
+        params: {cwd: repo}
+      - check: detectors_cleared
+        description: >-
+          Every old-API detector recorded with a non-zero baseline is listed and now matches
+          nothing (or is superseded by a listed detector, with a reason)
+        params: {detectors: deliverables/m3-migrate/detectors.json, repo: repo}
+      - check: osv_delta
+        description: The migration introduced no new advisories and unpinned no vulnerable package
+        params: {repo: repo, min_resolved: 0, log: deliverables/m2-upgrade/upgrade-log.json}
+      - check: diff_scope
+        params:
+          patch: deliverables/m3-migrate/repo.patch
+          forbid: [".github/*", ".gitlab-ci.yml", ".circleci/*", "Jenkinsfile", "azure-pipelines.yml",
+                   ".travis.yml", "bitbucket-pipelines.yml", ".buildkite/*", ".drone.yml"]
+          max_changed_lines: 1200
+      - check: patch_generated
+        params: {patch: deliverables/m3-migrate/repo.patch}
+      - check: patch_matches_repo
+        params: {patch: deliverables/m3-migrate/repo.patch, repo: repo}
+      - check: residual_risks_registered
+        description: Every advisory still open is registered with a justification and a pending status
+        params: {register: deliverables/m3-migrate/residual-risk.csv, repo: repo,
+                 log: deliverables/m2-upgrade/upgrade-log.json}
+      - check: csv_columns
+        params:
+          path: deliverables/m3-migrate/residual-risk.csv
+          columns: [vuln_id, package, status, justification, review_by]
+      - check: markdown_sections
+        params:
+          path: deliverables/m3-migrate/migration-report.md
+          sections: [Summary, What changed, Verification, Residual risk, Rollback, Follow-ups]
+      - check: no_placeholders
+        params: {paths: [deliverables/m3-migrate/migration-report.md]}
+      - check: rubric_grader
+        kind: rubric
+        params:
+          rubric: rubrics/migration-report.yaml
+          paths: [deliverables/m3-migrate/migration-report.md, deliverables/m3-migrate/repo.patch]
+          threshold: 0.75
+      - check: human_signoff
+        kind: human
+        description: Customer engineering lead accepts the residual-risk register and merges the patch
