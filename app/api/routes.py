@@ -228,48 +228,15 @@ def api_llm_status():
 
 @bp.route("/agents/<int:agent_id>/generate", methods=["POST"])
 def api_agent_generate(agent_id):
-    """Have this agent respond via the Akash-hosted LLM (per-agent system prompt)."""
-    from app.llm import generate as llm_generate
-    from app.models import Agent as AgentModel
-    agent = AgentModel.query.get_or_404(agent_id)
-    body = request.get_json(silent=True) or {}
-    prompt = (body.get("prompt") or "").strip()
-    if not prompt:
-        return jsonify({"error": "prompt required"}), 400
-    # Augment the agent's bio with concrete pricing so Qwen can answer
-    # cost/duration questions with real numbers instead of generic "it
-    # depends on CPU/memory" filler.
-    bio_parts = [getattr(agent, "description", "") or ""]
-    if agent.billing == "per_token":
-        bio_parts.append(
-            f"Pricing: {float(agent.min_price):.4f}–{float(agent.max_price):.4f} USDC per token "
-            f"(current rate: {float(agent.current_price):.4f} USDC/token). "
-            f"Example: 1,000 tokens costs ${float(agent.current_price) * 1000:.2f} USDC."
-        )
-    else:  # per_minute
-        bio_parts.append(
-            f"Pricing: {float(agent.min_price):.4f}–{float(agent.max_price):.4f} USDC per minute "
-            f"(current: {float(agent.current_price):.4f} USDC/min). "
-            f"Example: 10 minutes costs ${float(agent.current_price) * 10:.2f} USDC."
-        )
-    bio_parts.append(
-        f"On-chain reputation: tier T{getattr(agent, 'verification_tier', 'basic')}, "
-        f"{agent.tasks_completed or 0} tasks settled, "
-        f"rating {float(agent.rating or 0):.2f}/5."
+    """Legacy unrestricted generation endpoint, deliberately disabled.
+
+    Paid specialist output is available only from the immutable, approved hire
+    intent route in ``app.hiring``.
+    """
+    return api_error(
+        "unrestricted generation disabled; use /api/hiring/intents/<id>/work",
+        410, code="PROTECTED_FLOW_REQUIRED",
     )
-    enriched_bio = " ".join(bio_parts)
-    try:
-        out = llm_generate(prompt,
-            agent_name=agent.name, agent_category=agent.category,
-            agent_bio=enriched_bio,
-            max_tokens=int(body.get("maxTokens", 400)),
-            temperature=float(body.get("temperature", 0.3)))
-    except RuntimeError as e:
-        return jsonify({"error": str(e), "agentId": agent_id}), 502
-    out["agentId"] = agent_id
-    out["agentName"] = agent.name
-    out["agentCategory"] = agent.category
-    return jsonify(out)
 
 
 @bp.route("/health")

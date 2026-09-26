@@ -14,25 +14,21 @@ def _permit(**overrides):
 
 def test_x402_pay_rejects_invalid_wallet(client):
     resp = client.post("/api/x402/pay", json=_permit(**{"from": "0x123", "to": "0x456", "value": 0}))
-    assert resp.status_code == 400
+    assert resp.status_code == 410
     body = resp.get_json()
-    assert body["code"] == "INVALID_REQUEST"
-    assert body["field"] == "from"
+    assert body["code"] == "LEGACY_PAYMENT_DISABLED"
 
 
 def test_x402_pay_rejects_zero_value(client, agent):
     resp = client.post("/api/x402/pay", json=_permit(value=0, agentId=agent))
-    assert resp.status_code == 400
-    assert resp.get_json()["field"] == "value"
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_PAYMENT_DISABLED"
 
 
 def test_x402_pay_without_facilitator_records_pending_order(client, agent):
     resp = client.post("/api/x402/pay", json=_permit(agentId=agent, task="build it"))
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["realTx"] is False
-    assert body["status"] == "pending_payment"
-    assert client.get(f"/order/{body['orderId']}").status_code == 200
+    assert resp.status_code == 410
+    assert resp.get_json()["code"] == "LEGACY_PAYMENT_DISABLED"
 
 
 def test_agent_register_requires_valid_wallet(client):

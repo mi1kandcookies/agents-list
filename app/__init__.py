@@ -78,9 +78,10 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     from app.api import bp as api_bp
     from app.catalog import bp as catalog_bp
     from app.chain import bp as chain_bp
+    from app.hiring import bp as hiring_bp
     from app.seller import bp as seller_bp
 
-    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
+    for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp, hiring_bp):
         app.register_blueprint(bp)
 
     from chain.config import explorer_url, get_address, get_chain_config

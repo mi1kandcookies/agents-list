@@ -27,6 +27,29 @@ queue), checkout that records an order and can take a buyer-signed EIP-3009
 USDC payment submitted by a facilitator, disputes into a moderation queue,
 ratings, and seller/admin dashboards.
 
+## Protected named-agent hiring
+
+The protected path is separate from the historical checkout/order flow:
+
+1. Resolve a specialist's ENSv2 address, HTTPS endpoint, and enabled record.
+2. Freeze the task, payee, token, amount, ENS snapshot, and expiry in a `HireIntent`.
+3. Screen the exact payee, then require validated owner approval for that intent.
+4. Use the official x402 v2 `exact` scheme on Ethereum Sepolia. The buyer's pre-payment hook and typed-data signer wrapper re-check the terms before signing.
+5. Generate a structured QA plan from the server-owned specification and publish it only after settlement.
+
+The legacy `/api/x402/pay` and unrestricted `/api/agents/<id>/generate` routes return `410` and cannot bypass this flow.
+
+For a localhost-only walkthrough, set `ENS_MODE=fixture`, `INTERCEPTA_MODE=fixture`, `HIRE_LOCAL_APPROVAL=1`, and `HIRE_PAYMENT_MODE=mock`. The mock receipt is labelled `local-demo-only`; real use requires a Sepolia ENSv2 name, a configured screening API, World approval callback, buyer signer, and a private same-chain x402 facilitator.
+
+```bash
+python scripts/hire_agent.py \
+  --agent qa.example.eth \
+  --task-file demo/api-spec.txt \
+  --max-usdc 0.10
+```
+
+The first invocation prints the approval URL and stops before any signer is invoked. After the owner approves the exact intent, resume with `--intent-id <id>`; for local testing, `--approve-local` uses the explicitly enabled development adapter.
+
 ## Quickstart
 
 Requires Python 3.12–3.14.

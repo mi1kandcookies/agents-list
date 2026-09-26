@@ -69,71 +69,16 @@ def api_x402_domain():
 @bp.route("/api/x402/pay", methods=["POST"])
 @limiter.limit("30/minute")
 def api_x402_pay():
-    """Execute a buyer-signed EIP-3009 transferWithAuthorization via the
-    facilitator and record the resulting order."""
-    payload = request.get_json(silent=True) or {}
-    required = ["from", "to", "value", "validBefore", "nonce", "v", "r", "s", "agentId"]
-    missing = [k for k in required if k not in payload]
-    if missing:
-        return api_error(f"missing fields: {missing}", field=missing[0])
-    for field in ("from", "to"):
-        if not is_valid_wallet(payload.get(field)):
-            return api_error(f"'{field}' must be a 0x-prefixed 40-hex address", field=field)
-    try:
-        value_micro = int(payload["value"])
-        agent_id = int(payload["agentId"])
-    except (TypeError, ValueError):
-        return api_error("value and agentId must be integers", field="value")
-    if value_micro <= 0:
-        return api_error("value must be > 0", field="value")
-    from app.models import Agent as AgentModel
-    if not db.session.get(AgentModel, agent_id):
-        return api_error("agent not found", 404, code="AGENT_NOT_FOUND", field="agentId")
+    """Legacy payment endpoint, deliberately disabled for protected hires.
 
-    from chain.config import payment_recipient
-    recipient = payment_recipient()
-    if recipient and payload["to"].lower() != recipient.lower():
-        return api_error("'to' must be the platform payment recipient", field="to")
-
-    amount_usdc = value_micro / 1_000_000.0
-    buyer_addr = payload["from"]
-    task = str(payload.get("task") or "")[:4000]
-
-    oc = get_onchain()
-    if oc and oc.facilitator and recipient:
-        # Check the signature against the token's EIP-712 domain before
-        # spending gas on a transaction that would revert.
-        from chain.usdc import get_usdc_domain, recover_authorization_signer
-        try:
-            signer = recover_authorization_signer(payload, get_usdc_domain(w3=oc.w3))
-        except Exception:
-            signer = ""
-        if signer.lower() != buyer_addr.lower():
-            return api_error("signature does not match 'from' for the USDC domain",
-                             code="INVALID_SIGNATURE", field="v")
-        try:
-            result = oc.x402_execute(payload)
-        except Exception as e:
-            log.warning("x402 execute failed: %s", e)
-            from chain.client import ContractNotConfigured
-            if isinstance(e, ContractNotConfigured):
-                return _chain_unavailable(e)
-            return api_error(f"on-chain payment failed: {str(e)[:200]}", 502, code="PAYMENT_FAILED")
-        tx_hash = (result.get("txHashes") or {}).get("permit") or ""
-        order_id = record_order_from_payment(agent_id, buyer_addr, amount_usdc,
-                                              paid=True, task=task, tx_hash=tx_hash)
-        return jsonify({**result, "orderId": order_id, "realTx": True})
-
-    # No facilitator configured: record the order as awaiting payment.
-    order_id = record_order_from_payment(agent_id, buyer_addr, amount_usdc, paid=False, task=task)
-    return jsonify({
-        "orderId": order_id,
-        "agentId": agent_id,
-        "status": "pending_payment",
-        "realTx": False,
-        "note": "FACILITATOR_PRIVATE_KEY and PAYMENT_RECIPIENT are required to submit "
-                "the signed authorization on-chain; the order was recorded as pending_payment.",
-    })
+    The old body accepted a task and a platform-recipient permit without an
+    immutable approval or ENS snapshot. Keeping it callable would create a
+    payment bypass even if the new route is correct.
+    """
+    return api_error(
+        "legacy payment path disabled; create a protected hire intent and use its x402 work route",
+        410, code="LEGACY_PAYMENT_DISABLED",
+    )
 
 
 @bp.route("/api/agents/register", methods=["POST"])

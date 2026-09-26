@@ -299,3 +299,130 @@ class ChainTransaction(db.Model):
             "meta": json.loads(self.meta or "{}"),
             "explorer": explorer_url("tx", self.tx_hash) if self.tx_hash else None,
         }
+
+
+# ── Protected hiring flow ────────────────────────────────────────────────────
+
+class HireIntent(db.Model):
+    """Immutable purchase terms and the server-owned task for one hire.
+
+    The intent is deliberately separate from the historical ``Order`` model.
+    It is the authorization boundary for the named-agent flow: an approval,
+    screening decision, payment requirements, and the delivered result all
+    refer back to this exact row.
+    """
+
+    __tablename__ = "hire_intents"
+
+    id                    = db.Column(db.String(32), primary_key=True)
+    agent_id              = db.Column(db.Integer, db.ForeignKey("agents.id"), nullable=True)
+    agent                 = db.relationship("Agent")
+    owner_id              = db.Column(db.String(160), nullable=False)
+    payer                 = db.Column(db.String(64), nullable=False)
+    specialist_name       = db.Column(db.String(255), nullable=False)
+    approved_endpoint     = db.Column(db.String(500), nullable=False)
+    pay_to                = db.Column(db.String(64), nullable=False)
+    chain_id              = db.Column(db.Integer, nullable=False)
+    network               = db.Column(db.String(80), nullable=False)
+    token_address         = db.Column(db.String(64), nullable=False)
+    amount_atomic         = db.Column(db.BigInteger, nullable=False)
+    task                  = db.Column(db.Text, nullable=False)
+    task_hash             = db.Column(db.String(66), nullable=False)
+    ens_snapshot          = db.Column(db.Text, nullable=False, default="{}")
+    canonical_terms       = db.Column(db.Text, nullable=False, default="{}")
+    policy_version        = db.Column(db.String(40), nullable=False, default="hire-v1")
+    intent_hash           = db.Column(db.String(66), nullable=False, unique=True)
+    status                = db.Column(db.String(32), nullable=False, default="awaiting_approval", index=True)
+    screening             = db.Column(db.Text, nullable=False, default="{}")
+    payment_fingerprint   = db.Column(db.String(64), nullable=True)
+    receipt               = db.Column(db.Text, nullable=False, default="{}")
+    result                = db.Column(db.Text, nullable=True)
+    denial_reason         = db.Column(db.Text, nullable=False, default="")
+    expires_at            = db.Column(db.DateTime, nullable=False)
+    claimed_at            = db.Column(db.DateTime, nullable=True)
+    created_at            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
+                                      onupdate=lambda: datetime.now(timezone.utc))
+
+    approval = db.relationship("HireApproval", back_populates="intent", uselist=False,
+                               cascade="all, delete-orphan")
+
+    def _json(self, value: str) -> dict:
+        try:
+            return json.loads(value or "{}")
+        except (TypeError, ValueError):
+            return {}
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "agentId": self.agent_id,
+            "ownerId": self.owner_id,
+            "payer": self.payer,
+            "specialistName": self.specialist_name,
+            "approvedEndpoint": self.approved_endpoint,
+            "payTo": self.pay_to,
+            "chainId": self.chain_id,
+            "network": self.network,
+            "tokenAddress": self.token_address,
+            "amountAtomic": str(self.amount_atomic),
+            "amountUSDC": self.amount_atomic / 1_000_000,
+            "taskHash": self.task_hash,
+            "intentHash": self.intent_hash,
+            "ensSnapshot": self._json(self.ens_snapshot),
+            "canonicalTerms": self._json(self.canonical_terms),
+            "policyVersion": self.policy_version,
+            "status": self.status,
+            "screening": self._json(self.screening),
+            "receipt": self._json(self.receipt),
+            "result": self.result,
+            "denialReason": self.denial_reason,
+            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f"<HireIntent {self.id} {self.status}>"
+
+
+class HireApproval(db.Model):
+    """Validated owner consent supplied by the identity/approval service."""
+
+    __tablename__ = "hire_approvals"
+
+    id                = db.Column(db.String(32), primary_key=True)
+    intent_id         = db.Column(db.String(32), db.ForeignKey("hire_intents.id"),
+                                  nullable=False, unique=True)
+    owner_id          = db.Column(db.String(160), nullable=False)
+    payer             = db.Column(db.String(64), nullable=False)
+    intent_hash       = db.Column(db.String(66), nullable=False)
+    state             = db.Column(db.String(24), nullable=False, default="pending")
+    proof_id          = db.Column(db.String(255), nullable=False, default="")
+    action_url        = db.Column(db.String(500), nullable=False, default="")
+    expires_at        = db.Column(db.DateTime, nullable=False)
+    denial_reason     = db.Column(db.Text, nullable=False, default="")
+    validated_at      = db.Column(db.DateTime, nullable=True)
+    created_at        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
+                                  onupdate=lambda: datetime.now(timezone.utc))
+
+    intent = db.relationship("HireIntent", back_populates="approval")
+
+    def to_dict(self) -> dict:
+        return {
+            "approvalId": self.id,
+            "intentId": self.intent_id,
+            "ownerId": self.owner_id,
+            "payer": self.payer,
+            "intentHash": self.intent_hash,
+            "state": self.state,
+            "proofId": self.proof_id,
+            "actionUrl": self.action_url,
+            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
+            "denialReason": self.denial_reason,
+            "validatedAt": self.validated_at.isoformat() if self.validated_at else None,
+        }
+
+    def __repr__(self):
+        return f"<HireApproval {self.id} {self.state}>"
