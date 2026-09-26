@@ -6,9 +6,10 @@ Ethereum Sepolia x402/escrow path.
 
 ## Flow
 
-1. The buyer requests x402 requirements and validates network, token, amount,
-   recipient and EIP-712 domain.
-2. Before signing, `app/screening/presign.py` makes three live provider calls:
+1. The buyer requests x402 requirements and the official Python x402 client
+   validates network, token, amount, recipient and EIP-712 domain.
+2. Before signing, `app/screening/presign.py` makes three live provider calls
+   through the official-client bridge in `chain/x402_official.py`:
    Quick Scan on the mainnet payee representation, Token Risks on mainnet
    USDC, and Scan Message on the exact authorization that will be signed.
 3. `PAY` proceeds, `CAP` proceeds only within the configured cap,
@@ -42,8 +43,9 @@ python scripts/intercepta_x402_smoke.py \
   --screening-address 0x<mainnet-risk-address>
 ```
 
-The command obtains the 402 requirements, runs all three provider scans, and
-only sends the second request if the pre-sign gate allows it. A blocked run
+The command obtains the 402 requirements, lets the official x402 client build
+the exact EIP-3009 payload, runs all three provider scans in its pre-sign
+hooks, and only sends the second request if the gate allows it. A blocked run
 prints the verdict and reasons and exits before signing or submitting payment.
 
 ## Provider feedback

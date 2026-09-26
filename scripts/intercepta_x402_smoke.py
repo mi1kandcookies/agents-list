@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.screening.presign import InterceptaPreSignGate, PreSignScreeningError
 from chain import x402_v2
 from chain.x402_v2 import Expectation, PaymentRequirements
+from chain.x402_official import create_payment_payload, payment_signature_header
 
 
 def main() -> int:
@@ -57,11 +58,12 @@ def main() -> int:
         payment_token=req.asset,
     )
     try:
-        payload = x402_v2.sign_payment(
+        payload = create_payment_payload(
+            required,
             payer,
-            req,
             expected=Expectation(pay_to=req.pay_to, amount_micro=req.amount_micro,
                                  asset=req.asset, network=req.network),
+            domain=None,
             before_sign=gate,
         )
     except PreSignScreeningError as exc:
@@ -73,7 +75,7 @@ def main() -> int:
     response = requests.post(
         args.url,
         json={"task": args.task},
-        headers={"X-PAYMENT": x402_v2.encode_header(payload),
+        headers={"PAYMENT-SIGNATURE": payment_signature_header(payload),
                  "Authorization": f"Mandate {mandate}"},
         timeout=args.timeout,
     )
@@ -83,7 +85,8 @@ def main() -> int:
         body = response.text[:1000]
     print(json.dumps({"stage": "payment", "status": response.status_code,
                       "payer": payer.address, "pay_to": req.pay_to,
-                      "amount_atomic": req.amount, "screening": gate.last_verdict.as_dict()
+                      "amount_atomic": req.amount, "sdk": "official-x402-python",
+                      "screening": gate.last_verdict.as_dict()
                       if gate.last_verdict else None, "body": body}, indent=2))
     return 0 if response.status_code == 200 else 1
 
