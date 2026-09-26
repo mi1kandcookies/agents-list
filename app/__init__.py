@@ -170,6 +170,8 @@ def _register_cli(app: Flask) -> None:
         names = seed_sample_stamps()
         print(f"SIMULATED dev stamps written for {len(names)} sample agents: {', '.join(names) or '-'}")
 
+    app.cli.add_command(__import__("app.demo_seed", fromlist=["seed_demo"]).seed_demo)
+
 
 def _init_database(app: Flask) -> None:
     """Bring the database schema to head when AUTO_MIGRATE is on.
