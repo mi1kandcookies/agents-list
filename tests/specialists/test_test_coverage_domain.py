@@ -407,6 +407,40 @@ def test_diff_and_patch_checks(tmp_path):
     assert C.diff_test_paths_only(tmp_path, {})["passed"] is False  # missing params
 
 
+def test_no_weakened_tests(tmp_path):
+    write(tmp_path, "ok.patch", PATCH_TESTS_ONLY)
+    assert C.no_weakened_tests(tmp_path, {"patch": "ok.patch"})["passed"] is True
+    weakened = (
+        "diff --git a/tests/test_zones.py b/tests/test_zones.py\n--- a/tests/test_zones.py\n"
+        "+++ b/tests/test_zones.py\n@@ -1,4 +1,3 @@\n"
+        "+@pytest.mark.skip(reason='flaky')\n def test_zone_a():\n-    assert zone_for('ab1') == 'A'\n"
+        "+    zone_for('ab1')\n-def test_zone_c():\n-    assert zone_for('ZE2') == 'C'\n"
+        "diff --git a/tests/test_old.py b/tests/test_old.py\ndeleted file mode 100644\n--- a/tests/test_old.py\n"
+        "+++ /dev/null\n@@ -1 +0,0 @@\n-def test_old(): pass\n"
+        "diff --git a/tests/conftest.py b/tests/conftest.py\nnew file mode 100644\n--- /dev/null\n"
+        "+++ b/tests/conftest.py\n@@ -0,0 +1,2 @@\n+def pytest_collection_modifyitems(items):\n+    items.clear()\n"
+        "diff --git a/web/app.test.ts b/web/app.test.ts\n--- a/web/app.test.ts\n+++ b/web/app.test.ts\n"
+        "@@ -1 +1 @@\n-it('adds', () => {})\n+it.only('adds', () => {})\n"
+        "diff --git a/tests/data/golden.json b/tests/data/golden.json\n--- a/tests/data/golden.json\n"
+        "+++ b/tests/data/golden.json\n@@ -1 +1 @@\n-{\"assert\": 1}\n+{\"assert\": 2}\n")
+    write(tmp_path, "weak.patch", weakened)
+    found = T.weakened_tests(T.parse_patch(weakened))
+    assert {(h["file"], h["kind"]) for h in found} == {
+        ("tests/test_zones.py", "adds a skip/xfail/only marker"),
+        ("tests/test_zones.py", "changes or removes an assertion"),
+        ("tests/test_zones.py", "changes or removes a test"),
+        ("tests/test_old.py", "deletes a test file"),
+        ("tests/conftest.py", "adds a hook that can drop tests or rewrite results"),
+        ("web/app.test.ts", "changes or removes a test"),
+        ("web/app.test.ts", "adds a skip/xfail/only marker")}
+    res = C.no_weakened_tests(tmp_path, {"patch": "weak.patch"})
+    assert res["passed"] is False and "tests/test_old.py: deletes a test file" in res["details"]
+    allowed = C.no_weakened_tests(tmp_path, {"patch": "weak.patch", "allow": [
+        "tests/test_zones.py", "tests/test_old.py", "tests/conftest.py", "web/app.test.ts"]})
+    assert allowed["passed"] is True
+    assert T.find_weakened_tests(tmp_path, patch="ok.patch") == {"findings": [], "clean": True}
+
+
 def _runs(ws: Path, n: int, flaky_on: int | None = None, prefix: str = "runs"):
     for i in range(1, n + 1):
         bad = flaky_on == i

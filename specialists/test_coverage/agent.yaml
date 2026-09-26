@@ -35,8 +35,8 @@ prompts:
 tools: [read_document, read_file, write_file, edit_file, list_files, search_files, run_command,
         ask_client, post_progress, submit_milestone,
         parse_coverage, coverage_delta, run_test_matrix, parse_test_results, diff_scope,
-        export_patch, find_assertion_free_tests, parse_mutation_report, rank_targets,
-        git_churn, scan_patch_secrets]
+        export_patch, find_assertion_free_tests, find_weakened_tests, parse_mutation_report,
+        rank_targets, git_churn, scan_patch_secrets]
 shell:
   allow: [git, python, python3, pytest, coverage, pip, uv, mutmut, node, npm, npx, pnpm, yarn,
           go, mvn, gradle, dotnet, cargo]
@@ -169,6 +169,9 @@ milestones:
         params: {patch: deliverables/m2-characterization/repo.patch, max_changed_lines: 800}
       - check: no_assertion_free_tests
         params: {patch: deliverables/m2-characterization/repo.patch}
+      - check: no_weakened_tests
+        description: No existing test deleted, skipped or loosened
+        params: {patch: deliverables/m2-characterization/repo.patch}
       - check: patch_secret_free
         params: {patch: deliverables/m2-characterization/repo.patch}
       - check: tests_stable
@@ -223,6 +226,9 @@ milestones:
       - check: patch_size_max
         params: {patch: deliverables/m3-coverage-uplift/repo.patch, max_changed_lines: 400}
       - check: no_assertion_free_tests
+        params: {patch: deliverables/m3-coverage-uplift/repo.patch}
+      - check: no_weakened_tests
+        description: No existing test deleted, skipped or loosened
         params: {patch: deliverables/m3-coverage-uplift/repo.patch}
       - check: patch_secret_free
         params: {patch: deliverables/m3-coverage-uplift/repo.patch}

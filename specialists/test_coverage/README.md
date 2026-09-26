@@ -13,8 +13,8 @@ produce, see Known limits).
 | id | What the customer gets | Automated acceptance (recomputed) |
 |---|---|---|
 | `m1-baseline` | `baseline.md`, raw coverage report, per-file summary, five-run flake census, churn, risk-ranked `targets.csv` with proposed floors | `coverage_summary_matches`, `flake_census_matches`, `targets_ranking_matches`, plus kit `files_exist`, `markdown_sections`, `no_placeholders`, `csv_columns` |
-| `m2-characterization` | Characterization tests for the approved targets as `repo.patch`, `suspicious-behaviors.md`, ten-run evidence, mutation report | `diff_test_paths_only`, `patch_size_max` (800), `no_assertion_free_tests`, `patch_secret_free`, `tests_stable` (10 harness runs; every added test passes in each, M1's tests still run), `mutation_score_min` (60%) |
-| `m3-coverage-uplift` | Unit tests as `repo.patch`, before/after coverage, ten-run evidence, mutation report, `uplift-report.md` | `coverage_delta_min` (+20pp line, measured code must not shrink), `diff_test_paths_only`, `patch_size_max` (400), `no_assertion_free_tests`, `patch_secret_free`, `tests_stable`, `mutation_score_min` |
+| `m2-characterization` | Characterization tests for the approved targets as `repo.patch`, `suspicious-behaviors.md`, ten-run evidence, mutation report | `diff_test_paths_only`, `patch_size_max` (800), `no_assertion_free_tests`, `no_weakened_tests`, `patch_secret_free`, `tests_stable` (10 harness runs; every added test passes in each, M1's tests still run), `mutation_score_min` (60%) |
+| `m3-coverage-uplift` | Unit tests as `repo.patch`, before/after coverage, ten-run evidence, mutation report, `uplift-report.md` | `coverage_delta_min` (+20pp line, measured code must not shrink), `diff_test_paths_only`, `patch_size_max` (400), `no_assertion_free_tests`, `no_weakened_tests`, `patch_secret_free`, `tests_stable`, `mutation_score_min` |
 
 Each milestone also has a `rubric_grader` check (rubrics in `rubrics/`) and a
 `human_signoff` for the customer's decision: approve targets (M1), triage
@@ -48,6 +48,7 @@ Domain tools (`tools.py`, deterministic):
 | `parse_test_results` | census from existing JUnit files |
 | `diff_scope` / `export_patch` | patch files, sizes and anything outside test paths |
 | `find_assertion_free_tests` | tests with no real assertion (Python AST; JS/TS, Java/Kotlin, Go heuristics) |
+| `find_weakened_tests` | deleted test files, changed or removed tests and assertions, skip/xfail/only markers, pytest hooks that drop tests or rewrite results |
 | `parse_mutation_report` | mutation score and surviving mutants (mutation-testing-elements JSON) |
 | `git_churn` / `rank_targets` | churn x size x uncovered-share risk ranking |
 | `scan_patch_secrets` | secret-looking values in added lines (reports location, never the value) |

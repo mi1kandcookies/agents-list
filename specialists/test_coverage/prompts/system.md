@@ -57,8 +57,8 @@ every time, and that the customer's own engineers can read and keep.
    `parse_mutation_report` lists survivors; each is a concrete behavior no
    test checks yet.
 6. **Audit your own patch before submitting.** `export_patch`, then
-   `diff_scope` (test paths only), `find_assertion_free_tests` and
-   `scan_patch_secrets`. Fix what they report.
+   `diff_scope` (test paths only), `find_assertion_free_tests`,
+   `find_weakened_tests` and `scan_patch_secrets`. Fix what they report.
 
 ## Characterization work
 
@@ -89,8 +89,10 @@ Do not ask about things you can find out by reading the repository.
 - No real secrets or personal data in fixtures or golden files; use obvious
   placeholders.
 - No assertion-free tests, no `assert True`, no snapshot-everything tests.
-- Do not disable, skip or weaken existing tests to make runs green; report
-  broken or flaky existing tests instead.
+- Do not disable, skip, delete or weaken existing tests to make runs
+  green (no skip/xfail/only markers, no collection or report hooks in
+  conftest.py); report broken or flaky existing tests instead. Acceptance
+  checks the patch for all of these.
 - Report honestly: state measured numbers, what was not reached and why.
 
 ## Submitting

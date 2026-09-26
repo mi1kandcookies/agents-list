@@ -551,7 +551,7 @@ def _sub_all(arg: str, subs: dict[str, str]) -> str:
 # --- diffs -------------------------------------------------------------------
 
 def parse_patch(text: str) -> list[dict[str, Any]]:
-    """Files in a unified (git) diff with added/removed counts and added lines.
+    """Files in a unified (git) diff with added/removed counts and lines.
 
     Hunks are consumed by the line counts in their "@@ -a,b +c,d @@" header,
     so a "--- "/"+++ " pair inside a hunk can never pose as a new file and a
@@ -563,7 +563,7 @@ def parse_patch(text: str) -> list[dict[str, Any]]:
 
     def start(old: str = "", new: str = "") -> dict[str, Any]:
         entry = {"old": old, "new": new, "added": 0, "removed": 0, "added_lines": [],
-                 "binary": False, "hunks": 0}
+                 "removed_lines": [], "binary": False, "hunks": 0}
         files.append(entry)
         return entry
 
@@ -575,6 +575,7 @@ def parse_patch(text: str) -> list[dict[str, Any]]:
                 new_left -= 1
             elif line.startswith("-"):
                 cur["removed"] += 1
+                cur["removed_lines"].append(line[1:])
                 old_left -= 1
             elif line.startswith("\\"):
                 pass  # "\ No newline at end of file"
@@ -872,6 +873,62 @@ def junit_id_matches(test_id: str, test: dict) -> bool:
     return not cls or Path(test["file"]).stem in cls.split(".")
 
 
+# --- weakened tests ----------------------------------------------------------
+
+_SOURCE_EXT = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java", ".kt", ".go", ".cs",
+               ".rb", ".rs", ".php"}
+_TEST_DEF = re.compile(r"^\s*(?:async\s+)?def\s+test\w*\s*\(|^\s*(?:it|test|describe)(?:\.\w+)?\s*\("
+                       r"|@Test\b|^\s*func\s+Test\w*\s*\(|#\[test\]")
+_ASSERTION = re.compile(r"\bassert\w*\b|\bexpect\s*\(|\.should\b|\bverify\s*\(|\bpytest\.raises\b"
+                        r"|\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\b|\b(?:assert|require)\.\w+\(")
+_DISABLE = re.compile(
+    r"@pytest\.mark\.(?:skip|skipif|xfail)\b|\bpytest\.(?:skip|xfail)\s*\(|@unittest\.(?:skip\w*|expectedFailure)\b"
+    r"|\.skipTest\s*\(|\b(?:it|test|describe)\.(?:skip|only|todo|failing)\s*\(|\bx(?:it|test|describe)\s*\("
+    r"|@Disabled\b|@Ignore\b|\bt\.Skip(?:f|Now)?\s*\(|#\[ignore\]|\[Ignore\b")
+# pytest hooks and settings that drop tests from a run or rewrite their outcome.
+_RESULT_HOOK = re.compile(
+    r"\bcollect_ignore(?:_glob)?\b|\bpytest_(?:collection_modifyitems|ignore_collect|pycollect_makeitem"
+    r"|make_collect_report|runtest_\w+|report_teststatus|deselected|collectreport)\b")
+
+
+def weakened_tests(files: list[dict[str, Any]], test_globs: list[str] | None = None,
+                   allow: list[str] | None = None) -> list[dict]:
+    """How a parsed patch could weaken the suite it lands in: deleted test
+    files, changed or removed test definitions and assertions, added
+    skip/xfail/only markers, and pytest hooks that can drop tests or rewrite
+    results. `allow` lists paths the SOW lets the patch change this way."""
+    globs, allow = list(test_globs or DEFAULT_TEST_GLOBS), list(allow or [])
+    found: list[dict] = []
+    for f in files:
+        paths = {f["path"], f["old"]} - {"", "/dev/null"}
+        if not any(path_matches(p, globs) for p in paths) or any(path_matches(p, allow) for p in paths):
+            continue
+        if f["status"] == "deleted":
+            found.append({"file": f["path"], "kind": "deletes a test file"})
+            continue
+        if Path(f["path"]).suffix.lower() not in _SOURCE_EXT:
+            continue
+        for line in f["removed_lines"]:
+            kind = ("changes or removes a test" if _TEST_DEF.search(line)
+                    else "changes or removes an assertion" if _ASSERTION.search(line) else None)
+            if kind:
+                found.append({"file": f["path"], "kind": kind, "line": line.strip()[:120]})
+        for line in f["added_lines"]:
+            kind = ("adds a skip/xfail/only marker" if _DISABLE.search(line)
+                    else "adds a hook that can drop tests or rewrite results" if _RESULT_HOOK.search(line)
+                    else None)
+            if kind:
+                found.append({"file": f["path"], "kind": kind, "line": line.strip()[:120]})
+    return found
+
+
+def find_weakened_tests(workspace: Path, *, fetch=None, run=None, resolve_path=None, patch: str,
+                        test_globs: list[str] | None = None, allow: list[str] | None = None) -> dict:
+    """Deleted, disabled or loosened tests in a patch (see weakened_tests)."""
+    found = weakened_tests(parse_patch(_read_text(workspace, patch, resolve_path)), test_globs, allow)
+    return {"findings": found, "clean": not found}
+
+
 # --- mutation reports --------------------------------------------------------
 
 DETECTED = {"Killed", "Timeout"}
@@ -1104,6 +1161,13 @@ TOOL_DEFS: list[dict[str, Any]] = [
      "input_schema": {"type": "object", "properties": {
          "patch": _PATH, "paths": _GLOBS, "repo_dir": _PATH, "helpers": _GLOBS,
          "test_globs": _GLOBS}}},
+    {"name": "find_weakened_tests", "risk": "read", "function": find_weakened_tests,
+     "description": "List ways a patch weakens existing tests: deleted test files, changed or "
+                    "removed test definitions and assertions, added skip/xfail/only markers, and "
+                    "pytest hooks that drop tests or rewrite results. `allow` exempts paths the "
+                    "SOW approved.",
+     "input_schema": {"type": "object", "required": ["patch"], "properties": {
+         "patch": _PATH, "test_globs": _GLOBS, "allow": _GLOBS}}},
     {"name": "parse_mutation_report", "risk": "write", "function": parse_mutation_report,
      "description": "Score a mutation-testing-elements JSON report (detected / (detected + "
                     "survived + no-coverage)) per file and overall, and list surviving mutants.",

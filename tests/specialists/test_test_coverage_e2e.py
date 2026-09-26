@@ -236,6 +236,8 @@ def workspace(tmp_path: Path, *, ci_runs: bool = False, history: bool = True) ->
     an uploaded archive (or an eval workspace) arrives."""
     ws = tmp_path / "ws"
     shutil.copytree(FIXTURE / "repo", ws / "repo")
+    for source in (ws / "repo").rglob("*.py"):   # LF as committed, whatever the checkout did
+        source.write_bytes(source.read_bytes().replace(b"\r\n", b"\n"))
     shutil.copytree(FIXTURE / "inputs", ws / "inputs")
     (ws / "inputs" / "ci").mkdir()
     shutil.copyfile(FIXTURE / "coverage-baseline.xml", ws / "inputs" / "ci" / "coverage.xml")
@@ -728,3 +730,18 @@ def test_m2_must_keep_running_the_suite_m1_measured(spec, tmp_path):
     assert list(problems) == ["tests_stable"]
     assert "earlier tests no longer in every run" in problems["tests_stable"]
     assert "test_zones::test_zone_a" in problems["tests_stable"]
+
+
+@needs_git
+def test_m2_skipping_an_existing_flaky_test_is_caught(spec, tmp_path):
+    """The obvious shortcut to ten green runs: mark the customer's flaky test
+    skip. Every other check passes; no_weakened_tests does not."""
+    ws = workspace(tmp_path)
+    skip = ("edit_file", {"path": "repo/tests/test_zones.py", "old_text": "def test_zone_a():",
+                          "new_text": "import pytest\n\n\n@pytest.mark.skip(reason='flaky')\ndef test_zone_a():"})
+    sub, events = run(spec, ws, "characterization-fares", "m2-characterization", m2_plan(skip), ReplayRunner())
+    assert not tool_errors(events)
+    assert sub.status == "needs_revision"
+    problems = failed(sub)
+    assert list(problems) == ["no_weakened_tests"]
+    assert "tests/test_zones.py: adds a skip/xfail/only marker" in problems["no_weakened_tests"]

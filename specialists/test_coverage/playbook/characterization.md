@@ -43,8 +43,10 @@ it. Add an entry to `suspicious-behaviors.md`:
 - Customer decision: (bug / intended / won't fix)
 ```
 
-Mark the pinning test with the framework's usual marker or a name suffix
-(`_observed`) so it is easy to flip once the customer decides.
+Mark the pinning test with a name suffix (`_observed`), or a custom marker
+registered in the tests' own conftest.py, so it is easy to flip once the
+customer decides. Never skip or xfail it: it must run and pass like any
+other new test.
 
 ## Evidence for the report
 
@@ -54,4 +56,5 @@ Mark the pinning test with the framework's usual marker or a name suffix
 - A mutation report (mutation-testing-elements JSON) scoped to the targets,
   saved as `deliverables/m2-characterization/mutation.json`.
 - `export_patch` to `deliverables/m2-characterization/repo.patch`, then
-  `diff_scope`, `find_assertion_free_tests` and `scan_patch_secrets`.
+  `diff_scope`, `find_assertion_free_tests`, `find_weakened_tests` and
+  `scan_patch_secrets`.

@@ -171,6 +171,22 @@ def no_assertion_free_tests(workspace: Path, params: dict, *, run=None) -> dict:
 
 
 @_guard
+def no_weakened_tests(workspace: Path, params: dict, *, run=None) -> dict:
+    """The patch deletes, disables and loosens no test (tools.weakened_tests).
+
+    params: patch, test_globs (opt), allow (opt: paths the SOW lets the patch change)
+    """
+    _need(params, "patch")
+    found = T.weakened_tests(T.parse_patch(T._read_text(workspace, params["patch"])),
+                             params.get("test_globs"), params.get("allow"))
+    if found:
+        items = [f"{h['file']}: {h['kind']}" + (f" ({h['line']})" if h.get("line") else "")
+                 for h in found[:10]]
+        return _result(False, "; ".join(items))
+    return _result(True, "no test deleted, disabled or loosened")
+
+
+@_guard
 def patch_secret_free(workspace: Path, params: dict, *, run=None) -> dict:
     """No secret-looking values in lines the patch adds (fixtures, golden files)."""
     _need(params, "patch")
@@ -385,6 +401,7 @@ CHECK_DEFS: dict[str, Callable[..., dict[str, Any]]] = {
     "diff_test_paths_only": diff_test_paths_only,
     "patch_size_max": patch_size_max,
     "no_assertion_free_tests": no_assertion_free_tests,
+    "no_weakened_tests": no_weakened_tests,
     "patch_secret_free": patch_secret_free,
     "tests_stable": tests_stable,
     "flake_census_matches": flake_census_matches,
