@@ -105,14 +105,16 @@ NUMERIC_CLAIM_RE = re.compile(
     r"\b\d[\d,]*(?:\.\d+)?\s?(?:million|billion|bn|mm)\b", re.I)
 RECOMMENDATION_PATTERNS = [
     r"\b(?:strong\s+)?(?:buy|sell|hold|accumulate|reduce)\s+rating\b",
-    r"\brat(?:e|es|ed|ing)\s+(?:the\s+(?:stock|shares|company)\s+|it\s+|shares\s+)?(?:an?\s+)?"
-    r"(?:strong\s+)?(?:buy|sell|hold|outperform|underperform|overweight|underweight)\b",
+    r"\brat(?:e|es|ed|ing)\s+(?:the\s+(?:stock|shares|company)|it|(?:its\s+)?shares)\s+"
+    r"(?:as\s+)?(?:an?\s+)?(?:strong\s+)?"
+    r"(?:buy|sell|hold|outperform|underperform|overweight|underweight)\b",
+    r"\b(?:outperform|underperform|overweight|underweight|market\s+perform)\s+rating\b",
     r"\bprice\s+target\b|\btarget\s+price\b",
     r"\b(?:we|i)\s+(?:would\s+)?(?:recommend|advise|suggest|urge)\s+(?:that\s+\w+\s+)?"
     r"(?:buy|buying|sell|selling|purchas\w*|short\w*|invest\w*|accumulat\w*|exit\w*)\b",
     r"\b(?:initiat\w+\s+coverage|upgrade\w*\s+to\s+(?:buy|outperform|overweight)|"
     r"downgrade\w*\s+to\s+(?:sell|underperform|underweight))\b",
-    r"\b(?:is|looks|appears)\s+(?:a\s+)?(?:compelling\s+|clear\s+)?(?:buy|sell)\b",
+    r"\b(?:is|looks|appears)\s+(?:like\s+)?(?:a\s+)?(?:compelling\s+|clear\s+)?(?:buy|sell)\b(?!-)",
 ]
 DISCLAIMER_MARKERS = ("not investment advice", "not a recommendation", "does not constitute")
 
@@ -397,22 +399,37 @@ def comps_recompute(workspace: Path, params: dict, *, run=None) -> dict:
 def _prose_segments(text: str) -> list[str]:
     """Lines/sentences of a markdown memo that make claims (skips headings,
     code, the disclaimer and reference lists)."""
-    out, fenced = [], False
+    out: list[str] = []
+    para: list[str] = []
+    fenced = False
+
+    def flush() -> None:
+        # Prose lines are joined into a paragraph first so a figure and its
+        # tag may sit on different lines of a wrapped sentence.
+        joined = " ".join(para)
+        para.clear()
+        for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z(\[])", joined):
+            if sentence and not any(m in sentence.lower() for m in DISCLAIMER_MARKERS):
+                out.append(sentence)
+
     for line in text.splitlines():
         s = line.strip()
         if s.startswith("```"):
+            flush()
             fenced = not fenced
             continue
-        if fenced or not s or s.startswith("#"):
+        if fenced:
             continue
-        low = s.lower()
-        if any(m in low for m in DISCLAIMER_MARKERS) or re.match(r"^\[?(c\d+|f:)", low):
+        if not s or s.startswith("#"):
+            flush()
             continue
         if s.startswith("|"):
+            flush()
             if not re.fullmatch(r"[|\s:-]+", s):
                 out.append(s)
             continue
-        out.extend(p for p in re.split(r"(?<=[.!?])\s+(?=[A-Z(\[])", s) if p)
+        para.append(s)
+    flush()
     return out
 
 
@@ -454,10 +471,10 @@ def _figure_ok(match: re.Match, comps: dict) -> str:
 def memo_figures_match(workspace: Path, params: dict, *, run=None) -> dict:
     """Memo numbers are cited and match the workbook.
 
-    Every sentence or table row with a figure ($, %, multiple, million/billion)
-    must carry a figure tag `[F:<cik>:<fiscal_year>:<comps column>]` or a
-    ledger claim `[C#]`. Each figure tag must match the comps.csv value at the
-    precision shown. params: path (memo), comps, require_citation (default true).
+    Every figure ($, %, multiple, million/billion) is either followed by its
+    own figure tag `[F:<cik>:<fiscal_year>:<comps column>]` or sits in a
+    sentence / table row that cites a ledger claim `[C#]`. Each figure tag must
+    match the comps.csv value at the precision shown. params: path (memo), comps, require_citation (default true).
     """
     memo_rel = params.get("path", MEMO_PATH)
     memo = Path(workspace) / memo_rel
@@ -478,7 +495,10 @@ def memo_figures_match(workspace: Path, params: dict, *, run=None) -> dict:
     uncited = 0
     if params.get("require_citation", True):
         for seg in _prose_segments(text):
-            if NUMERIC_CLAIM_RE.search(seg) and "[F:" not in seg and not CLAIM_RE.search(seg):
+            # A figure-tagged number is cited by its own tag; any other figure
+            # in the sentence or table row needs a ledger claim [C#].
+            rest = FIGURE_REF_RE.sub(" ", seg)
+            if NUMERIC_CLAIM_RE.search(rest) and not CLAIM_RE.search(rest):
                 uncited += 1
                 failures.append(f"uncited figure: {seg[:90]!r}")
     total = tagged + uncited
