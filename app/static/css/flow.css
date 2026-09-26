@@ -1,34 +1,11 @@
 /*
  * Guided job flow (/new) and engagement estimate (/estimate/<id>).
- *
- * Tokens: the light palette is defined on .flow so these pages look right on
- * their own; the values match the site-wide light theme, so once that theme
- * defines the same custom properties on :root this block can be deleted.
+ * Colours, type and radii come from the site tokens in main.css.
  */
 .flow {
-  --bg: #FAFAF9;
-  --surface: #FFFFFF;
-  --border: #E7E5E4;
-  --border-strong: #D6D3D1;
-  --ink: #1C1917;
-  --ink-2: #57534E;
-  --ink-3: #78716C;
-  --accent: #4F46E5;
-  --accent-ink: #4338CA;
-  --accent-soft: #EEF2FF;
-  --success: #059669;
-  --success-soft: #ECFDF5;
-  --warning: #D97706;
-  --warning-soft: #FFFBEB;
-  --danger: #B91C1C;
-  --danger-soft: #FEF2F2;
-  --radius: 12px;
-  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-ui);
+  font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.55;
   padding: 40px 16px 72px;
@@ -41,10 +18,6 @@
 .flow kbd {
   font-family: var(--font-mono); font-size: .8em; padding: 1px 5px;
   border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface);
-}
-.sr-only {
-  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
 .flow-wrap { max-width: 1040px; margin: 0 auto; }
@@ -63,7 +36,7 @@
 .flow-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .25s ease; }
 .status {
   font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 999px;
-  background: var(--accent-soft); color: var(--accent-ink);
+  background: var(--accent-soft); color: var(--accent-hover);
 }
 
 .flow-restore, .flow-note {
@@ -71,12 +44,12 @@
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
   padding: 10px 14px; margin-bottom: 16px; font-size: 14px; color: var(--ink-2);
 }
-.flow-note { background: var(--warning-soft); border-color: #FDE68A; }
+.flow-note { background: var(--warning-soft); border-color: var(--warning-line); }
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
 .flow-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
 .flow-main {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 32px; min-width: 0;
 }
 .flow-step h2, .flow-block h2 {
@@ -96,8 +69,8 @@
   transition: border-color .15s, box-shadow .15s;
 }
 .flow textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
-.flow textarea::placeholder, .finput::placeholder { color: #A8A29E; }
-.flow textarea:focus, .finput:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 70, 229, .15); }
+.flow textarea::placeholder, .finput::placeholder { color: var(--ink-3); }
+.flow textarea:focus, .finput:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .finput[type="date"] { max-width: 220px; }
 .flow input[type="range"] { accent-color: var(--accent); height: auto; }
 
@@ -115,9 +88,9 @@
 
 .flow-error {
   margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 14px;
-  background: var(--danger-soft); color: var(--danger); border: 1px solid #FECACA;
+  background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-line);
 }
-.flow-error.is-notice { background: var(--warning-soft); color: #92400E; border-color: #FDE68A; }
+.flow-error.is-notice { background: var(--warning-soft); color: var(--ink); border-color: var(--warning-line); }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .fbtn {
@@ -127,12 +100,12 @@
   transition: background .15s, border-color .15s, color .15s;
 }
 .fbtn:disabled { opacity: .55; cursor: not-allowed; }
-.fbtn-primary { background: var(--accent); color: #fff; }
-.fbtn-primary:hover:not(:disabled) { background: var(--accent-ink); }
+.fbtn-primary { background: var(--accent); color: var(--on-accent); }
+.fbtn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .fbtn-ghost { background: var(--surface); color: var(--ink); border-color: var(--border-strong); }
 .fbtn-ghost:hover:not(:disabled) { border-color: var(--ink-3); }
 .fbtn-link { background: none; border: 0; padding: 6px 0; color: var(--accent); font-weight: 500; }
-.fbtn-link:hover { color: var(--accent-ink); text-decoration: underline; }
+.fbtn-link:hover { color: var(--accent-hover); text-decoration: underline; }
 .fbtn-lg { padding: 14px 22px; font-size: 15px; }
 
 .flow-nav {
@@ -158,7 +131,7 @@
   font-size: 14px; font-weight: 500; color: var(--ink); transition: border-color .15s, background .15s;
 }
 .chip:hover .chip-body { border-color: var(--ink-3); }
-.chip input:checked + .chip-body { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.chip input:checked + .chip-body { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-hover); }
 .chip input:focus-visible + .chip-body { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chip-hint { font-size: 13px; font-weight: 400; color: var(--ink-3); }
 .chips-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
@@ -222,8 +195,8 @@
 .est-tips { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
 .est-tips:empty { display: none; }
 .conf { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
-.conf-low { background: var(--warning-soft); color: #B45309; }
-.conf-medium { background: var(--accent-soft); color: var(--accent-ink); }
+.conf-low { background: var(--warning-soft); color: var(--warning); }
+.conf-medium { background: var(--accent-soft); color: var(--accent-hover); }
 .conf-good { background: var(--success-soft); color: var(--success); }
 
 /* ── Agent cards ─────────────────────────────────────────────────────────── */
@@ -278,20 +251,20 @@
 .next-steps { margin: 16px 0 24px; padding-left: 20px; display: grid; gap: 8px; color: var(--ink-2); }
 .sow-created {
   margin-bottom: 20px; padding: 12px 14px; border-radius: 10px;
-  background: var(--success-soft); border: 1px solid #A7F3D0;
+  background: var(--success-soft); border: 1px solid var(--success-line);
 }
 .sow-created p { margin: 0; }
 
 /* ── Summary panel ───────────────────────────────────────────────────────── */
 .flow-summary {
   position: sticky; top: 16px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 20px;
+  border-radius: var(--radius-lg); padding: 20px;
 }
 .flow-summary h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 0 0 12px; }
 .flow-summary dl { margin: 0; display: grid; gap: 12px; }
 .flow-summary dt { font-size: 12px; color: var(--ink-3); }
 .flow-summary dd { margin: 2px 0 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
-.flow-summary dd.is-empty { color: #A8A29E; }
+.flow-summary dd.is-empty { color: var(--ink-3); }
 .sum-note { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-3); }
 
 /* ── Small screens ───────────────────────────────────────────────────────── */
