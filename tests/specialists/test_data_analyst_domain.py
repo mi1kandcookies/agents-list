@@ -12,9 +12,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+import yaml
 
 from agentkit.errors import ToolError
-from specialists.data_analyst import tools
+from specialists.data_analyst import checks, tools
 
 PKG = Path(__file__).resolve().parents[2] / "specialists" / "data_analyst"
 FIXTURE = PKG / "evals" / "fixtures" / "tamarind-loop"
@@ -184,7 +185,6 @@ def write_metrics(ws: Path, metrics: list[dict], queries: dict[str, str]) -> Non
     (base / "queries").mkdir(parents=True, exist_ok=True)
     for name, sql in queries.items():
         (base / "queries" / f"{name}.sql").write_text(sql, encoding="utf-8")
-    import yaml
     (base / "metrics.yaml").write_text(yaml.safe_dump({"metrics": metrics}), encoding="utf-8")
 
 
@@ -236,7 +236,6 @@ def test_reconcile_metrics_zero_tolerance_is_respected(ws):
 
 def test_reconcile_metrics_reports_missing_metric(ws):
     good_metrics(ws)
-    import yaml
     path = ws / "deliverables/m2-metrics/metrics.yaml"
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     doc["metrics"] = doc["metrics"][:1]
@@ -247,7 +246,6 @@ def test_reconcile_metrics_reports_missing_metric(ws):
 
 def test_metric_query_path_cannot_escape(ws):
     good_metrics(ws)
-    import yaml
     path = ws / "deliverables/m2-metrics/metrics.yaml"
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     doc["metrics"][0]["query"] = "../../../../outside.sql"
@@ -263,3 +261,200 @@ def test_tool_defs_are_well_formed():
         assert set(d) == {"name", "description", "input_schema", "risk", "function"}
         assert d["risk"] in ("read", "write", "exec", "network", "external")
         assert d["input_schema"]["type"] == "object" and callable(d["function"])
+
+
+# --- checks ------------------------------------------------------------------------
+
+def test_profile_check_passes_on_tool_output(ws):
+    tools.profile_tables(ws)
+    res = checks.profile_matches_source(ws, {})
+    assert res["passed"] is True and res["score"] == 1.0, res
+
+
+def test_profile_check_fails_on_forged_counts(ws):
+    tools.profile_tables(ws)
+    path = ws / "deliverables/m1-profile/profile.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["tables"]["invoices"]["row_count"] -= 1           # hide the duplicate row
+    doc["tables"]["invoices"]["duplicate_rows"] = 0
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    res = checks.profile_matches_source(ws, {})
+    assert res["passed"] is False and "invoices" in res["details"]
+
+
+def test_profile_check_fails_when_a_table_is_missing(ws):
+    tools.profile_tables(ws, tables=["customers"])
+    res = checks.profile_matches_source(ws, {})
+    assert res["passed"] is False and "not profiled" in res["details"]
+    assert checks.profile_matches_source(ws, {"tables": ["customers"]})["passed"] is True
+
+
+def test_profile_check_fails_on_forged_null_count(ws):
+    tools.profile_tables(ws)
+    path = ws / "deliverables/m1-profile/profile.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    region = next(c for c in doc["tables"]["customers"]["columns"] if c["name"] == "region")
+    region["nulls"] = 0
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    res = checks.profile_matches_source(ws, {})
+    assert res["passed"] is False and "region.nulls" in res["details"]
+
+
+def test_profile_check_without_file_fails(ws):
+    assert checks.profile_matches_source(ws, {})["passed"] is False
+
+
+def test_queries_reexecute_pass_and_tamper(ws):
+    tools.save_query(ws, name="aug_revenue", sql=AUG_REVENUE_SQL, milestone="m3-analysis")
+    assert checks.queries_reexecute(ws, {"milestone": "m3-analysis"})["passed"] is True
+    result = ws / "deliverables/m3-analysis/results/aug_revenue.csv"
+    result.write_text("revenue\n5458.0\n", encoding="utf-8")
+    res = checks.queries_reexecute(ws, {"milestone": "m3-analysis"})
+    assert res["passed"] is False and "differs" in res["details"]
+
+
+def test_queries_reexecute_rejects_write_sql_and_missing_results(ws):
+    qdir = ws / "deliverables/m3-analysis/queries"
+    qdir.mkdir(parents=True)
+    (qdir / "evil.sql").write_text("DELETE FROM invoices;", encoding="utf-8")
+    (qdir / "orphan.sql").write_text("SELECT 1 AS one;", encoding="utf-8")
+    res = checks.queries_reexecute(ws, {"milestone": "m3-analysis"})
+    assert res["passed"] is False
+    assert "evil.sql" in res["details"] and "orphan.sql" in res["details"]
+
+
+def test_queries_reexecute_needs_minimum(ws):
+    res = checks.queries_reexecute(ws, {"milestone": "m3-analysis", "min_queries": 2})
+    assert res["passed"] is False
+
+
+def _analysis(ws: Path, line: str) -> None:
+    tools.save_query(ws, name="aug_revenue", sql=AUG_REVENUE_SQL, milestone="m3-analysis")
+    tools.record_figure(ws, milestone="m3-analysis", figure_id="aug-rev", query="aug_revenue",
+                        column="revenue", unit="usd")
+    (ws / "deliverables/m3-analysis/report.md").write_text(
+        "# Report\n\n## Findings\n\n" + line + "\n", encoding="utf-8")
+
+
+def test_figures_check_passes_when_report_matches(ws):
+    _analysis(ws, "August paid revenue was $4,436.00 [F:aug-rev].")
+    res = checks.figures_match_queries(ws, {"milestone": "m3-analysis"})
+    assert res["passed"] is True, res
+
+
+def test_figures_check_fails_when_report_misstates_number(ws):
+    _analysis(ws, "August paid revenue was $5,458.00 [F:aug-rev].")
+    res = checks.figures_match_queries(ws, {"milestone": "m3-analysis"})
+    assert res["passed"] is False and "does not show $4,436.00" in res["details"]
+
+
+def test_figures_check_fails_on_forged_figure_value(ws):
+    _analysis(ws, "August paid revenue was $5,458.00 [F:aug-rev].")
+    path = ws / "deliverables/m3-analysis/figures.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["figures"][0].update(value=5458.0, display="$5,458.00")
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    res = checks.figures_match_queries(ws, {"milestone": "m3-analysis"})
+    assert res["passed"] is False and "query returns 4436.0" in res["details"]
+
+
+def test_figures_check_fails_on_unknown_or_uncited_marker(ws):
+    _analysis(ws, "Revenue grew 12% [F:made-up].")
+    res = checks.figures_match_queries(ws, {"milestone": "m3-analysis"})
+    assert res["passed"] is False
+    assert "made-up" in res["details"] and "aug-rev: not cited" in res["details"]
+
+
+def test_figures_check_fails_when_query_changes_underneath(ws):
+    _analysis(ws, "August paid revenue was $4,436.00 [F:aug-rev].")
+    (ws / "deliverables/m3-analysis/queries/aug_revenue.sql").write_text(
+        "SELECT 1.0 AS revenue;", encoding="utf-8")
+    assert checks.figures_match_queries(ws, {"milestone": "m3-analysis"})["passed"] is False
+
+
+def test_figures_check_missing_files(ws):
+    assert checks.figures_match_queries(ws, {"milestone": "m3-analysis"})["passed"] is False
+
+
+def test_metrics_checks_pass_on_good_definitions(ws):
+    good_metrics(ws)
+    tools.reconcile_metrics(ws)
+    assert checks.metrics_valid(ws, {"min_metrics": 4})["passed"] is True
+    res = checks.metrics_reconcile(ws, {})
+    assert res["passed"] is True and res["score"] == 1.0, res
+
+
+def test_metrics_valid_flags_incomplete_and_broken(ws):
+    good_metrics(ws)
+    path = ws / "deliverables/m2-metrics/metrics.yaml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc["metrics"][0]["owner"] = ""
+    doc["metrics"][1]["value_column"] = "nope"
+    doc["metrics"].append(dict(doc["metrics"][2]))
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    res = checks.metrics_valid(ws, {})
+    assert res["passed"] is False
+    assert "missing owner" in res["details"] and "nope" in res["details"] and "twice" in res["details"]
+
+
+def test_metrics_valid_bad_yaml(ws):
+    base = ws / "deliverables/m2-metrics"
+    base.mkdir(parents=True)
+    (base / "metrics.yaml").write_text("metrics: [unclosed", encoding="utf-8")
+    assert checks.metrics_valid(ws, {})["passed"] is False
+
+
+NAIVE_AUG = ("SELECT SUM(amount_usd) AS value FROM invoices WHERE status = 'paid' "
+             "AND invoice_date LIKE '2026-08%';")
+
+
+def test_metrics_reconcile_fails_on_naive_definition(ws):
+    good_metrics(ws)
+    (ws / "deliverables/m2-metrics/queries/paid_revenue_2026_08.sql").write_text(NAIVE_AUG, encoding="utf-8")
+    tools.reconcile_metrics(ws)
+    res = checks.metrics_reconcile(ws, {})
+    assert res["passed"] is False and "paid_revenue_2026_08: mismatch" in res["details"]
+
+
+def test_metrics_reconcile_fails_on_forged_reconciliation(ws):
+    good_metrics(ws)
+    (ws / "deliverables/m2-metrics/queries/paid_revenue_2026_08.sql").write_text(NAIVE_AUG, encoding="utf-8")
+    tools.reconcile_metrics(ws)
+    path = ws / "deliverables/m2-metrics/reconciliation.csv"
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    for r in rows:
+        if r["metric"] == "paid_revenue_2026_08":
+            r.update(computed="4436.0", diff_pct="0.0", status="match")
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    res = checks.metrics_reconcile(ws, {})
+    assert res["passed"] is False and "reconciliation claims paid_revenue_2026_08" in res["details"]
+
+
+def test_metrics_reconcile_requires_every_reference(ws):
+    good_metrics(ws)
+    path = ws / "deliverables/m2-metrics/metrics.yaml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc["metrics"] = doc["metrics"][:2]
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    tools.reconcile_metrics(ws)
+    res = checks.metrics_reconcile(ws, {})
+    assert res["passed"] is False and "no metric definition" in res["details"]
+    relaxed = checks.metrics_reconcile(ws, {"require_all_references": False})
+    assert relaxed["passed"] is True, relaxed
+
+
+def test_metrics_reconcile_needs_reconciliation_file(ws):
+    good_metrics(ws)
+    res = checks.metrics_reconcile(ws, {})
+    assert res["passed"] is False and "reconciliation.csv not found" in res["details"]
+    assert checks.metrics_reconcile(ws, {"reconciliation": ""})["passed"] is True
+
+
+def test_check_defs_are_callable():
+    assert set(checks.CHECK_DEFS) == {"profile_matches_source", "queries_reexecute",
+                                      "figures_match_queries", "metrics_valid", "metrics_reconcile"}
+    assert all(callable(fn) for fn in checks.CHECK_DEFS.values())
