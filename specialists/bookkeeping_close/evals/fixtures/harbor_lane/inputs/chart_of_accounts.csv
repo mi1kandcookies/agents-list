@@ -1,0 +1,24 @@
+account,name,type
+1000,Cash - Operating Checking,asset
+1100,Accounts Receivable,asset
+1200,Prepaid Expenses,asset
+1500,Roasting Equipment,asset
+1510,Accumulated Depreciation,asset
+1999,Suspense,asset
+2000,Accounts Payable,liability
+2100,Accrued Expenses,liability
+2200,Deferred Revenue,liability
+3000,Owner Capital,equity
+3900,Retained Earnings,equity
+4000,Coffee Sales,revenue
+4100,Wholesale Revenue,revenue
+4900,Interest Income,revenue
+5000,Cost of Goods Sold,expense
+6000,Rent,expense
+6100,Utilities,expense
+6200,Payroll Expense,expense
+6300,Software Subscriptions,expense
+6400,Bank Fees,expense
+6500,Depreciation Expense,expense
+6600,Insurance Expense,expense
+6999,Ask My Accountant,expense
