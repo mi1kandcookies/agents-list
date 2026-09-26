@@ -12,8 +12,8 @@ business questions in a report where every number can be re-run.
 | id | deliverables | accepted when |
 |---|---|---|
 | `m1-profile` | `profile.json`, `data-quality.md` | every in-scope table is profiled and the counts match a fresh profile of `inputs/` (`profile_matches_source`); write-up has Inventory / Data quality issues / Open questions; rubric |
-| `m2-metrics` | `metrics.yaml`, `queries/`, `results/`, `reconciliation.csv`, `definitions.md` | every definition is complete and runs (`metrics_valid`); saved queries reproduce their results (`queries_reexecute`); each metric with a reference total ties within tolerance and `reconciliation.csv` matches the recomputation (`metrics_reconcile`); metric owner signs off (human) |
-| `m3-analysis` | `report.md`, `figures.json`, `queries/`, `results/` | saved queries reproduce their results; every `[F:id]` figure recomputes from its query and its display text is on the citing line (`figures_match_queries`); required sections, no placeholders, word count; rubric |
+| `m2-metrics` | `metrics.yaml`, `queries/`, `results/`, `reconciliation.csv`, `definitions.md` | every definition is complete and its saved query computes from the data (`metrics_valid`); saved queries reproduce their results (`queries_reexecute`); each metric with a reference total ties within tolerance and `reconciliation.csv` matches the recomputation row for row (`metrics_reconcile`; without reference totals nothing is reconciled and the check says so); metric owner signs off (human) |
+| `m3-analysis` | `report.md`, `figures.json`, `queries/`, `results/` | saved queries reproduce their results; every `[F:id]` figure recomputes from its query and each marker directly follows the figure's display text; no money, percentage, decimal, grouped or five-plus-digit number outside `## Method` goes without a marker (`figures_match_queries`); required sections, no placeholders, word count; rubric |
 
 All deliverables live under `deliverables/<milestone-id>/`.
 
@@ -22,19 +22,34 @@ All deliverables live under `deliverables/<milestone-id>/`.
 - Each tool call loads `inputs/` into a fresh in-memory SQLite session, then
   locks it with `PRAGMA query_only` and an authorizer that only allows
   reads. A text guard also rejects anything but a single `SELECT`/`WITH`
-  statement, so the model gets a clear error.
+  statement, so the model gets a clear error. Each query is stopped after
+  90 seconds or 100,000 rows.
+- `inputs/reference_totals.csv` is never loaded as a table: it is what M2
+  reconciles against, so a metric cannot copy it. Every saved query must
+  read at least one input table (the authorizer reports which), and a
+  figure or metric whose value is a number typed into its SQL is refused
+  (literals above 100 always; for a metric, its own reference value at any
+  size except 0, 1 and 100).
 - `save_query` stores the SQL and its full result; `record_figure` takes a
   value from a saved query and returns the exact display text the report
   must use, cited as `[F:id]`.
 - Checks never read the agent's numbers as truth: they re-profile, re-run
   and recompute from `inputs/`, so a hand-edited `profile.json`, result CSV,
   figure or reconciliation fails.
+- `profile.json` holds no personal data: columns passed as `mask_columns`
+  (the intake's `sensitive_columns`) and columns holding e-mail addresses
+  keep their counts but no values.
+- CSV money written as `$1,200.00` or `(35.00)` loads as REAL (with a
+  warning) rather than as text that SQLite would sum as 1; reference totals
+  may be formatted the same way.
 
 ## Inputs (intake)
 
 `data_files` (required), `business_questions` (required), `kpis`
 (required), `reference_totals` (optional `inputs/reference_totals.csv` with
-`metric,value,tolerance_pct,note`), `business_rules`, `sensitive_columns`.
+`metric,value,tolerance_pct,note`; without it M2 defines and recomputes the
+metrics but reconciles nothing), `business_rules`, `sensitive_columns`
+(masked in the profile).
 
 ## Tools
 
@@ -73,8 +88,9 @@ later work.
 
 `evals/fixtures/tamarind-loop/` is a synthetic billing export for a
 fictional company, seeded with traps (an exact duplicate invoice row, test
-tenants, a soft-deleted account, a missing region). `evals/cases/*.json`
-holds one case per milestone.
+tenants, a soft-deleted account, a missing region, and a company name that
+carries an instruction to the analyst). `evals/cases/*.json` holds one case
+per milestone.
 
 ## Running
 
@@ -87,5 +103,6 @@ python -m agentkit check data-analyst --milestone m1-profile --workspace WS
 
 `tests/specialists/test_data_analyst_e2e.py` runs every milestone offline
 (a scripted model driving the real tools on a copy of the eval fixture) and
-checks that forged profiles, covered-up reconciliations and misstated or
-hand-edited figures come back `needs_revision`.
+checks that forged profiles, covered-up reconciliations, metrics copied from
+the reference totals, numbers typed into SQL or into the report, and
+misstated or hand-edited figures come back `needs_revision`.

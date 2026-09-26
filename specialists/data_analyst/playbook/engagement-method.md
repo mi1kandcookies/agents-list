@@ -4,7 +4,8 @@ How each milestone is run. Deliverable paths are fixed by the manifest.
 
 ## M1 - Data inventory and quality profile (`m1-profile`)
 
-1. `list_tables`, then `profile_tables` for every table (the default).
+1. `list_tables`, then `profile_tables` for every table (the default), with
+   the intake's `sensitive_columns` as `mask_columns`.
 2. For each table, work out: what one row means (the grain), the key, how it
    joins to the others, the date range covered, and how fresh it is.
 3. Walk the data-quality checklist (`playbook/data-quality-checklist.md`)
@@ -29,7 +30,11 @@ How each milestone is run. Deliverable paths are fixed by the manifest.
    `playbook/metric-definitions.md`).
 3. Run `reconcile_metrics`. A mismatch means the definition is wrong or the
    reference is built differently; find which. Never tune a query to hit a
-   number without a business rule that explains the change.
+   number without a business rule that explains the change, and never write
+   a reference number into the SQL (acceptance refuses it). The reference
+   file is not a table; read it with `read_file`. If the customer supplied no
+   reference totals, every metric is marked `no_reference`: say in
+   `definitions.md` that nothing was reconciled and ask for reference numbers.
 4. Write `definitions.md`: `## Metrics`, `## Business rules applied`,
    `## Reconciliation` (a table from `reconciliation.csv`, with an
    explanation for any gap), `## Open questions`.
@@ -50,4 +55,6 @@ How each milestone is run. Deliverable paths are fixed by the manifest.
    - `## Caveats` - data-quality issues that affect the answers, what was not
      checked, and the approval note for externally reported numbers.
 5. Before submitting, read the report once more and confirm every number has
-   a marker and every marker's display text is on its line.
+   a marker directly after its display text. Money, percentages, decimals,
+   numbers with thousands separators and whole numbers of five or more
+   digits without a marker fail acceptance anywhere but `## Method`.
