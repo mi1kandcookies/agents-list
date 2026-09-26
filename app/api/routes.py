@@ -177,7 +177,7 @@ def api_dispute_submit():
 
     result = {"status": "pending_review", "reportId": report.id}
     oc = get_onchain()
-    if oc and oc.gatekeeper:
+    if oc and oc.gatekeeper and oc.has_contract("ReputationContract"):
         try:
             result.update(oc.submit_incident(agent_id, payload["affectedUser"], severity))
         except Exception as e:

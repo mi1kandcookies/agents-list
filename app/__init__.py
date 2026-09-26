@@ -83,7 +83,14 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     for bp in (catalog_bp, seller_bp, admin_bp, api_bp, chain_bp):
         app.register_blueprint(bp)
 
+    from chain.config import explorer_url, get_chain_config
+
     app.jinja_env.globals["enumerate"] = enumerate
+    app.jinja_env.globals["explorer_url"] = explorer_url
+
+    @app.context_processor
+    def _inject_chain():
+        return {"chain": get_chain_config()}
     _register_request_logging(app)
     _register_error_handlers(app)
     _register_cli(app)

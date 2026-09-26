@@ -20,7 +20,7 @@
   const toUSDC = (n) => Number(n) / 1e6;
   const fromUSDC = (n) => BigInt(Math.floor(Number(n) * 1e6));
 
-  async function ensureFuji() {
+  async function ensureChain() {
     const chainId = await window.ethereum.request({ method: 'eth_chainId' });
     if (chainId !== CHAIN.chainIdHex) {
       try {
@@ -45,37 +45,13 @@
     }
   }
 
-  // ── DEMO MODE (no wallet detected) ────────────────────────────────────────
-  // Activates a read-only demo session with a mock address so the UI
-  // renders connected state without requiring an actual wallet extension.
-  function activateDemoMode() {
-    // Valid 0x-prefixed 40-hex address so backend address validation passes.
-    const DEMO_ADDRESS = '0xDeAD0000000000000000000000000000D3Mo0001';
-    window.AgentsList.address = DEMO_ADDRESS;
-    window.AgentsList.connected = true; // visual only - no signing capability
-    window.AgentsList._demoMode = true;
-    const btn = document.getElementById('wallet-btn');
-    if (btn) {
-      btn.innerHTML = `<span style="font-family:var(--font-mono); color:var(--amber);">Demo Mode</span>`;
-      btn.setAttribute('data-connected', 'true');
-      btn.title = 'Demo mode - no real wallet connected. Payments will use mock responses.';
-    }
-    if (window.showToast) showToast('Demo mode active - no wallet required', 'info');
-    window.dispatchEvent(new CustomEvent('agentslist:connected', { detail: { address: DEMO_ADDRESS, demo: true } }));
-  }
-
   // ── CONNECT ──────────────────────────────────────────────────────────────
   async function connectWallet() {
     if (!window.ethereum) {
-      // No wallet extension detected - offer demo mode
-      if (window.showToast) {
-        showToast('No wallet detected - switching to Demo Mode', 'warning');
-      }
-      activateDemoMode();
-      return window.AgentsList.address;
+      throw new Error('No browser wallet detected. Install MetaMask, Rabby or Coinbase Wallet.');
     }
     await window.ethereum.request({ method: 'eth_requestAccounts' });
-    await ensureFuji();
+    await ensureChain();
 
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
@@ -87,8 +63,8 @@
     window.AgentsList.connected = true;
 
     // Instantiate all contracts
-    for (const name of Object.keys(ADDR)) {
-      window.AgentsList.contracts[name] = new ethers.Contract(ADDR[name], ABI[name], signer);
+    for (const name of Object.keys(ADDR || {})) {
+      if (ABI[name]) window.AgentsList.contracts[name] = new ethers.Contract(ADDR[name], ABI[name], signer);
     }
 
     updateWalletButton();
@@ -327,7 +303,6 @@
 
   // Expose API
   window.AgentsList.connectWallet = connectWallet;
-  window.AgentsList.activateDemoMode = activateDemoMode;
   window.AgentsList.getUsdcBalance = getUsdcBalance;
   window.AgentsList.getAgentProfile = getAgentProfile;
   window.AgentsList.mintUSDC = mintUSDC;

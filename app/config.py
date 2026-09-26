@@ -2,7 +2,7 @@
 config.py - Centralized configuration for Agent's List.
 
 Usage:
-    from config import config
+    from app.config import config
     app.config.from_object(config["development"])
 
 Environment variables:
@@ -11,11 +11,12 @@ Environment variables:
     DATABASE_URL          SQLAlchemy DB URI (default: sqlite:///agents_list.db)
     API_KEY               API key for protected admin/seller mutation routes
     CORS_ORIGINS          Comma-separated allowed origins (default: *)
-    RATELIMIT_DEFAULT     Default rate limit string (default: 60/minute)
-    FACILITATOR_URL       Optional: Node facilitator service URL
-    FACILITATOR_PRIVATE_KEY  Optional: private key for on-chain x402 flow
-    GATEKEEPER_PRIVATE_KEY   Optional: private key for dispute signing
-    RPC_URL               Optional: Avalanche RPC URL (default: Fuji)
+    RATELIMIT_DEFAULT     Default rate limit string (default: 600/minute)
+    AUTO_MIGRATE          Run Alembic upgrade at boot (default on outside production)
+
+Chain settings (RPC_URL, CHAIN_ID, EXPLORER_URL, contract addresses, signer
+keys) live in chain/config.py and chain/client.py and default to Ethereum
+Sepolia.
 """
 from __future__ import annotations
 import os
@@ -67,12 +68,6 @@ class Config:
 
     # ── Auth ───────────────────────────────────────────────────────────────
     API_KEY: Optional[str] = os.environ.get("API_KEY")  # None → auth disabled (local dev)
-
-    # ── On-chain ────────────────────────────────────────────────────────────
-    FACILITATOR_URL: Optional[str] = os.environ.get("FACILITATOR_URL")
-    FACILITATOR_PRIVATE_KEY: Optional[str] = os.environ.get("FACILITATOR_PRIVATE_KEY")
-    GATEKEEPER_PRIVATE_KEY: Optional[str] = os.environ.get("GATEKEEPER_PRIVATE_KEY")
-    RPC_URL: str = os.environ.get("RPC_URL", "https://api.avax-test.network/ext/C/rpc")
 
     # ── Runtime behavior controls ──────────────────────────────────────────
     # AUTO_MIGRATE: run `alembic upgrade head` at boot. On by default for local

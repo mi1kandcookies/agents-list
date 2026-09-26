@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from app.extensions import db
+from chain.config import explorer_url
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
@@ -296,4 +297,5 @@ class ChainTransaction(db.Model):
             "amountUSDC": str(self.amount_usdc),
             "amountUSDCDisplay": round(self.amount_usdc / 1_000_000, 4),
             "meta": json.loads(self.meta or "{}"),
+            "explorer": explorer_url("tx", self.tx_hash) if self.tx_hash else None,
         }

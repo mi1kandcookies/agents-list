@@ -7,6 +7,7 @@ import time
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from app.extensions import db
+from chain.config import explorer_url
 from app.services import (
     CATEGORIES, PLATFORM_FEE_BPS, USE_CASES, agents_for_seller, api_error, is_valid_wallet,
     seller_earnings_from_chain,
@@ -164,7 +165,7 @@ def seller_earnings():
                 "status": "released" if r.kind == "settle" else ("escrow" if r.kind == "deposit" else r.kind),
                 "real":   bool(m.get("real")),
                 "txHash": r.tx_hash,
-                "snowtrace": (f"https://subnets-test.avax.network/c-chain/tx/{r.tx_hash if r.tx_hash.startswith('0x') else '0x' + r.tx_hash}") if r.tx_hash else None,
+                "explorer": explorer_url("tx", r.tx_hash),
             })
 
     # Weekly settle counts per day (last 7 days) for the usage chart — live from CT

@@ -96,7 +96,7 @@
             <td class="font-mono text-muted">${{ "%.4f"|format(tx.fee) }}</td>
             <td class="font-mono">${{ "%.3f"|format(tx.net) }}</td>
             <td>{{ tx.status }}</td>
-            <td>{% if tx.snowtrace %}<a href="{{ tx.snowtrace }}" target="_blank" rel="noopener" style="color:var(--accent);">view ↗</a>{% else %}—{% endif %}</td>
+            <td>{% if tx.explorer %}<a href="{{ tx.explorer }}" target="_blank" rel="noopener" style="color:var(--accent);">view ↗</a>{% else %}—{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>

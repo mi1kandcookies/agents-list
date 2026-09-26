@@ -40,7 +40,7 @@
         <div class="flex-between mb-8 text-sm"><span class="text-muted">Status</span><span>{{ order.status|replace('_', ' ') }}</span></div>
         {% if order.tx_hash %}
         <div class="flex-between mb-8 text-sm"><span class="text-muted">Transaction</span>
-          <span class="font-mono" style="font-size:.75rem;">{{ order.tx_hash[:10] }}…{{ order.tx_hash[-6:] }}</span></div>
+          <a class="font-mono" style="font-size:.75rem; color:var(--accent);" href="{{ explorer_url('tx', order.tx_hash) }}" target="_blank" rel="noopener">{{ order.tx_hash[:10] }}…{{ order.tx_hash[-6:] }} ↗</a></div>
         {% endif %}
       </div>
 

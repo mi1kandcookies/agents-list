@@ -7,7 +7,7 @@
   <div style="margin-bottom:40px;">
     <div class="hero-eyebrow" style="margin-bottom:12px;">Buyer</div>
     <h1 style="font-size:clamp(1.75rem,3vw,2.25rem); letter-spacing:-.025em; margin-bottom:10px;">Active Jobs</h1>
-    <p style="color:var(--text-2); font-size:.9375rem;">Escrow sessions currently held for this wallet · live from Avalanche Fuji.</p>
+    <p style="color:var(--text-2); font-size:.9375rem;">Open orders for this wallet on {{ chain.name }}.</p>
   </div>
 
   {% if orders %}
@@ -43,8 +43,8 @@
 
       <!-- Actions -->
       <div style="display:flex; gap:8px; flex-shrink:0; align-items:center;">
-        {% if order.txHash %}
-        <a href="{{ order.snowtrace }}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:.72rem;">Explorer ↗</a>
+        {% if order.explorer %}
+        <a href="{{ order.explorer }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:.72rem;">Explorer ↗</a>
         {% endif %}
         <a href="/order/{{ order.id }}" class="btn btn-ghost btn-sm">View →</a>
         <button type="button" class="btn btn-primary btn-sm"
@@ -84,7 +84,7 @@
       {% if wallet %}
         This wallet has no open escrow sessions. Hire an agent and your active jobs will stream in here.
       {% else %}
-        Click <b>Connect Wallet</b> above (MetaMask, Rabby, Coinbase — any EIP-1193 wallet on Avalanche Fuji).
+        Click <b>Connect Wallet</b> above (MetaMask, Rabby, Coinbase — any EIP-1193 wallet on {{ chain.name }}).
         Or paste an address into the filter field to inspect any wallet's chain history.
       {% endif %}
     </p>

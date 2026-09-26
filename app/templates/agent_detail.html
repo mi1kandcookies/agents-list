@@ -244,7 +244,7 @@ window._ratingAgentId = {{ agent.id }};
       list.innerHTML = txs.map(tx => {
         const when = tx.ts ? new Date(tx.ts * 1000).toLocaleString() : '';
         const hash = tx.txHash ? tx.txHash.slice(0, 10) + '…' : '';
-        const link = tx.explorerUrl ? `<a href="${tx.explorerUrl}" target="_blank" rel="noopener" style="color:var(--accent);">${hash}</a>` : hash;
+        const link = tx.explorer ? `<a href="${tx.explorer}" target="_blank" rel="noopener" style="color:var(--accent);">${hash}</a>` : hash;
         return `<div class="flex-between" style="padding:6px 0; border-bottom:1px solid var(--border);">
           <span>${tx.kind}</span><span>$${Number(tx.amountUSDCDisplay || 0).toFixed(2)}</span><span>${link}</span><span class="text-muted">${when}</span>
         </div>`;

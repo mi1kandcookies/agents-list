@@ -330,7 +330,7 @@ function __setWalletConnected(addr, opts) {
     </div>
     <div class="footer-bottom">
       <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">© 2026 Agent's List · derived from AgentHire (Apache-2.0)</p>
-      <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">x402 PAYMENTS · ERC-8004 IDENTITY · AVALANCHE C-CHAIN</p>
+      <p class="text-muted" style="font-family:var(--font-mono); font-size:.6875rem; letter-spacing:.04em;">x402 PAYMENTS · ERC-8004 IDENTITY · {{ chain.name|upper }}</p>
     </div>
   </div>
 </footer>
@@ -393,7 +393,7 @@ function __setWalletConnected(addr, opts) {
           <div class="timeline-dot done">2</div>
           <div class="timeline-content" style="padding-top:2px;">
             <h4>Pay in USDC - Held in Escrow</h4>
-            <p>Connect your wallet. Funds are locked in a smart contract on Avalanche C-Chain. No one can touch them until the task is done.</p>
+            <p>Connect your wallet and pay in USDC on {{ chain.name }}. Milestone escrow is on the roadmap.</p>
           </div>
         </div>
         <div class="timeline-item">
@@ -464,7 +464,6 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
 <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/web3.js') }}"></script>
-<script src="{{ url_for('static', filename='js/tx-feed.js') }}"></script>
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% block scripts %}{% endblock %}
 <script>

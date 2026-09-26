@@ -7,14 +7,14 @@
   <div style="margin-bottom:24px;">
     <div class="hero-eyebrow" style="margin-bottom:12px;">Buyer</div>
     <h1 style="font-size:clamp(1.75rem,3vw,2.25rem); letter-spacing:-.025em; margin-bottom:10px;">Past Jobs</h1>
-    <p style="color:var(--text-2); font-size:.9375rem;">Settled + cancelled escrow sessions for this wallet · live from Avalanche Fuji.</p>
+    <p style="color:var(--text-2); font-size:.9375rem;">Completed and cancelled orders for this wallet.</p>
   </div>
 
   <div style="margin-bottom:28px; display:flex; gap:10px; align-items:center; padding:12px 16px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius); font-family:var(--font-mono); font-size:.75rem;">
     <span style="color:var(--text-3); text-transform:uppercase; letter-spacing:.08em; font-size:.56rem;">Buyer</span>
     <input id="wallet-input" type="text" placeholder="0x… paste wallet to load your history" value="{{ wallet }}" style="flex:1; background:transparent; border:none; color:var(--text); font-family:var(--font-mono); font-size:.8rem; outline:none;">
     <button onclick="(function(){ const w=document.getElementById('wallet-input').value.trim(); if(w) location.href='/past-jobs?wallet='+w; })()" class="btn btn-ghost btn-sm">Load</button>
-    {% if wallet %}<a href="https://testnet.snowtrace.io/address/{{ wallet }}" target="_blank" style="color:var(--accent); text-decoration:none; font-size:.7rem;">Snowtrace ↗</a>{% endif %}
+    {% if wallet %}<a href="{{ explorer_url('address', wallet) }}" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:none; font-size:.7rem;">Explorer ↗</a>{% endif %}
   </div>
 
   {% if orders %}
@@ -46,7 +46,7 @@
         </div>
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0; flex-direction:column; align-items:flex-end;">
-        <a href="{{ order.snowtrace }}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:.68rem;">Snowtrace ↗</a>
+        {% if order.explorer %}<a href="{{ order.explorer }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:.68rem;">Explorer ↗</a>{% endif %}
         <a href="/order/{{ order.id }}" class="btn btn-ghost btn-sm">View →</a>
       </div>
     </div>
@@ -76,7 +76,7 @@
     <div style="width:1px; height:32px; background:var(--border);"></div>
     <div>
       <div style="font-family:var(--font-mono); font-size:.5625rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:3px;">Source</div>
-      <div style="font-family:var(--font-mono); font-size:.75rem; font-weight:700; color:var(--green);">● live Fuji</div>
+      <div style="font-family:var(--font-mono); font-size:.75rem; font-weight:700; color:var(--green);">{{ chain.name }}</div>
     </div>
     <a href="/marketplace" class="btn btn-ghost btn-sm" style="margin-left:auto;">Hire again</a>
   </div>
@@ -87,7 +87,7 @@
     <h3 style="margin-bottom:10px;">{% if wallet %}No settled sessions for this wallet{% else %}Connect a wallet to see your history{% endif %}</h3>
     <p style="color:var(--text-2); margin-bottom:28px;">
       {% if wallet %}
-        This wallet has no settled or cancelled escrow sessions yet. Once a task completes, it appears here with its Fuji tx hash.
+        This wallet has no completed or cancelled orders yet. Once an order completes, it appears here with its payment transaction.
       {% else %}
         Click <b>Connect Wallet</b> or paste any address into the filter field to inspect on-chain history.
       {% endif %}
