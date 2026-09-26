@@ -15,3 +15,4 @@ scratch.
 | RAGAS (vibrantlabsai/ragas) | Apache-2.0 | Faithfulness of answers to retrieved context as a first-class metric. Shapes the articles rubric's grounding criterion. |
 | Moffatt v. Air Canada, 2024 BCCRT 149 | public decision | A company is bound by its chatbot's statements about refund policy. Motivates grounding every policy statement and escalating refund exceptions. |
 | Luhn checksum (ISO/IEC 7812-1) | public standard | Card-number detection only when the digit run passes the checksum, to avoid redacting order ids. |
+| Wilson score interval (E. B. Wilson, 1927) | public method | A lower bound on held-out recall, so a small held-out set is not read as a guarantee. |

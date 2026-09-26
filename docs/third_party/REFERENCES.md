@@ -23,3 +23,13 @@ dependency unless marked.
 | smolagents (github.com/huggingface/smolagents) | Apache-2.0 | small readable loop; pluggable executors |
 | CrewAI (github.com/crewAIInc/crewAI) | MIT | an explicit expected output per task (our milestone deliverables) |
 | LiteLLM (github.com/BerriAI/litellm) | MIT (enterprise dir excluded) | a single canonical request shape; **avoided as a dependency** |
+
+## Specialist packages
+
+Each specialist lists the projects whose ideas shaped it in its own
+`REFERENCES.md`, under the same rules (ideas only, nothing copied, no
+runtime dependency).
+
+| Package | Projects |
+|---|---|
+| [`support_automation`](../../specialists/support_automation/REFERENCES.md) | tau-bench / tau2-bench and hyper-tau-bench (MIT), Parlant (Apache-2.0), openai-cs-agents-demo (MIT), Chatwoot core (MIT), Onyx community edition (MIT), RAGAS (Apache-2.0) |
