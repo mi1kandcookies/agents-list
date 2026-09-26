@@ -16,6 +16,7 @@ from agentkit.events import Event, EventSink, JsonlSink, MemorySink, MultiSink, 
 from agentkit.journal import Checkpoint, Journal
 from agentkit.ledger import Ledger
 from agentkit.llm import ModelAdapter, ModelRef, ScriptedAdapter
+from agentkit.loop import Limits, RunOutcome, Runner
 from agentkit.policy import PolicyGate
 from agentkit.security import host_allowed, redact, wrap_untrusted
 from agentkit.tools import (CommandResult, FetchResult, Tool, ToolContext, ToolRegistry,
@@ -27,9 +28,10 @@ from agentkit.types import (AcceptanceCriterion, Artifact, Brief, CheckResult, E
 __all__ = [
     "AcceptanceCriterion", "AgentKitError", "Artifact", "Brief", "BudgetExceeded", "CheckResult",
     "Checkpoint", "CommandResult", "Estimate", "Event", "EventSink", "FetchResult", "HumanReview",
-    "Journal", "JsonlSink", "Ledger", "ManifestError", "MemorySink", "Message", "MilestoneSpec",
-    "MissingInput", "ModelAdapter", "ModelError", "ModelRef", "ModelResponse", "MultiSink",
-    "NullSink", "PolicyGate", "PolicyViolation", "ScriptedAdapter", "Submission", "Tool",
-    "ToolCall", "ToolContext", "ToolError", "ToolRegistry", "ToolResult", "ToolSpec", "Usage",
-    "builtin_registry", "host_allowed", "redact", "tools_from_defs", "wrap_untrusted",
+    "Journal", "JsonlSink", "Ledger", "Limits", "ManifestError", "MemorySink", "Message",
+    "MilestoneSpec", "MissingInput", "ModelAdapter", "ModelError", "ModelRef", "ModelResponse",
+    "MultiSink", "NullSink", "PolicyGate", "PolicyViolation", "RunOutcome", "Runner",
+    "ScriptedAdapter", "Submission", "Tool", "ToolCall", "ToolContext", "ToolError", "ToolRegistry",
+    "ToolResult", "ToolSpec", "Usage", "builtin_registry", "host_allowed", "redact",
+    "tools_from_defs", "wrap_untrusted",
 ]
