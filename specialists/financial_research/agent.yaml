@@ -255,7 +255,8 @@ milestones:
           sections: [Summary, Business overview, Financial profile, Peer comparison,
                      Bull case, Bear case, Key risks, Red flags, Open questions, Sources]
       - check: disclaimer_present
-        params: {paths: [deliverables/m3-diligence-memo/memo.md], text: Not investment advice}
+        description: The human_gate disclaimer, verbatim
+        params: {paths: [deliverables/m3-diligence-memo/memo.md]}
       - check: no_placeholders
         params:
           paths:

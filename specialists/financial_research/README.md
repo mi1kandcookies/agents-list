@@ -72,11 +72,20 @@ in `agent.yaml` say so.
 - Only the filing index's `recent` block (about the last 1,000 filings) is
   scanned for red flags.
 
-## Integration notes
+## Kit integration (`agent.py`)
 
-`agent.py` (the `Specialist` subclass) is added once the kit lands. It wraps
-`TOOL_DEFS` and `CHECK_DEFS`, passes the kit's egress-checked `fetch`, and
-should read `sec_user_agent` from the brief's intake into the EDGAR tools
-(the tools also accept a `user_agent` argument or `SEC_USER_AGENT`). Open
-question for the kit: how `record_source` snapshots a filing fetched with
-`edgar_filing_text`, so ledger quotes from filings verify.
+`FinancialResearch` is a thin `Specialist` subclass; the kit wraps
+`TOOL_DEFS` and `CHECK_DEFS` itself. The subclass sends the User-Agent the
+client declared in intake `sec_user_agent` with every EDGAR request (the
+model's `user_agent` argument is used only when the intake has none, e.g.
+after an `ask_client` answer; `SEC_USER_AGENT` is the last resort), and
+`validate_intake` flags a `sec_user_agent` without a contact email.
+
+- Model-supplied paths in the tools go through the kit's `resolve_path`
+  (inputs/ read-only, .agentkit/ refused, written files marked
+  agent-authored); the checks resolve their paths with `jail_path`.
+- `edgar_filing_text` registers the filing text as a ledger source
+  (kind `tool`), so `record_claim` quotes from filings verify.
+- `python -m agentkit validate financial-research` checks the wiring; the
+  offline end-to-end runs are in
+  `tests/specialists/test_financial_research_e2e.py`.

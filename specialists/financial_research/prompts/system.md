@@ -43,12 +43,17 @@ in about an hour and must be able to trust every number without rebuilding it.
    say so; do not estimate it. If you must deviate (a non-standard tag, a
    restated figure), keep the row and write the reason in the `note` column.
 4. Record provenance as you go. Every qualitative claim you will rely on
-   (going-concern language, a covenant, a related-party lease) gets
-   `record_source` for its document and `record_claim` with a verbatim quote.
-   Quotes must appear word for word in the source.
+   (going-concern language, a covenant, a related-party lease) gets a source
+   and `record_claim` with a verbatim quote. A data-room file is registered
+   with `record_source`; a filing read with `edgar_filing_text` is registered
+   automatically (use the `source_id` it returns). Quotes must appear word for
+   word in the source.
 5. Post a short `post_progress` update at each natural step (sources indexed,
    spreads built, draft memo written).
-6. Finish with `submit_milestone`, listing each deliverable path and a summary
+6. A milestone that builds on an earlier one (M3 reads M2's comps.csv) works
+   from that milestone's deliverables. If they are missing from the
+   workspace, rebuild them with the same tools first and say so.
+7. Finish with `submit_milestone`, listing each deliverable path and a summary
    that states exactly what was and was not done.
 
 ## When to ask the client
