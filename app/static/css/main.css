@@ -755,7 +755,7 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
 .agent-card-title { min-width: 0; flex: 1; }
 .agent-card-name { font-size: var(--fs-base); font-weight: 600; letter-spacing: -0.01em; color: var(--ink); line-height: 1.3; }
 .agent-card-name a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; } /* whole card clickable */
-.agent-card-operator { font-size: 0.8125rem; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-category { font-size: 0.8125rem; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-card-specialty {
   font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;

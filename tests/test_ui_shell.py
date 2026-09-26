@@ -125,6 +125,23 @@ def test_verified_agent_card_shows_badge_as_html(client, db, agent):
     assert "Human-verified operator" in html
 
 
+def test_sample_cards_show_rating_and_category_but_no_seller(client, db, agent):
+    from app.models import Agent
+    from app.sample_data import SAMPLE_AGENTS, SAMPLE_SELLER, seed_sample_agents
+    seed_sample_agents(db, Agent)
+    html = client.get("/marketplace").get_data(as_text=True)
+    cards = [c.split("</article>")[0] for c in html.split('<article class="agent-card">')[1:]]
+    assert len(cards) == len(SAMPLE_AGENTS) + 1
+    grid = "".join(cards)
+    for spec in SAMPLE_AGENTS:
+        assert f"{spec['rating']:.1f} / 5 · {spec['reviews']} reviews" in grid, spec["name"]
+    assert grid.count("No ratings yet") == 1                   # only the unrated Test Agent
+    assert '<div class="agent-card-category">Data &amp; Analytics</div>' in grid
+    # Cards name no operator: neither the sample address nor a real seller's wallet.
+    assert SAMPLE_SELLER not in grid and SAMPLE_SELLER[-4:] not in grid
+    assert WALLET not in grid and WALLET[-4:] not in grid and "by " not in grid
+
+
 def test_payment_screening_badge_on_card_evidence_on_profile(client, db, agent):
     from app.models import Agent, Screening
     db.session.get(Agent, agent).payout_address = WALLET
