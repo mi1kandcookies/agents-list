@@ -50,9 +50,8 @@ def index():
             .order_by(AgentModel.featured.desc(), AgentModel.verified.desc(),
                       AgentModel.rating.desc(), AgentModel.id.asc())
             .limit(40).all())
-    # Featured: agents that can be hired right now (valid operator stamp) first.
-    rows.sort(key=lambda a: not stamp_status(a).ok)
-    agents = [a.to_dict() for a in rows[:12]]
+    # Only agents that can be hired right now (valid operator stamp) are shown.
+    agents = [a.to_dict() for a in rows if stamp_status(a).ok][:12]
     return render_template("landing.html", agents=agents, stats=marketplace_stats(),
                            chips=CATEGORY_CHIPS)
 
@@ -96,7 +95,10 @@ def marketplace():
         "rating":     (AgentModel.rating.desc(),) + relevance,
         "newest":     (AgentModel.id.desc(),),
     }.get(sort, relevance)
-    agents = [a.to_dict() for a in q.order_by(*order_by).all()]
+    from app.seller.stamp import stamp_status
+    # Customers only see hireable agents; unstamped or re-stamp-pending
+    # listings stay visible to their operators on the operator pages.
+    agents = [a.to_dict() for a in q.order_by(*order_by).all() if stamp_status(a).ok]
 
     return render_template("marketplace.html", agents=agents, categories=CATEGORIES,
                            chips=CATEGORY_CHIPS,

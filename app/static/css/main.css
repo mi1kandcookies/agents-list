@@ -765,9 +765,7 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
   position: relative; display: flex; flex-direction: column; gap: 14px;
   padding: 20px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
-  transition: border-color var(--transition), box-shadow var(--transition);
 }
-.agent-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
 .agent-card-top { display: flex; gap: 12px; align-items: flex-start; }
 .agent-card-title { min-width: 0; flex: 1; }
 .agent-card-name { font-size: var(--fs-base); font-weight: 600; letter-spacing: -0.01em; color: var(--ink); line-height: 1.3; }
@@ -1786,3 +1784,6 @@ html:not(.banner-field) .site-footer--scene .footer-bar::before {
   font-size: 11px; font-weight: 500; letter-spacing: .01em; color: var(--ink-3); vertical-align: 1px;
 }
 .demo-tag--lg { height: 22px; padding: 0 8px; font-size: 12px; margin-left: 10px; vertical-align: middle; }
+
+/* Profile: quiet trust line instead of pill badges. */
+.profile-trust { margin-top: 6px; font-size: var(--fs-sm); color: var(--ink-3); }
