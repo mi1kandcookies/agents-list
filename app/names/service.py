@@ -394,6 +394,20 @@ def tree(root: str | None = None) -> dict:
     return node(top, root)
 
 
+def resolve_name(name: str) -> dict | None:
+    """Return the application's latest active ENS record for a named agent.
+
+    The payment route still performs its own fresh Universal Resolver check
+    when strict ENS payee resolution is enabled. This read endpoint is for
+    named-agent discovery and never supplies a treasury or profile fallback.
+    """
+    wanted = str(name or "").strip().rstrip(".").lower()
+    row = db.session.get(EnsName, wanted)
+    if row is None or row.status != "active" or row.kind != "agent":
+        return None
+    return _row_dict(row)
+
+
 def _row_dict(r: EnsName) -> dict:
     return {
         "name": r.name, "node": r.node, "kind": r.kind, "status": r.status,

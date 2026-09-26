@@ -148,6 +148,7 @@ def api_agent_task(agent_ref):
     from app.engagements import ledger
     from app.engagements import service as eng_svc
     from app.engagements.service import EngagementError
+    from app.hiring.deliverables import build_api_test_plan
     from app.mandates import service as mandates
     from app.mandates.tokens import MandateError
     from app.models import Agent, Engagement, Mandate
@@ -237,6 +238,12 @@ def api_agent_task(agent_ref):
                         "code": "SCREENING_REFUSED",
                         "screening": eng_svc.screening_json(verdict)}), 403
 
+    # Build the read-only result before settlement, but do not publish it until
+    # the transfer succeeds below. The source text is hashed into the result;
+    # there is no second, unapproved task body accepted after payment.
+    deliverable = build_api_test_plan(task, specialist=agent.name,
+                                      agent_id=agent.public_id)
+
     nonces = _nonces()
     try:
         nonces.claim(verified.nonce)
@@ -278,6 +285,7 @@ def api_agent_task(agent_ref):
                     "payee_source": payee.source, "nonce": verified.nonce},
         "screening": eng_svc.screening_json(verdict),
         "payer_screening": eng_svc.screening_json(payer_verdict),
+        "deliverable": deliverable,
     })
     encoded = x402_v2.encode_header(settle)
     for name in x402_v2.RESPONSE_HEADERS:

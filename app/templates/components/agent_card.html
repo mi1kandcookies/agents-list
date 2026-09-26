@@ -105,6 +105,7 @@ No ratings yet
     </div>
   </div>
   <p class="agent-card-specialty">{{ agent.description }}</p>
+  {% if agent.ens_name %}<div class="agent-card-ens mono">{{ agent.ens_name }}</div>{% endif %}
   {%- if badges %}
   <div class="agent-card-badges">{{ badges }}</div>
   {%- endif %}

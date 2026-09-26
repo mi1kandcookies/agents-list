@@ -100,6 +100,20 @@ def test_agent_records_from_manifest(db, agent_row, sidecar):
     assert row.records["erc8004_agent_id"] == "12"
 
 
+def test_resolve_active_agent_name(client, db, agent_row, sidecar):
+    row = service.on_agent_published(agent_row)
+    response = client.get("/api/names/resolve", query_string={"name": row.name.upper()})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["name"] == row.name and body["status"] == "active"
+    assert body["records"]["payout"] == PAYOUT
+
+
+def test_resolve_requires_active_name(client):
+    response = client.get("/api/names/resolve", query_string={"name": "missing.eth"})
+    assert response.status_code == 404 and response.get_json()["code"] == "NAME_NOT_ACTIVE"
+
+
 def test_unconfigured_sidecar_leaves_pending(db, agent_row, app, client):
     app.extensions["names_client"] = SidecarClient("", "")
     row = service.on_agent_published(agent_row)

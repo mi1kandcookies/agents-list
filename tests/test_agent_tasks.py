@@ -77,14 +77,15 @@ def _url(agent):
     return f"/api/agents/{agent.public_id}/tasks"
 
 
-def _challenge(client, callee):
-    resp = client.post(_url(callee), json={"task": "Summarize the release notes"})
+def _challenge(client, callee, *, task="Summarize the release notes"):
+    resp = client.post(_url(callee), json={"task": task})
     assert resp.status_code == 402, resp.get_json()
     return resp
 
 
-def _pay(client, callee, key, mandate_row, *, headers=None, amount=PRICE, mutate=None):
-    body = _challenge(client, callee).get_json()
+def _pay(client, callee, key, mandate_row, *, headers=None, amount=PRICE, mutate=None,
+         task="Summarize the release notes"):
+    body = _challenge(client, callee, task=task).get_json()
     req = PaymentRequirements.from_dict(body["accepts"][0])
     payload = x402_v2.sign_payment(key, req, expected=Expectation(pay_to=PAYEE, amount_micro=amount))
     if mutate:
@@ -93,7 +94,7 @@ def _pay(client, callee, key, mandate_row, *, headers=None, amount=PRICE, mutate
     if mandate_row is not None:
         h["Authorization"] = f"Mandate {mandate_row.token}"
     h.update(headers or {})
-    return client.post(_url(callee), json={"task": "Summarize the release notes"}, headers=h), payload
+    return client.post(_url(callee), json={"task": task}, headers=h), payload
 
 
 def _spent(db, mandate_row):
@@ -139,7 +140,8 @@ def test_task_required(client, callee):
 # ── 200 ──────────────────────────────────────────────────────────────────────
 def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, payer_key,
                                              mandate, screener):
-    resp, payload = _pay(client, callee, payer_key, mandate)
+    task = "GET /v1/orders\nPOST /v1/orders"
+    resp, payload = _pay(client, callee, payer_key, mandate, task=task)
     assert resp.status_code == 200, resp.get_json()
     body = resp.get_json()
     assert body["status"] == "accepted" and body["agent_id"] == callee.public_id
@@ -158,6 +160,10 @@ def test_paid_task_settles_under_the_mandate(client, db, callee, payer_agent, pa
     assert entry.id == body["receipt_id"] and entry.kind == "subhire_alloc"
     assert entry.approval_id == mandate.approval_id and entry.screening_id == body["screening"]["id"]
     assert body["payer_screening"]["hop"] == "payer.check"
+    assert body["deliverable"]["type"] == "api_test_plan"
+    assert body["deliverable"]["source"]["endpoint_count"] == 2
+    assert body["deliverable"]["test_case_count"] == 6
+    assert body["deliverable"]["source"]["sha256"].startswith("0x")
     settle = x402_v2.decode_header(resp.headers["PAYMENT-RESPONSE"])
     assert settle == {"success": True, "transaction": pay["tx_hash"], "network": "eip155:11155111",
                       "payer": payer_key.address.lower()}

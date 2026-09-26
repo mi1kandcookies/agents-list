@@ -1,7 +1,7 @@
 """
 demo_seed.py - `flask --app wsgi seed-demo`: specialist agents for a demo.
 
-Loads nine realistic listings for a business and engineering audience. Each
+Loads ten realistic listings for a business and engineering audience. Each
 has a category, a one-line specialty, a price range, what it does and does
 not do, the tools and models it uses, short example deliverables and an FAQ.
 
@@ -340,6 +340,38 @@ DEMO_AGENTS: list[dict] = [
              "a": "It stays manual and the runbook says why."},
         ],
     },
+    {
+        "slug": "qa-test-planner",
+        "name": "Quartz QA Test Planner",
+        "category": "Development", "use_case": "Testing",
+        "specialty": "Turns an API specification into a structured, reviewable test plan.",
+        "about": ("Reads the supplied API contract, enumerates its operations and produces "
+                  "happy-path, validation and authorization cases with a hash of the exact "
+                  "source text. It plans tests only and never executes arbitrary code."),
+        "price": (0.05, 0.05, 0.05),
+        "model": ("OpenAI", "gpt-4.1-mini"),
+        "tags": ["qa", "api", "testing", "test-plan", "contracts"],
+        "does": ["Endpoint inventory from an API specification",
+                 "Success, validation and authorization test cases",
+                 "Traceable source hash for the delivered plan",
+                 "Assumptions and missing examples called out"],
+        "doesnt": ["Executing requests against your systems",
+                   "Running arbitrary code or browser automation",
+                   "Guaranteeing coverage beyond the supplied specification"],
+        "tools": ["OpenAPI and Markdown parsing", "Structured JSON output", "pytest plan conventions"],
+        "samples": [
+            {"title": "Example test plan",
+             "body": ("GET /v1/orders receives success, invalid-input and authorization cases; "
+                      "POST /v1/orders adds a no-side-effect denial assertion. The plan records "
+                      "the SHA-256 of the supplied specification.")},
+        ],
+        "faq": [
+            {"q": "What should I provide?",
+             "a": "An API specification in Markdown, plain text or an OpenAPI-derived summary."},
+            {"q": "Does the specialist call my API?",
+             "a": "No. It returns a reviewable plan; your team decides what to run."},
+        ],
+    },
 ]
 
 
@@ -472,6 +504,13 @@ def seed_demo(dev_stamp: bool):
         result = seed_demo_agents(db, Agent, dev_stamp=dev_stamp)
     except (ValueError, OSError) as exc:
         raise click.ClickException(f"SCREENING_ADDRESS_MAP is unreadable: {exc}") from None
+    published = 0
+    if current_app.config.get("ENS_SIDECAR_URL") and current_app.config.get("ENS_SIDECAR_TOKEN"):
+        from app.names.service import on_agent_published
+        for spec in DEMO_AGENTS:
+            row = Agent.query.filter_by(name=spec["name"], seller=DEMO_OPERATOR).first()
+            if row is not None and on_agent_published(row) is not None and row.ens_name:
+                published += 1
     click.echo(f"Demo agents: {result['added']} added, {result['updated']} refreshed"
                + (f", {result['skipped']} skipped (name taken)" if result["skipped"] else "") + ".")
     if dev_stamp:
@@ -485,6 +524,8 @@ def seed_demo(dev_stamp: bool):
     else:
         click.echo("SCREENING_ADDRESS_MAP not set: payout addresses are placeholders and "
                    "unmapped, so screening refuses every payment (fail closed).")
+    if published:
+        click.echo(f"ENS agent names published: {published}.")
     for spec in DEMO_AGENTS:
         row = Agent.query.filter_by(name=spec["name"], seller=DEMO_OPERATOR).first()
         if row is not None:

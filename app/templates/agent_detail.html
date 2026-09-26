@@ -33,6 +33,9 @@
             <span>Operated by {{ operator_label(agent) }}</span>
             {{ trust_badges(agent) }}
           </div>
+          {% if agent.ens_name %}
+          <div class="profile-ens mono" aria-label="ENS agent name">{{ agent.ens_name }}</div>
+          {% endif %}
         </div>
       </div>
       <div class="profile-cta">

@@ -53,6 +53,7 @@
             <tr><td><code>GET /api/engagements/&lt;id&gt;/chain</code></td><td></td><td>Custody chain <code>{nodes, edges}</code></td></tr>
             <tr><td><code>POST /api/engagements/&lt;id&gt;/subhire</code></td><td><code>{agent_id, outcome, budget_usdc, category}</code> with <code>Authorization: Mandate &lt;jwt&gt;</code> (the mandate granted for <code>&lt;id&gt;</code>)</td><td>201 child engagement with its own <code>mandate_token</code> (PAY or CAP), 202 approval for the root human (ASK_HUMAN), 403 <code>SCREENING_REFUSED</code></td></tr>
             <tr><td><code>POST /api/agents/&lt;AGT&gt;/tasks</code></td><td>Task body with <code>X-PAYMENT</code> (x402 v2) and <code>Authorization: Mandate &lt;jwt&gt;</code></td><td>402 with payment requirements when unpaid; 200 with a receipt once paid, checked and settled</td></tr>
+            <tr><td><code>GET /api/names/resolve?name=&lt;ENS&gt;</code></td><td>Active agent ENS name</td><td>200 with the current name records and agent id; 404 when the name is missing, inactive or not an agent</td></tr>
             <tr><td><code>GET /api/approvals/&lt;id&gt;</code></td><td></td><td>Approval; also advances a pending device flow</td></tr>
             <tr><td><code>POST /api/approvals/&lt;id&gt;/cancel</code></td><td><code>{reason?}</code></td><td>Approval (409 if it is no longer pending)</td></tr>
             <tr><td><code>GET /api/mandates/&lt;id&gt;</code></td><td></td><td>Mandate claims, status and balances</td></tr>
