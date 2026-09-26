@@ -175,14 +175,32 @@ def _convert(value: str, col_type: str) -> Any:
     return value
 
 
+def _read_csv(path: Path, session: Session) -> list[list[str]] | None:
+    """The rows of a CSV file. Exports that are not UTF-8 (spreadsheets
+    often save Windows-1252) are read as Windows-1252 with a warning; a file
+    the csv module cannot parse is skipped with a warning."""
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252", errors="replace")
+        session.warnings.append(f"{path.name}: not UTF-8; read as Windows-1252")
+    try:
+        return list(csv.reader(io.StringIO(text, newline="")))
+    except csv.Error as exc:
+        session.warnings.append(f"{path.name}: cannot be parsed as CSV ({exc}); skipped")
+        return None
+
+
 def _load_csv(conn: sqlite3.Connection, path: Path, table: str, session: Session) -> None:
-    with path.open(newline="", encoding="utf-8-sig") as fh:
-        reader = csv.reader(fh)
-        header = next(reader, None)
-        if not header:
-            session.warnings.append(f"{path.name}: empty file, skipped")
-            return
-        rows = list(reader)
+    all_rows = _read_csv(path, session)
+    if all_rows is None:
+        return
+    header, rows = (all_rows[0], all_rows[1:]) if all_rows else (None, [])
+    if not header:
+        session.warnings.append(f"{path.name}: empty file, skipped")
+        return
+    rows = [r for r in rows if r]           # blank lines are not rows of nulls
     columns: list[str] = []
     for i, raw in enumerate(header):
         name = _clean_name(raw, f"col_{i + 1}")
@@ -371,11 +389,11 @@ def execute(session: Session, sql: str, *, timeout: float = QUERY_TIMEOUT_SECOND
             read.add(names[arg1.lower()])
         return _authorizer(action)
 
-    deadline = time.monotonic() + float(timeout)
+    stop_at = time.monotonic() + float(timeout)
     # Setting an authorizer also expires cached statements, so every call
     # re-prepares and `read` is always filled.
     conn.set_authorizer(authorize)
-    conn.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 1000)
+    conn.set_progress_handler(lambda: 1 if time.monotonic() > stop_at else 0, 1000)
     cur = conn.cursor()
     rows: list[tuple] = []
     try:
@@ -390,7 +408,7 @@ def execute(session: Session, sql: str, *, timeout: float = QUERY_TIMEOUT_SECOND
                 raise ToolError(f"query returned more than {max_rows:,} rows; aggregate the result or "
                                 "add a LIMIT")
     except sqlite3.DatabaseError as exc:
-        if time.monotonic() > deadline:
+        if time.monotonic() > stop_at:
             raise ToolError(f"query stopped after the {float(timeout):g}-second time limit; check the "
                             "join conditions or aggregate earlier") from None
         raise ToolError(f"SQL error: {exc}") from exc
