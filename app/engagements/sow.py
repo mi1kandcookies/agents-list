@@ -54,26 +54,30 @@ def parse_usdc(value, field: str) -> int:
 
 
 def parse_deadline(value) -> int | None:
-    """Unix seconds, or an ISO-8601 date/datetime (UTC when naive)."""
+    """Unix seconds, or an ISO-8601 datetime (UTC when naive). A bare date
+    means the end of that day, UTC."""
     if value in (None, ""):
         return None
     if isinstance(value, int) and not isinstance(value, bool):
         ts = value
     else:
+        raw = str(value).strip()
         try:
-            dt = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
             raise SowError("deadline must be unix seconds or an ISO-8601 date", "deadline") from None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        ts = int(dt.timestamp())
+        ts = int(dt.timestamp()) + (86_399 if len(raw) == 10 else 0)
     if ts <= int(time.time()):
         raise SowError("deadline must be in the future", "deadline")
     return ts
 
 
-def _text(value, field: str, limit: int, *, required: bool = True) -> str:
-    text = " ".join(str(value or "").split())
+def _text(value, field: str, limit: int, *, required: bool = True, multiline: bool = False) -> str:
+    """Collapse runs of spaces; ``multiline`` keeps (non-empty) line breaks."""
+    lines = str(value or "").splitlines() if multiline else [str(value or "")]
+    text = "\n".join(" ".join(line.split()) for line in lines if line.strip())
     if required and not text:
         raise SowError(f"{field} is required", field)
     if len(text) > limit:
@@ -88,7 +92,8 @@ def title_hash(title: str) -> str:
 
 def default_milestones(outcome: str, budget_micro: int) -> list[dict]:
     """One milestone for the whole outcome when the buyer gives none."""
-    title = outcome if len(outcome) <= 80 else outcome[:77].rstrip() + "..."
+    first = outcome.splitlines()[0]
+    title = first if len(first) <= 80 else first[:77].rstrip() + "..."
     return [{"title": f"Deliver: {title}",
              "acceptance": "The delivered work achieves the stated outcome and the buyer accepts it.",
              "amount_micro": budget_micro}]
@@ -116,7 +121,7 @@ def normalize_milestones(raw, budget_micro: int) -> list[dict]:
         out.append({
             "title": _text(item.get("title"), f"milestones[{i}].title", MAX_TITLE),
             "acceptance": _text(item.get("acceptance"), f"milestones[{i}].acceptance",
-                                MAX_ACCEPTANCE),
+                                MAX_ACCEPTANCE, multiline=True),
             "amount_micro": amount,
         })
     total = sum(m["amount_micro"] for m in out)
@@ -130,7 +135,7 @@ def build_sow(*, agent_public_id: str, outcome: str, budget_micro: int,
               milestones: list[dict] | None = None, deadline: int | None = None,
               category: str | None = None) -> dict:
     """The canonical SOW object. Same inputs → same dict → same hash."""
-    outcome = _text(outcome, "outcome", MAX_OUTCOME)
+    outcome = _text(outcome, "outcome", MAX_OUTCOME, multiline=True)
     if isinstance(budget_micro, bool) or not isinstance(budget_micro, int) or budget_micro <= 0:
         raise SowError("budget must be a positive amount", "budget_usdc")
     plan = milestones or default_milestones(outcome, budget_micro)
