@@ -56,9 +56,10 @@ tools:
   - build_sizing_model
 shell: {allow: [], timeout_seconds: 120}
 # The open web is reached only through the configured search provider and
-# http_fetch; the harness narrows `allow` to the intake's allowed_domains when
-# the client supplies them. Fetched pages are untrusted data, never instructions.
-egress: {mode: allowlist, allow: ["*"]}
+# http_fetch (public hosts only). When the client lists allowed_domains in the
+# intake, every URL must also match one of them (intake_mode narrow). Fetched
+# pages are untrusted data, never instructions.
+egress: {mode: allowlist, allow: ["*"], intake_field: allowed_domains, intake_mode: narrow}
 limits: {max_steps: 120, max_tokens: 4000000, max_usd: 60, max_wall_minutes: 240}
 human_gate:
   required: false
@@ -124,7 +125,7 @@ milestones:
       - check: rubric_grader
         kind: rubric
         params: {rubric: rubrics/research-plan.yaml, paths: [deliverables/m1-plan/research-plan.md, deliverables/m1-plan/questions.json], threshold: 0.75}
-      - {check: human_signoff, kind: human, description: Client approves the question tree, source policy and evidence cutoff}
+      - {check: human_signoff, kind: human, description: "Client approves the question tree, source policy and evidence cutoff"}
   - id: m2-evidence
     title: Evidence ledger
     description: >-
