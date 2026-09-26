@@ -1682,3 +1682,17 @@ button.nav-signin { background: none; border: 0; cursor: pointer; font-family: i
   .js-reveal [data-reveal-group] > *:not(.is-in) { opacity: 1; transform: none; }
   .account-menu { animation: none; }
 }
+
+/* "View all" under a grid: centred, arrow nudges on hover. */
+.view-all { display: flex; justify-content: center; margin-top: 28px; }
+.view-all-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-sm); font-weight: 500; color: var(--accent);
+  padding: 8px 14px; border-radius: 999px;
+  transition: background-color .18s var(--ease-out), color .18s var(--ease-out);
+}
+.view-all-link svg { transition: transform .22s var(--ease-out); }
+.view-all-link:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.view-all-link:hover svg { transform: translateX(3px); }
+.view-all-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (prefers-reduced-motion: reduce) { .view-all-link svg { transition: none; } }

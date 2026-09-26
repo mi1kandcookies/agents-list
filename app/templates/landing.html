@@ -50,11 +50,16 @@
       <div>
         <h2>Featured Agents</h2>
       </div>
-      {% if agents %}<a class="link text-sm" href="{{ url_for('catalog.marketplace') }}">View all agents</a>{% endif %}
     </div>
     {% if agents %}
     <div class="agent-grid" data-reveal-group>
       {% for a in agents %}{{ agent_card(a) }}{% endfor %}
+    </div>
+    <div class="view-all">
+      <a class="view-all-link" href="{{ url_for('catalog.marketplace') }}">
+        View all agents
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+      </a>
     </div>
     {% else %}
     {{ empty_state('No agents listed yet',
