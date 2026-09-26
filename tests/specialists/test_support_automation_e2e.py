@@ -24,6 +24,7 @@ from agentkit.evals import case_brief, load_cases, prepare_workspace
 from agentkit.events import MemorySink
 from agentkit.evidence import evidence_hash
 from agentkit.llm import ScriptedAdapter
+from agentkit.manifest import operator_fields, spec_hash, task_price_micro
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
 from agentkit.types import Brief, ModelResponse, Submission, ToolCall, Usage
@@ -258,6 +259,8 @@ def _assert_ready(spec, ws, sub: Submission, events: MemorySink | None = None) -
     assert sub.human_review.reviewer_role == gate.reviewer_role
     assert sub.human_review.checklist == gate.checklist
     assert sub.evidence_hash.startswith("0x") and len(sub.evidence_hash) == 66
+    # the evidence names the SOW index: the brief lists no milestones, so the manifest order
+    assert sub.milestone_idx == [m.id for m in spec.manifest.milestones].index(sub.milestone_id)
     for art in sub.artifacts:
         assert art.sha256 == hashlib.sha256((ws / art.path).read_bytes()).hexdigest(), art.path
     saved = json.loads(spec.submission_path(ws, sub.milestone_id).read_text(encoding="utf-8"))
@@ -287,6 +290,17 @@ def test_registry_loads_the_subclass_and_wiring_validates(spec):
     assert spec.tool_registry().get("find_contradictions").untrusted_output is True
 
 
+def test_manifest_bridges_to_the_stamped_manifest(spec):
+    fields = operator_fields(spec.manifest)
+    assert fields["model"] == spec.manifest.models.primary and fields["mcp_servers"] == []
+    assert fields["tools"] == sorted(set(spec.manifest.tools))
+    assert fields["spec_hash"].startswith("0x") and len(fields["spec_hash"]) == 66
+    # the flat x402 per-task price, stamped as exact micro-USDC, apart from the per-milestone range
+    assert task_price_micro(spec.manifest) == 5_000_000
+    assert spec.manifest.models.fallbacks == []
+    assert not spec.manifest.models.options.get("anthropic", {}).get("server_fallbacks")
+
+
 def test_cli_commands(spec, tmp_path):
     case = json.loads((PKG / "evals" / "cases" / "m1-discovery.json").read_text(encoding="utf-8"))
     intake = tmp_path / "intake.json"
@@ -300,7 +314,11 @@ def test_cli_commands(spec, tmp_path):
     assert code == 0 and "support-automation" in out and "Customer Support" in out
     assert run("validate", "support-automation") == (0, "[]\n")
     code, out = run("show", "support-automation")
-    assert code == 0 and json.loads(out)["human_review"]["required"] is False
+    shown = json.loads(out)
+    assert code == 0 and shown["human_review"]["required"] is False
+    assert shown["category"] == "Customer Support" and shown["pricing"]["model"] == "per_milestone"
+    code, out = run("spec-hash", "support-automation")
+    assert code == 0 and out.strip() == spec_hash(spec.manifest) == operator_fields(spec.manifest)["spec_hash"]
     code, out = run("estimate", "support-automation", "--intake", str(intake))
     est = json.loads(out)
     assert code == 0 and (est["hours_low"], est["hours_high"]) == (10, 24)

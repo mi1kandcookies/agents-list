@@ -28,7 +28,10 @@ listing:
     - Grounded article and macro drafting
     - Support-agent configuration with must-escalate rules
     - Held-out ticket replay for escalation recall
-  pricing: {model: per_milestone, currency: USDC, typical_low: 800, typical_high: 5000}
+  # typical_low/high: the engagement range, billed per milestone through the
+  # SOW. task_price_usdc: placeholder for the flat x402 per-task price that
+  # the operator stamps (price_min_micro = price_max_micro).
+  pricing: {model: per_milestone, currency: USDC, typical_low: 800, typical_high: 5000, task_price_usdc: 5.0}
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: docs
 prompts:

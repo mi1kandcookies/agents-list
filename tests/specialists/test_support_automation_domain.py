@@ -411,7 +411,11 @@ def test_manifest_parses_and_names_resolve():
             assert crit.get("kind", "automated") in ("automated", "rubric", "human")
     assert m["human_gate"]["required"] is False and m["human_gate"]["disclaimer"]
     assert m["egress"]["mode"] == "none" and m["shell"]["allow"] == []
-    assert m["listing"]["pricing"]["currency"] == "USDC"
+    assert m["listing"]["category"] == "Customer Support"
+    pricing = m["listing"]["pricing"]
+    assert pricing["currency"] == "USDC" and pricing["model"] == "per_milestone"
+    assert 0 < pricing["typical_low"] < pricing["typical_high"]
+    assert 0 < pricing["task_price_usdc"] <= 10                 # the stamped x402 per-task price
 
 
 def test_manifest_files_and_rubrics_exist():
