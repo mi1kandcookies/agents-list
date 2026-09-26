@@ -113,6 +113,13 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     app.jinja_env.globals["enumerate"] = enumerate
     app.jinja_env.globals["explorer_url"] = explorer_url
 
+    from app.common.agent_icons import icon_for, icon_svg
+    from app.common.money import format_token_price
+    from app.intake.token_model import format_tokens
+    app.jinja_env.globals["agent_icon_svg"] = lambda agent: icon_svg(icon_for(agent))
+    app.jinja_env.filters["token_price"] = format_token_price
+    app.jinja_env.filters["tokens"] = format_tokens
+
     @app.context_processor
     def _inject_chain():
         return {"chain": get_chain_config(), "usdc_address": get_address("USDC")}

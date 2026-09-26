@@ -11,7 +11,9 @@ from app.engagements.service import EngagementError
 from app.extensions import db, limiter
 from app.intake import bp
 from app.intake import sow_parse
-from app.intake.estimate import AUTO_RELEASE_DAYS, BUFFER, CATEGORIES, category_for, estimate
+from app.intake.estimate import (AUTO_RELEASE_DAYS, BUFFER, CATEGORIES, category_for, estimate,
+                                 estimate_text)
+from app.intake.token_model import model_config
 from app.services import get_agent
 
 MAX_PREFILL = 500
@@ -20,7 +22,7 @@ MAX_PREFILL = 500
 def flow_config() -> dict:
     """Everything flow.js needs that should not be duplicated in JavaScript."""
     return {"categories": CATEGORIES, "buffer": BUFFER,
-            "auto_release_days": AUTO_RELEASE_DAYS}
+            "auto_release_days": AUTO_RELEASE_DAYS, "token_model": model_config()}
 
 
 @bp.route("/new")
@@ -52,11 +54,14 @@ def engagement_estimate(engagement_id: str):
     milestones = [{"idx": m.idx, "title": m.title, "criteria": _criteria(m.acceptance),
                    "amount_cents": (m.amount_micro or 0) // 10_000} for m in eng.milestones]
     est = estimate(outcome=eng.outcome,
-                   milestones=[{"amount_cents": m["amount_cents"], "criteria": len(m["criteria"])}
-                               for m in milestones],
+                   milestones=[{"title": m["title"], "amount_cents": m["amount_cents"],
+                                "criteria": m["criteria"]} for m in milestones],
                    category=eng.category or (eng.agent.category if eng.agent else None),
-                   deadline=eng.deadline_at.date() if eng.deadline_at else None)
+                   deadline=eng.deadline_at.date() if eng.deadline_at else None,
+                   input_price_per_1m=eng.agent.input_price_per_1m if eng.agent else 0,
+                   output_price_per_1m=eng.agent.output_price_per_1m if eng.agent else 0)
     return render_template("intake/estimate.html", eng=eng, milestones=milestones, est=est,
+                           est_text=estimate_text(est),
                            total_cents=(eng.total_micro or 0) // 10_000,
                            can_approve=eng.status in ("draft", "scoped"),
                            source=json.loads(eng.sow_json or "{}").get("source_document"),

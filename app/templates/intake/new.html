@@ -3,7 +3,7 @@
 {% from "components/sow_drop.html" import sow_drop %}
 {% block title %}Describe your job{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=4">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=5">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/sow.css') }}?v=2">
 {% endblock %}
 
@@ -197,5 +197,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/sow-upload.js') }}"></script>
-<script src="{{ url_for('static', filename='js/flow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/flow.js') }}?v=3"></script>
 {% endblock %}

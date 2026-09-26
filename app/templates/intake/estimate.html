@@ -2,7 +2,7 @@
 {% from "intake/_macros.html" import estimate_card, contract %}
 {% block title %}Estimate {{ eng.id }}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/flow.css') }}?v=5">
 {% endblock %}
 
 
@@ -25,12 +25,15 @@
     <div class="flow-main">
       <section class="flow-block" aria-labelledby="est-h">
         <h2 id="est-h">Estimate</h2>
+        {% set t = est_text %}
         {{ estimate_card(
-            cost=(est.cost_low_cents|usdc('cents', unit=False)) ~ " to " ~ (est.cost_high_cents|usdc('cents', unit=False)),
-            cost_note=(est.total_cents|usdc('cents')) ~ " is held in escrow; the upper figure allows for revision work.",
+            cost=t.cost, cost_note=t.cost_note,
+            tokens_in=t.tokens_in, tokens_out=t.tokens_out,
+            tokens_note="Across " ~ milestones|length ~ " milestone" ~ ("s" if milestones|length != 1 else "") ~ ".",
             days=est.days_low ~ " to " ~ est.days_high ~ " days",
             fit=fit_text.get(est.deadline_fit, "No fixed deadline."),
-            level=est.confidence, tips=est.tips) }}
+            cap=t.cap, cap_note=t.cap_note,
+            level=est.confidence, tips=est.tips, method=t.method) }}
       </section>
 
       <section class="flow-block" aria-labelledby="contract-h">
@@ -44,7 +47,7 @@
             deadline=eng.deadline_at.strftime('%Y-%m-%d') if eng.deadline_at else "Flexible",
             deadline_is_date=eng.deadline_at is not none,
             auto_days=auto_release_days,
-            sow_hash=eng.sow_hash, engagement_id=eng.id, source=source) }}
+            sow_hash=eng.sow_hash, engagement_id=eng.id, source=source, usage=est_text.usage) }}
       </section>
 
       {% if can_approve %}
@@ -61,5 +64,5 @@
 {% endblock %}
 
 {% block scripts %}
-{% if can_approve %}<script src="{{ url_for('static', filename='js/flow.js') }}"></script>{% endif %}
+{% if can_approve %}<script src="{{ url_for('static', filename='js/flow.js') }}?v=3"></script>{% endif %}
 {% endblock %}

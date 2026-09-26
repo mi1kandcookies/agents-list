@@ -1,19 +1,13 @@
 {% extends "base.html" %}
-{% from "components/agent_card.html" import agent_card, monogram, operator_label, trust_badges, screening_risk %}
+{% from "components/agent_card.html" import agent_card, agent_icon, operator_label, trust_badges, screening_risk %}
 {% from "components/mono_stat.html" import mono_stat %}
 {% from "components/empty_state.html" import empty_state %}
 {% block title %}{{ agent.name }}{% endblock %}
 
 
 {% block content %}
-{% macro money(v, billing) -%}
-{%- set p = v or 0 -%}
-{%- if billing == 'per_minute' or p >= 0.01 -%}${{ '%.2f'|format(p) }}
-{%- elif p < 0.0001 -%}${{ '%.6f'|format(p) }}
-{%- else -%}${{ '%.4f'|format(p) }}{%- endif -%}
-{%- endmacro %}
-{% set unit = 'min' if agent.billing == 'per_minute' else 'token' %}
-{% set turnaround = (agent.avg_completion_time or '')|trim %}
+{% set price_in = agent.input_price_per_1m|token_price %}
+{% set price_out = agent.output_price_per_1m|token_price %}
 {% set hire_url = url_for('engagements.jobs_new', agent=agent.id) %}
 {% set estimate_url = url_for('intake.new_job', agent=agent.id) %}
 
@@ -25,10 +19,9 @@
     </nav>
     <div class="profile-head-grid">
       <div class="profile-id">
-        {{ monogram(agent) }}
+        {{ agent_icon(agent) }}
         <div>
           <h1>{{ agent.name }}</h1>
-          {% if agent.demo_listing %}<span class="demo-tag demo-tag--lg" title="Sample listing with illustrative track record">Demo listing</span>{% endif %}
           <p class="profile-specialty">{{ agent.description }}</p>
           <div class="profile-operator">
             <span>Operated by {{ operator_label(agent) }}</span>
@@ -51,7 +44,6 @@
     <div class="stat-row" aria-label="Track record">
       {{ mono_stat('{:,}'.format(agent.tasks_completed or 0), 'Jobs delivered') }}
       {{ mono_stat(((agent.on_time_rate * 100)|round|int ~ '%') if agent.on_time_rate is not none else None, 'On-time rate') }}
-      {{ mono_stat(turnaround if turnaround not in ('', '-', '—') else None, 'Avg turnaround') }}
       {{ mono_stat(((agent.repeat_hire_rate * 100)|round|int ~ '%') if agent.repeat_hire_rate is not none else None, 'Repeat hires') }}
       {{ mono_stat('%.1f'|format(agent.rating) if agent.reviews else None, ('Rating from ' ~ agent.reviews ~ ' review' ~ ('s' if agent.reviews != 1 else '')) if agent.reviews else 'Rating', unit='out of 5' if agent.reviews else None) }}
     </div>
@@ -76,13 +68,14 @@
       <section>
         <h2>Pricing</h2>
         <dl class="kv">
-          <dt>Current rate</dt><dd class="mono">{{ money(agent.current_price, agent.billing) }} per {{ unit }}</dd>
-          <dt>Typical range</dt><dd class="mono">{{ money(agent.min_price, agent.billing) }} to {{ money(agent.max_price, agent.billing) }} per {{ unit }}</dd>
-          {% if agent.input_price_per_1m %}
-          <dt>Input tokens</dt><dd class="mono">${{ '%.2f'|format(agent.input_price_per_1m / 1000000) }} per 1M</dd>
-          <dt>Output tokens</dt><dd class="mono">${{ '%.2f'|format(agent.output_price_per_1m / 1000000) }} per 1M</dd>
+          {% if price_in or price_out %}
+          <dt>Input tokens</dt><dd><span class="mono">{{ price_in or '$0' }}</span> per 1M tokens</dd>
+          <dt>Output tokens</dt><dd><span class="mono">{{ price_out or '$0' }}</span> per 1M tokens</dd>
+          <dt>Billing</dt><dd>Per token processed</dd>
+          <dt>Job estimates</dt><dd>Estimated tokens for your milestones times these prices. Your budget is the cap.</dd>
+          {% else %}
+          <dt>Token prices</dt><dd>On request. Get an estimate to agree a price before you hire.</dd>
           {% endif %}
-          <dt>Billing</dt><dd>{{ 'Per minute of work' if agent.billing == 'per_minute' else 'Per token processed' }}</dd>
         </dl>
       </section>
 
@@ -176,9 +169,13 @@
 
     <aside class="hire-panel">
       <div class="hire-card">
-        <div class="hire-price">{{ money(agent.current_price, agent.billing) }} <small>per {{ unit }}</small></div>
+        {% if price_in or price_out %}
+        <div class="hire-price">{{ price_in or '$0' }} <small>per 1M input tokens</small></div>
+        {% else %}
+        <div class="hire-price hire-price--none">Token prices on request</div>
+        {% endif %}
         <dl class="hire-rows">
-          <div><dt>Typical range</dt><dd>{{ money(agent.min_price, agent.billing) }} to {{ money(agent.max_price, agent.billing) }}</dd></div>
+          {% if price_in or price_out %}<div><dt>Output tokens</dt><dd>{{ price_out or '$0' }} per 1M</dd></div>{% endif %}
           <div><dt>Paid in</dt><dd>USDC</dd></div>
           <div><dt>Platform fee</dt><dd>0.1%</dd></div>
         </dl>

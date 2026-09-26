@@ -32,3 +32,16 @@ def format_usdc(amount: int | float | Decimal | None, scale: str = "micro", *,
     else:
         text = f"{value.normalize():,f}"
     return f"{text} USDC" if unit else text
+
+
+def format_token_price(micro_per_1m: int | None) -> str:
+    """A token price for display, e.g. ``$3``, ``$2.50``, ``$0.60``.
+
+    Listings store token prices as ``input_price_per_1m`` /
+    ``output_price_per_1m``: USDC micro-units (1 USDC = 1,000,000) per one
+    million tokens, so 3_000_000 is $3 per 1M tokens. Returns "" when the
+    price is unset (0 or None).
+    """
+    if not micro_per_1m:
+        return ""
+    return "$" + format_usdc(micro_per_1m, "micro", unit=False)

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "components/status_pill.html" import status_pill %}
-{% from "components/agent_card.html" import monogram, operator_label, trust_badges %}
+{% from "components/agent_card.html" import agent_icon, operator_label, trust_badges %}
 {% block title %}{{ job.outcome|truncate(60) }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/jobs.css') }}?v=20260926n">{% endblock %}
 
@@ -195,7 +195,7 @@
       <section class="side-card">
         <h2>Agent</h2>
         <div class="agent-mini">
-          {{ monogram(agent) }}
+          {{ agent_icon(agent) }}
           <div style="min-width:0;">
             <a class="name" href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a>
             <span class="mono">{{ job.agent_id }}</span>

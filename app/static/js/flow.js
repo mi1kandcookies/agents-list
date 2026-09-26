@@ -3,8 +3,10 @@
  * /estimate/<engagement_id>.
  *
  * Category defaults and estimate constants come from the server
- * (#flow-config, built in app/intake/estimate.py). estimate() here mirrors
- * estimate() in that module; keep the two in step.
+ * (#flow-config, built in app/intake/estimate.py and token_model.py).
+ * estimate(), estimateTokens(), tokenCost(), fmtTokens() and estimateText()
+ * here mirror estimate(), estimate_tokens(), token_cost(), format_tokens()
+ * and estimate_text() there; keep them in step.
  */
 (function () {
   "use strict";
@@ -218,13 +220,68 @@
     shareBase = state.milestones.map(function (m) { return m.amount; });
   }
 
-  // Mirrors app/intake/estimate.py:estimate().
-  function estimate() {
+  // Mirrors app/intake/token_model.py:estimate_tokens(). The token model
+  // (heuristic or calibrated profiles) comes resolved from the server.
+  var TM = CONFIG.token_model;
+  function estimateTokens(scope) {
+    var prof = TM.profiles[scope.category || ""] || TM.profiles._default;
+    var outcomeChars = String(scope.outcome || "").trim().length;
+    var midIn = 0, midOut = 0;
+    scope.milestones.forEach(function (m) {
+      var crit = (m.criteria || []).map(function (c) { return String(c).trim(); }).filter(Boolean);
+      var factor = 1 + TM.criterion_weight * Math.min(crit.length, TM.criteria_cap);
+      var specChars = outcomeChars + String(m.title || "").trim().length +
+        crit.reduce(function (n, c) { return n + c.length; }, 0);
+      var context = Math.ceil(specChars / TM.chars_per_token);
+      midIn += prof.input_per_milestone * factor + context * TM.turns_per_milestone;
+      midOut += prof.output_per_milestone * factor;
+    });
+    var step = TM.round_to;
+    function band(mid) {
+      return { low: Math.floor(+(mid * prof.low).toFixed(6) / step) * step,
+               high: Math.ceil(+(mid * prof.high).toFixed(6) / step) * step };
+    }
+    return { input: band(midIn), output: band(midOut), basis: prof.basis,
+             runs: prof.basis === "calibrated" ? prof.runs : 0 };
+  }
+  // Mirrors token_cost(): USDC micro-units, low down and high up to the cent.
+  function tokenCost(tokens, pin, pout) {
+    pin = Number(pin) || 0; pout = Number(pout) || 0;
+    if (!pin && !pout) return null;
+    function cost(side) { return (tokens.input[side] * pin + tokens.output[side] * pout) / 1e6; }
+    return { lowMicro: Math.floor(+cost("low").toFixed(6) / 1e4) * 1e4,
+             highMicro: Math.ceil(+cost("high").toFixed(6) / 1e4) * 1e4 };
+  }
+  // Mirrors format_tokens(): 950, 81k, 1.2M, 12M.
+  function fmtTokens(n) {
+    n = Math.trunc(Number(n) || 0);
+    if (n < 1000) return String(n);
+    var k = Math.floor(n / 1000 + 0.5);
+    if (k < 1000) return k + "k";
+    var v = n / 1e6;
+    v = v < 9.95 ? Math.floor(v * 10 + 0.5) / 10 : Math.floor(v + 0.5);
+    return v + "M";
+  }
+  // "$3" / "$2.50" / "$0.60" from USDC micro-units per 1M tokens.
+  function fmtTokenPrice(micro) { return micro ? "$" + fmtUSDC(Number(micro) / 1e6, { unit: false }) : ""; }
+  function agentPrices(a) {
+    return a ? { pin: Number(a.input_price_per_1m) || 0, pout: Number(a.output_price_per_1m) || 0 } : null;
+  }
+  function jobScope() {
+    return {
+      category: state.category, outcome: state.outcome,
+      milestones: state.milestones.map(function (m) { return { title: m.title, criteria: m.criteria }; })
+    };
+  }
+
+  // Mirrors app/intake/estimate.py:estimate(). `agent` is a listing card
+  // (from /api/agents) or null while none is picked.
+  function estimate(agent) {
     var c = cat(state.category);
     var per = c ? c.days_per_milestone : 4;
     var total = toCents(msTotal());
     var tips = [], score = 0;
-    var counts = state.milestones.map(function (m) { return m.criteria.filter(Boolean).length; });
+    var counts = state.milestones.map(function (m) { return m.criteria.filter(function (x) { return String(x).trim(); }).length; });
     if (state.outcome.trim().length >= 80) score += 1; else tips.push("Describe the outcome in a bit more detail.");
     if (counts.length && counts.every(function (n) { return n >= 1; })) score += 1; else tips.push("Give every milestone at least one success criterion.");
     if (counts.length && counts.every(function (n) { return n >= 2; })) score += 1; else tips.push("Add a second success criterion to each milestone.");
@@ -237,11 +294,41 @@
       var left = daysUntil(state.deadline.date);
       fit = left >= daysHigh ? "ok" : left >= daysLow ? "tight" : "short";
     }
+    var tokens = estimateTokens(jobScope());
+    var p = agentPrices(agent);
+    var cost = p ? tokenCost(tokens, p.pin, p.pout) : null;
     return {
-      totalCents: total, costLowCents: total,
-      costHighCents: Math.ceil(Math.round(total * (1 + buffer)) / 500) * 500,
+      totalCents: total, tokens: tokens, cost: cost, picked: !!agent,
+      overBudget: !!cost && cost.highMicro > total * 1e4,
       daysLow: daysLow, daysHigh: daysHigh, level: level, tips: tips, fit: fit
     };
+  }
+
+  // Mirrors estimate_text() (plus the not-yet-picked case, which only the flow has).
+  function estimateText(e) {
+    function rng(lo, hi) { return lo === hi ? lo : lo + " to " + hi; }
+    var t = e.tokens;
+    var tIn = rng(fmtTokens(t.input.low), fmtTokens(t.input.high));
+    var tOut = rng(fmtTokens(t.output.low), fmtTokens(t.output.high));
+    var cost, note;
+    if (!e.picked) { cost = "Pick an agent"; note = "Cost is these tokens times the agent's token prices."; }
+    else if (!e.cost) { cost = "Not listed"; note = "This agent has not listed token prices."; }
+    else {
+      cost = rng(fmtUSDC(e.cost.lowMicro / 1e6, { unit: false }), fmtUSDC(e.cost.highMicro / 1e6, { unit: false }));
+      note = e.overBudget ? "The upper figure is above your budget. The budget still caps what is paid."
+        : "Estimated tokens times this agent's token prices.";
+    }
+    var method = t.basis === "calibrated"
+      ? "Estimated from " + t.runs.toLocaleString("en-US") + " measured run" + (t.runs === 1 ? "" : "s") + " of similar jobs and this agent's token prices."
+      : e.picked
+        ? "Estimated from your milestones and this agent's token prices. Token use per milestone is a rule of thumb for this kind of work, so the range is wide."
+        : "Estimated from your milestones. Token use per milestone is a rule of thumb for this kind of work, so the range is wide.";
+    var usage = "About " + tIn + " input and " + tOut + " output tokens" +
+      (e.picked && e.cost ? ", " + cost + " USDC at this agent's prices." : ".");
+    return { cost: cost, costNote: note, tokensIn: tIn, tokensOut: tOut,
+             cap: fmtUSDC(e.totalCents / 100, { unit: false }),
+             capNote: "Held in escrow. The agent is never paid more than this.",
+             method: method, usage: usage };
   }
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -520,9 +607,16 @@
     "short": "Your deadline is shorter than the lower estimate. Consider fewer milestones or a later date."
   };
   function renderEstimate() {
-    var e = estimate();
-    bind("est-cost", fmtUSDC(e.costLowCents / 100, { unit: false }) + " to " + fmtUSDC(e.costHighCents / 100, { unit: false }));
-    bind("est-cost-note", fmtUSDC(e.totalCents / 100) + " is held in escrow; the upper figure allows for revision work.");
+    var e = estimate(state.agent && state.agent.card);
+    var tx = estimateText(e);
+    bind("est-cost", tx.cost);
+    bind("est-cost-note", tx.costNote);
+    bind("est-tok-in", tx.tokensIn);
+    bind("est-tok-out", tx.tokensOut);
+    bind("est-tok-note", "Across " + plural(state.milestones.length, "milestone") + ".");
+    bind("est-cap", tx.cap);
+    bind("est-cap-note", tx.capNote);
+    bind("est-method", tx.method);
     bind("est-days", e.daysLow === e.daysHigh ? plural(e.daysLow, "day") : e.daysLow + " to " + e.daysHigh + " days");
     bind("est-fit", e.fit ? FIT[e.fit] :
       state.deadline.mode === "asap" ? "You asked for the earliest possible start." : "No fixed deadline.");
@@ -542,17 +636,17 @@
   }
   function agentKey(a) { return String(a.agent_id || a.public_id || a.id); }
   function agentChoice(a) { return { id: agentKey(a), name: a.name, card: a }; }
+  // Token prices, e.g. "$3 input, $15 output per 1M tokens".
   function priceText(a) {
-    if (a.price_hint_usdc != null) return fmtUSDC(a.price_hint_usdc);
-    if (a.billing === "per_token") {
-      // Token prices are tiny; quote them per million tokens.
-      var perM = Number(a.input_price_per_1m) ? Number(a.input_price_per_1m) / 1e6 : (Number(a.current_price) || 0) * 1e6;
-      return perM ? fmtUSDC(perM) + " per 1M tokens" : "On request";
-    }
-    var p = Number(a.current_price) || 0;
-    // Per-minute rates are genuinely fractional, so they always keep their cents.
-    if (p && a.billing === "per_minute") return fmtUSDC(p, { unit: false, cents: true }) + " USDC per min";
-    return p ? fmtUSDC(p) : "On request";
+    var pin = fmtTokenPrice(a.input_price_per_1m), pout = fmtTokenPrice(a.output_price_per_1m);
+    if (!pin && !pout) return "On request";
+    return (pin || "$0") + " input, " + (pout || "$0") + " output per 1M tokens";
+  }
+  function agentEstimateText(a) {
+    var c = estimate(a).cost;
+    if (!c) return "";
+    var lo = fmtUSDC(c.lowMicro / 1e6, { unit: false }), hi = fmtUSDC(c.highMicro / 1e6, { unit: false });
+    return (lo === hi ? lo : lo + " to " + hi) + " USDC";
   }
   function loadAgents() {
     var c = cat(state.category);
@@ -583,7 +677,7 @@
       if (chosen && !list.some(function (a) { return agentKey(a) === state.agent.id; })) list = [chosen].concat(list).slice(0, 3);
       if (state.agent && !list.some(function (a) { return agentKey(a) === state.agent.id; })) state.agent = null;
       list.forEach(function (a) { box.appendChild(agentCard(a)); });
-      renderSummary();
+      renderSummary(); renderEstimate();
     });
   }
   function agentCard(a) {
@@ -593,7 +687,7 @@
     var input = el("input", { type: "radio", name: "agent", value: key, checked: state.agent && state.agent.id === key ? "checked" : null,
       onchange: function () {
         state.agent = agentChoice(a);
-        save(); renderSummary(); showError($("#e-7"), "");
+        save(); renderSummary(); renderEstimate(); showError($("#e-7"), "");
       } });
     return el("label", { "class": "agent" }, [
       input,
@@ -604,7 +698,8 @@
         ]),
         el("span", { "class": "agent-spec", text: a.description || a.use_case || a.category || "" }),
         el("span", { "class": "agent-stats" }, [
-          el("span", {}, [el("span", { "class": "stat-label", text: "Typical price " }), el("span", { "class": "mono", text: priceText(a) })]),
+          el("span", {}, [el("span", { "class": "stat-label", text: "Tokens " }), el("span", { "class": "mono", text: priceText(a) })]),
+          agentEstimateText(a) ? el("span", {}, [el("span", { "class": "stat-label", text: "This job " }), el("span", { "class": "mono", text: agentEstimateText(a) })]) : null,
           el("span", {}, [el("span", { "class": "stat-label", text: "Rating " }), el("span", { "class": "mono", text: rating })]),
           el("span", {}, [el("span", { "class": "stat-label", text: "Jobs " }), el("span", { "class": "mono", text: String(jobs) })]),
           a.agent_id || a.public_id ? el("span", { "class": "mono agent-id", text: a.agent_id || a.public_id }) : null
@@ -624,6 +719,7 @@
     bind("c-deadline", deadlineText() || "Flexible");
     $('[data-bind="c-deadline"]').classList.toggle("mono", !!state.deadline.date && state.deadline.mode !== "asap" && state.deadline.mode !== "flexible");
     bind("c-total", fmtUSDC(msTotal(), { unit: false }));
+    bind("c-usage", estimateText(estimate(state.agent && state.agent.card)).usage);
     var ol = $('[data-bind="c-milestones"]');
     ol.innerHTML = "";
     state.milestones.forEach(function (m) {
