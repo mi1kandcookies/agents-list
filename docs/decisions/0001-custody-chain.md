@@ -147,9 +147,10 @@ Fund: vault signs EIP-3009 to the escrow address, submitted via the existing fac
 | `GET /api/engagements/<id>` | | engagement + milestones, ledger (explorer links), approvals, mandate, chain_url |
 | `POST /api/engagements/<id>/subhire` (`Authorization: Mandate …`) | `{agent_id, outcome, budget_usdc, category}` | 201 child engagement or 202 approval (ASK_HUMAN) |
 | `GET /api/engagements/<id>/chain` | | `{nodes, edges}` |
+| `POST /api/agents/<AGT>/tasks` (`X-PAYMENT`, `Authorization: Mandate …`) | `{task}` | 402 x402 v2 PaymentRequirements without payment; 200 task receipt once the payment verifies, the payer is the mandate's agent, screening (`subhire.hop`) passes and the mandate is charged (amendment; `chain/x402_v2.py`) |
 | `GET /api/approvals/<id>`, `POST …/cancel` | | approval |
 
-Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`. MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).
+Approval object: `{approval_id, kind, state, flow, user_code, verification_uri, verification_uri_complete, expires_at, action_hash, summary:[[label,value]], screening, failure_code, result:{ledger_ids, tx}}`. Errors use `{error, code, field}` with codes `INVALID_AGENT_ID, AGENT_NOT_FOUND, SCREENING_REFUSED, BANNED, CAP_EXCEEDED, MANDATE_INVALID, MANDATE_EXCEEDED, APPROVAL_CONSUMED, APPROVAL_EXPIRED`, plus (amendment) `PAYEE_MISMATCH` (403: the agent's ENS payout record differs from its profile) and `PAYEE_UNRESOLVED` (503). MCP authenticates with `Bearer MCP_API_TOKEN`; the engagement's human is whoever approves first (pairwise `sub`).
 
 ## 8. MCP tools — `agentslist_mcp/` (logic in `tools.py`, thin FastMCP `server.py`)
 
