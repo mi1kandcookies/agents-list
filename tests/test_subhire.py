@@ -60,8 +60,10 @@ def named(monkeypatch):
     return calls
 
 
-def _new_agent(db, name, addr, category="Development"):
+def _new_agent(db, name, addr, category="Development", stamped=True):
+    """A listed agent, operator-stamped (dev stamp) so it is hireable."""
     from app.models import Agent
+    from app.seller.stamp import dev_stamp
     row = Agent(name=name, description="sub agent", category=category, billing="per_minute",
                 min_price=0.05, max_price=0.2, current_price=0.1, seller=addr,
                 deployer_wallet=addr, payout_address=addr)
@@ -69,13 +71,20 @@ def _new_agent(db, name, addr, category="Development"):
     row.capabilities = []
     db.session.add(row)
     db.session.commit()
+    if stamped:
+        dev_stamp(row)
+        db.session.commit()
     return row.public_id
 
 
 @pytest.fixture()
 def agents(db, agent):
     from app.models import Agent
-    return {"A": db.session.get(Agent, agent).public_id,
+    from app.seller.stamp import dev_stamp
+    root_agent = db.session.get(Agent, agent)
+    dev_stamp(root_agent)
+    db.session.commit()
+    return {"A": root_agent.public_id,
             "B": _new_agent(db, "Agent B", B_ADDR),
             "C": _new_agent(db, "Agent C", C_ADDR),
             "D": _new_agent(db, "Agent D", D_ADDR)}
@@ -227,6 +236,15 @@ def test_each_hop_narrows_and_depth_is_capped(client, root, agents, screener):
     resp = _subhire(client, c["engagement_id"], c["mandate_token"], agents["D"], budget="1")
     assert resp.status_code == 403 and resp.get_json()["code"] == "DEPTH_EXCEEDED"
     assert len(_allocs()) == 2
+
+
+def test_unstamped_agent_cannot_be_subhired(client, root, agents, screener, db):
+    eid, token = root
+    unstamped = _new_agent(db, "Agent E", "0x" + "1e" * 20, stamped=False)
+    calls = len(screener.calls)
+    resp = _subhire(client, eid, token, unstamped)
+    assert resp.status_code == 409 and resp.get_json()["code"] == "NOT_STAMPED"
+    assert not _children(eid) and not _allocs() and len(screener.calls) == calls
 
 
 def test_agent_cannot_subhire_itself(client, root, agents, screener):
