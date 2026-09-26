@@ -1067,12 +1067,26 @@ def test_manifest_policy_and_listing(manifest):
     assert manifest["shell"]["allow"] == []
     assert manifest["human_gate"]["required"] is False
     assert "Not investment advice" in manifest["human_gate"]["disclaimer"]
-    assert manifest["listing"]["pricing"]["currency"] == "USDC"
+    assert manifest["listing"]["category"] == "Finance"
+    pricing = manifest["listing"]["pricing"]
+    assert pricing["currency"] == "USDC" and pricing["model"] == "per_milestone"
+    assert 0 < pricing["typical_low"] < pricing["typical_high"]
     assert manifest["models"]["primary"] == "anthropic:claude-opus-5"
     assert [m["id"] for m in manifest["milestones"]] == ["m1-plan-sources", "m2-spreads-comps",
                                                          "m3-diligence-memo"]
     required = {i["field"] for i in manifest["intake"] if i["required"]}
     assert {"companies", "research_question", "sec_user_agent"} <= required
+
+
+def test_manifest_loads_strictly_with_a_small_stamped_task_price():
+    pytest.importorskip("yaml")
+    from agentkit.manifest import load_manifest, task_price_micro
+    spec = load_manifest(PKG / "agent.yaml")        # the kit's strict parse
+    # the flat x402 per-task price the operator stamps, separate from the
+    # per-milestone engagement range and within the 10 USDC cap
+    micro = task_price_micro(spec)
+    assert isinstance(micro, int) and 0 < micro <= 10_000_000
+    assert micro < spec.listing.pricing.typical_low * 1_000_000
 
 
 def test_rubrics_are_well_formed():
