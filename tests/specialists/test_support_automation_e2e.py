@@ -27,6 +27,7 @@ from agentkit.llm import ScriptedAdapter
 from agentkit.registry import load_specialist
 from agentkit.specialist import RunContext
 from agentkit.types import Brief, ModelResponse, Submission, ToolCall, Usage
+from specialists.support_automation import checks as C
 from specialists.support_automation import tools as T
 
 PKG = Path(__file__).resolve().parents[2] / "specialists" / "support_automation"
@@ -37,18 +38,23 @@ SEED = "support-automation"
 M1 = "deliverables/m1-discovery"
 M2 = "deliverables/m2-knowledge"
 M3 = "deliverables/m3-agent-config"
-M1_FILES = [f"{M1}/{n}" for n in ("tickets_redacted.csv", "intent_rules.json", "tickets_labeled.csv",
-                                  "intent_taxonomy.csv", "kb_gap_map.csv", "discovery_report.md")]
-M3_FILES = [f"{M3}/{n}" for n in ("agent_config.json", "eval_holdout.csv", "build_split.csv",
-                                  "escalation_replay.json", "eval_report.md")]
+M1_FILES = [f"{M1}/{n}" for n in ("tickets_redacted.csv", "build_split.csv", "eval_holdout.csv",
+                                  "intent_rules.json", "tickets_labeled.csv", "intent_taxonomy.csv",
+                                  "kb_gap_map.csv", "discovery_report.md")]
+M3_FILES = [f"{M3}/{n}" for n in ("agent_config.json", "escalation_replay.json", "eval_report.md")]
+DISCLAIMER = load_specialist("support-automation").manifest.human_gate.disclaimer
+# The seeded, stratified held-out tickets of the fixture export.
+HELD = T.holdout_ids(T._read_csv(FIXTURE / "inputs" / "tickets.csv")[1], 0.3, SEED)
 
-DISCOVERY_REPORT = """# Larkspur Pantry support discovery
+DISCOVERY_REPORT = f"""# Larkspur Pantry support discovery
+
+{DISCLAIMER}
 
 ## Summary
-70 tickets were redacted and labeled; 97% of the volume maps to 15 intents.
+72 tickets were redacted and labeled; 97% of the volume maps to 15 intents.
 
 ## Intent taxonomy
-Refund requests (11 tickets) and delivery status (10) lead the volume.
+Refund requests (13 tickets) and delivery status (10) lead the volume.
 
 ## Knowledge gaps
 Delivery status, cancellation, pausing, address changes and billing have no article.
@@ -63,19 +69,21 @@ Pausing, skipping and address changes can be answered from articles alone.
 Which refund window is current, 14 or 30 days? The policy owner should confirm.
 """
 
-EVAL_REPORT = """# Support agent evaluation
+EVAL_REPORT = f"""# Support agent evaluation
+
+{DISCLAIMER}
 
 ## Summary
-Must-escalate recall on the sealed held-out split is 1.00.
+Must-escalate recall on the sealed held-out split is 1.00 (3 of 3; 95% lower bound 0.44).
 
 ## Configuration
 Answers come only from the help center and the new articles; five escalation categories hand off.
 
 ## Escalation replay
-21 held-out tickets were replayed once, after tuning on the build split only.
+22 held-out tickets were replayed once, after tuning on the build split only.
 
 ## Known limitations
-Keyword rules miss paraphrases; the held-out split holds a single must-escalate ticket.
+Keyword rules miss paraphrases; three held-out must-escalate tickets are too few for a tight recall estimate.
 
 ## Go-live prerequisites
 The policy owner approves escalation wording; a shadow-mode pilot runs before launch.
@@ -96,7 +104,7 @@ QUOTES = ["Customers can pause a subscription for up to 8 weeks.",
 
 def _build_ticket(ids: list[str]) -> str:
     """A ticket id the seeded split keeps out of the held-out set."""
-    return next(t for t in ids if T._split_bucket(t, SEED) >= 0.3)
+    return next(t for t in ids if t not in HELD)
 
 
 BILLING_TICKET = _build_ticket(["LP0055", "LP0056", "LP0057", "LP0068"])
@@ -137,7 +145,7 @@ MACROS = {"macros": [
      "body": "Hi {{first_name}}, sorry for the wait. Here is how to track order {{order_id}}.",
      "sources": [POLICY]},
 ]}
-CHANGE_LOG = ("# Change log\n\n" + "\n".join(f"- Added articles/{name}" for name in ARTICLES)
+CHANGE_LOG = (f"# Change log\n\n{DISCLAIMER}\n\n" + "\n".join(f"- Added articles/{name}" for name in ARTICLES)
               + "\n- Added macros pause-howto and delivery-late, grounded in the subscription policy.\n")
 
 
@@ -173,7 +181,9 @@ def _m1_plan(*, forge=()) -> list:
     return [
         ("list_files", {"path": "inputs"}),
         ("redact_tickets", {}),
+        ("split_eval_set", {}),                  # sealed before any ticket is read
         ("scan_pii", {"path": f"{M1}/tickets_redacted.csv"}),
+        ("read_file", {"path": f"{M1}/build_split.csv"}),
         ("write_file", {"path": f"{M1}/intent_rules.json", "content": RULES}),
         ("build_intent_taxonomy", {}),
         [("kb_coverage", {}),
@@ -219,7 +229,7 @@ def _config(rules=None) -> str:
 
 def _m3_plan(*, rules=None, tamper=()) -> list:
     return [
-        ("split_eval_set", {}),
+        ("read_file", {"path": f"{M1}/build_split.csv"}),
         ("write_file", {"path": f"{M3}/agent_config.json", "content": _config(rules)}),
         *tamper,
         ("replay_escalations", {}),
@@ -293,7 +303,7 @@ def test_cli_commands(spec, tmp_path):
     assert code == 0 and json.loads(out)["human_review"]["required"] is False
     code, out = run("estimate", "support-automation", "--intake", str(intake))
     est = json.loads(out)
-    assert code == 0 and (est["hours_low"], est["hours_high"]) == (10, 28)
+    assert code == 0 and (est["hours_low"], est["hours_high"]) == (10, 24)
     code, out = run("milestones", "support-automation", "--intake", str(intake))
     m2 = next(m for m in json.loads(out) if m["id"] == "m2-knowledge")
     assert code == 0 and next(a for a in m2["acceptance"] if a["check"] == "top_gaps_addressed")["params"]["top_n"] == 8
@@ -329,7 +339,8 @@ def test_intake_top_n_gaps_only_raises_the_floor(spec):
     assert top_n({"top_n_gaps": 8}) == [8]
     assert top_n({"top_n_gaps": "3"}) == [5]
     assert top_n({"top_n_gaps": "many"}) == [5] and top_n({"top_n_gaps": True}) == [5]
-    assert spec.manifest.milestone("m2-knowledge").acceptance[1].params["top_n"] == 5  # manifest untouched
+    manifest_m2 = spec.manifest.milestone("m2-knowledge")
+    assert next(a for a in manifest_m2.acceptance if a.check == "top_gaps_addressed").params["top_n"] == 5
 
 
 # --- happy path: every milestone ---------------------------------------------------------
@@ -340,7 +351,7 @@ def test_m1_discovery_ready_for_review(spec, ws):
     sub, adapter = _run(spec, ws, "m1-discovery", _m1_plan(), events=events)
     _assert_ready(spec, ws, sub, events)
     results = _results(sub)
-    assert results["taxonomy_reconciles"].score == pytest.approx(0.9714)
+    assert results["taxonomy_reconciles"].score == pytest.approx(round(70 / 72, 4))
     assert results["rubric_grader"].passed is None                       # no grader configured
     assert [a.path for a in sub.artifacts] == M1_FILES
     assert {a.media_type for a in sub.artifacts} == {"text/csv", "application/json", "text/markdown"}
@@ -380,7 +391,7 @@ def test_m3_agent_config_ready_for_review(spec, ws):
     _assert_ready(spec, ws, sub, events)
     assert [a.path for a in sub.artifacts] == M3_FILES
     replay = json.loads((ws / M3 / "escalation_replay.json").read_text(encoding="utf-8"))
-    assert replay["tickets"] == 21 and replay["must_escalate_recall"] == 1.0
+    assert replay["tickets"] == len(HELD) == 22 and replay["must_escalate_recall"] == 1.0
     assert _results(sub)["eval_holdout_sealed"].passed is True
 
 
@@ -401,7 +412,7 @@ def test_forged_taxonomy_needs_revision(spec, ws):
     sub, _ = _run(spec, ws, "m1-discovery", plan)
     results = _results(sub)
     assert results["taxonomy_reconciles"].passed is False
-    assert "refund_request: reported 50 vs 11" in results["taxonomy_reconciles"].details
+    assert "refund_request: reported label Refunds vs Refund for damaged or unwanted box, volume 50 vs 13" in results["taxonomy_reconciles"].details
     assert results["csv_columns"].passed is True and results["redaction_complete"].passed is True
     assert sub.status == "needs_revision" and sub.evidence_hash.startswith("0x")
 
@@ -439,10 +450,10 @@ def test_brief_asking_for_more_gaps_keeps_the_floor_and_adds_its_own(spec, ws):
 
 def test_rewritten_held_out_ticket_needs_revision(spec, ws):
     _through_m2(spec, ws)
-    assert T._split_bucket("LP0067", SEED) < 0.3                       # the held-out bereavement ticket
+    assert "LP0067" in HELD                                           # the held-out bereavement ticket
     weak = [dict(r) for r in ESCALATION_RULES]
     weak[-1]["keywords"] = ["bereavement"]                             # misses "passed away"
-    tamper = [("edit_file", {"path": f"{M3}/eval_holdout.csv",
+    tamper = [("edit_file", {"path": f"{M1}/eval_holdout.csv",
                              "old_text": "please stop the deliveries in his name",
                              "new_text": "I will file a chargeback"})]
     sub, _ = _run(spec, ws, "m3-agent-config", _m3_plan(rules=weak, tamper=tamper))
@@ -450,6 +461,9 @@ def test_rewritten_held_out_ticket_needs_revision(spec, ws):
     assert results["escalation_recall"].passed is True                 # the rewrite fooled the replay
     assert results["eval_holdout_sealed"].passed is False
     assert "rows differ from inputs/tickets.csv: LP0067" in results["eval_holdout_sealed"].details
+    pins = [r for r in sub.check_results if r.check == "prior_milestone_unchanged"]
+    assert [r.passed for r in pins] == [False, True]                   # m1 rewritten, m2 intact
+    assert f"{M1}/eval_holdout.csv" in pins[0].details
     assert sub.status == "needs_revision"
 
 
@@ -494,3 +508,91 @@ def test_check_cli_rechecks_a_workspace(spec, ws):
     assert cli(argv, stdout=out, env={}) == 1
     failed = {r["check"] for r in json.loads(out.getvalue()) if r["passed"] is False}
     assert {"redaction_complete", "no_pii_remaining"} <= failed
+
+
+# --- review regressions -------------------------------------------------------------------
+
+def test_regulated_vertical_needs_a_named_approver(spec):
+    base = {"ticket_export": "inputs/tickets.csv", "help_center": "inputs/help_center/",
+            "helpdesk_platform": "Zendesk"}
+
+    def blocking(intake):
+        return {m.field for m in spec.validate_intake({**base, **intake}) if m.blocking}
+
+    assert blocking({"regulated_vertical": "no"}) == set()
+    assert blocking({"regulated_vertical": "No, we sell meal kits"}) == set()
+    assert blocking({"regulated_vertical": "yes, telehealth"}) == {"compliance_approver"}
+    assert blocking({"regulated_vertical": "financial services",
+                     "compliance_approver": "Dana Ruiz, compliance lead"}) == set()
+    assert "regulated_vertical" in blocking({})
+
+
+def test_reports_carry_the_draft_disclaimer(spec, ws):
+    for mid, report in (("m1-discovery", "discovery_report.md"), ("m2-knowledge", "change_log.md"),
+                        ("m3-agent-config", "eval_report.md")):
+        prompt = spec.system_prompt(_brief(), spec.manifest.milestone(mid))
+        assert f"Include this disclaimer verbatim in deliverables/{mid}/{report}" in prompt
+        assert DISCLAIMER in prompt
+    _run(spec, ws, "m1-discovery", _m1_plan())
+    (ws / M1 / "discovery_report.md").write_text(DISCOVERY_REPORT.replace(DISCLAIMER, ""), encoding="utf-8")
+    results = {r.check: r for r in spec.check(ws, "m1-discovery")}
+    assert results["disclaimer_present"].passed is False
+
+
+def test_m2_rewriting_the_m1_rules_needs_revision(spec, ws):
+    _run(spec, ws, "m1-discovery", _m1_plan())
+    rules = json.loads(RULES)
+    for intent in rules["intents"]:                       # hide every gap behind human_only
+        intent["automation"] = "human_only"
+    plan = [("write_file", {"path": f"{M1}/intent_rules.json", "content": json.dumps(rules)}),
+            *_m2_plan(articles={})]
+    sub, _ = _run(spec, ws, "m2-knowledge", plan)
+    results = _results(sub)
+    assert results["prior_milestone_unchanged"].passed is False
+    assert f"{M1}/intent_rules.json" in results["prior_milestone_unchanged"].details
+    assert results["top_gaps_addressed"].passed is False and "human_only" in results["top_gaps_addressed"].details
+    assert sub.status == "needs_revision"
+
+
+def test_m2_citing_a_held_out_ticket_needs_revision(spec, ws):
+    _run(spec, ws, "m1-discovery", _m1_plan())
+    held = next(t for t in ["LP0055", "LP0056", "LP0057"] if t in HELD)
+    articles = {**ARTICLES, "billing-charges.md": _article(
+        "Fix a duplicate charge", "billing_issue", f"inputs/tickets.csv#{held}",
+        "If you see the same charge twice, report it and we reverse the duplicate.")}
+    sub, _ = _run(spec, ws, "m2-knowledge", _m2_plan(articles=articles))
+    results = _results(sub)
+    assert results["articles_grounded"].passed is True
+    assert results["eval_holdout_sealed"].passed is False
+    assert f"held-out tickets cited as sources: {held}" in results["eval_holdout_sealed"].details
+    assert sub.status == "needs_revision"
+
+
+def test_intake_categories_become_required_escalation_rules(spec, ws):
+    _through_m2(spec, ws)
+    brief = _brief(must_escalate_categories="Food illness or allergic reaction; none")
+    brief.milestones = spec.propose_milestones(brief.intake)
+    m3 = brief.milestone("m3-agent-config")
+    required = [a.params.get("required_escalations") for a in m3.acceptance if a.check == "agent_config_valid"]
+    assert required == [[*C.REQUIRED_ESCALATIONS, "food_illness_or_allergic_reaction"]]
+    sub, _ = _run(spec, ws, "m3-agent-config", _m3_plan(), brief=brief)
+    configs = [r for r in sub.check_results if r.check == "agent_config_valid"]
+    assert [r.passed for r in configs] == [True, False]       # manifest floor, then the intake's category
+    assert "no escalation rule for food_illness_or_allergic_reaction" in configs[1].details
+    rules = [*ESCALATION_RULES, {"category": "food_illness_or_allergic_reaction",
+                                 "keywords": ["allergic reaction", "food poisoning"]}]
+    sub, _ = _run(spec, ws, "m3-agent-config", _m3_plan(rules=rules), brief=brief)
+    assert sub.status == "ready_for_review", [(r.check, r.passed, r.details) for r in sub.check_results]
+
+
+def test_export_without_escalation_labels_fails_discovery(spec, ws):
+    src = ws / "inputs" / "tickets.csv"
+    rows = list(csv.DictReader(src.open(encoding="utf-8", newline="")))
+    with src.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=[k for k in rows[0] if k != "must_escalate"], extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    sub, _ = _run(spec, ws, "m1-discovery", _m1_plan())
+    result = _results(sub)["ticket_export_valid"]
+    assert result.passed is False and "lacks column(s) must_escalate" in result.details
+    assert sub.status == "needs_revision"

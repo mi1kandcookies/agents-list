@@ -61,6 +61,10 @@ def ws(tmp_path: Path) -> Path:
                                           "Click forgot password to log in again.\n", encoding="utf-8")
     (kb / "refunds.md").write_text("# Refunds\nWant your money back? We issue a refund within 30 days of the request.\n",
                                    encoding="utf-8")
+    pol = tmp_path / "inputs" / "policies"
+    pol.mkdir()
+    (pol / "shipping.md").write_text("# Shipping\nDeliveries arrive within 5 business days\nof shipping.\n",
+                                     encoding="utf-8")
     m1 = tmp_path / "deliverables" / "m1-discovery"
     m1.mkdir(parents=True)
     (m1 / "intent_rules.json").write_text(json.dumps(RULES), encoding="utf-8")
@@ -199,8 +203,9 @@ from specialists.support_automation import checks as C  # noqa: E402
 M1 = "deliverables/m1-discovery"
 M2 = "deliverables/m2-knowledge"
 M3 = "deliverables/m3-agent-config"
-M1_PARAMS = {"tickets": f"{M1}/tickets_redacted.csv", "rules": f"{M1}/intent_rules.json",
+M1_PARAMS = {"source": "inputs/tickets.csv", "rules": f"{M1}/intent_rules.json",
              "taxonomy": f"{M1}/intent_taxonomy.csv", "kb_dir": "inputs/help_center"}
+POLICY = "inputs/policies/shipping.md"
 
 
 def _rewrite_csv(path: Path, mutate) -> None:
@@ -249,11 +254,12 @@ def _m2(ws: Path, *, source: str = "inputs/tickets.csv#T4") -> None:
     arts = ws / M2 / "articles"
     arts.mkdir(parents=True, exist_ok=True)
     (arts / "track-delivery.md").write_text(
-        f"---\ntitle: Track your delivery\nintents: delivery_status\nsources: {source}\n---\n"
+        f"---\ntitle: Track your delivery\nintents: delivery_status\nsources: {POLICY}, {source}\n---\n"
         "Deliveries arrive within 5 business days.\n", encoding="utf-8")
     (ws / M2 / "macros.json").write_text(json.dumps({"macros": [
         {"id": "m-delivery", "title": "Delivery delay", "intents": ["delivery_status"],
-         "body": "Sorry for the wait - here is your tracking link.", "sources": [source]}]}), encoding="utf-8")
+         "body": "Sorry for the wait - here is your tracking link.", "sources": [POLICY, source]}]}),
+        encoding="utf-8")
 
 
 def test_m2_checks_pass_and_fail(ws):
@@ -316,10 +322,10 @@ def test_agent_config_valid(ws):
 def test_eval_holdout_sealed(ws):
     _m1(ws)
     tools.split_eval_set(ws, holdout_fraction=0.5)
-    base = {"tickets": f"{M1}/tickets_labeled.csv", "holdout": f"{M3}/eval_holdout.csv",
-            "build": f"{M3}/build_split.csv", "holdout_fraction": 0.5, "min_size": 1}
+    base = {"tickets": f"{M1}/tickets_labeled.csv", "holdout": f"{M1}/eval_holdout.csv",
+            "build": f"{M1}/build_split.csv", "holdout_fraction": 0.5, "min_size": 1}
     assert C.eval_holdout_sealed(ws, base)["passed"] is True
-    held = [r["ticket_id"] for r in csv.DictReader((ws / M3 / "eval_holdout.csv").open(encoding="utf-8"))]
+    held = [r["ticket_id"] for r in csv.DictReader((ws / M1 / "eval_holdout.csv").open(encoding="utf-8"))]
     _m2(ws, source=f"inputs/tickets.csv#{held[0]}")        # leak a held-out ticket into the KB
     leak = C.eval_holdout_sealed(ws, {**base, "articles_dir": f"{M2}/articles"})
     assert leak["passed"] is False and held[0] in leak["details"]
@@ -330,11 +336,11 @@ def test_eval_holdout_sealed_against_source_export(ws):
     _m1(ws)
     tools.split_eval_set(ws, holdout_fraction=0.5)
     params = {"tickets": f"{M1}/tickets_labeled.csv", "source": "inputs/tickets.csv",
-              "holdout": f"{M3}/eval_holdout.csv", "build": f"{M3}/build_split.csv",
+              "holdout": f"{M1}/eval_holdout.csv", "build": f"{M1}/build_split.csv",
               "holdout_fraction": 0.5, "min_size": 1}
     assert C.eval_holdout_sealed(ws, params)["passed"] is True
     # relabel a held-out must-escalate ticket so a weak rule set looks perfect
-    hold = ws / M3 / "eval_holdout.csv"
+    hold = ws / M1 / "eval_holdout.csv"
     rows = list(csv.DictReader(hold.open(encoding="utf-8")))
     target = next((r for r in rows if r["must_escalate"] == "1"), rows[0])
     target["must_escalate"] = "0" if target["must_escalate"] == "1" else "1"
@@ -344,7 +350,7 @@ def test_eval_holdout_sealed_against_source_export(ws):
     # dropping a ticket from both the labeled export and the split is caught too
     tools.split_eval_set(ws, holdout_fraction=0.5)
     _rewrite_csv(ws / M1 / "tickets_labeled.csv", lambda rows: rows.pop())
-    tools.split_eval_set(ws, holdout_fraction=0.5)
+    tools.split_eval_set(ws, tickets_path=f"{M1}/tickets_labeled.csv", holdout_fraction=0.5)
     dropped = C.eval_holdout_sealed(ws, params)
     assert dropped["passed"] is False and "inputs/tickets.csv has 6" in dropped["details"]
 
@@ -439,7 +445,7 @@ def larkspur(tmp_path: Path) -> Path:
 
 def test_fixture_pipeline_meets_m1_acceptance(larkspur):
     red = tools.redact_tickets(larkspur)
-    assert red["rows"] == 70 and all(red["redactions"].values())
+    assert red["rows"] == 72 and all(red["redactions"].values())
     tools.build_intent_taxonomy(larkspur)
     gaps = dict(tools.kb_coverage(larkspur)["gaps"])
     assert {"pause_subscription", "cancel_subscription", "delivery_status"} <= set(gaps)
@@ -451,6 +457,11 @@ def test_fixture_pipeline_meets_m1_acceptance(larkspur):
                                       tickets_path="inputs/tickets.csv")
     refund = [c for c in found["conflicts"] if c["term"] == "refund" and c["unit"] == "days"]
     assert refund and {"14 days", "30 days"} <= set(refund[0]["values"])
+    # the one-off promise in an agent reply is flagged for the policy owner, not taken as policy
+    assert refund[0]["values"]["21 days"] == ["inputs/tickets.csv#LP0072"]
+    # a wrapped policy line still yields its limit; the $20 credit is not a refund amount
+    assert tools.policy_numbers((larkspur / "inputs/policies/refunds.md").read_text(encoding="utf-8"),
+                                ["refund", "credit"]) == {"refund": {"14 days", "$60"}, "credit": {"$20"}}
 
 
 def test_eval_cases_are_well_formed():
@@ -463,3 +474,312 @@ def test_eval_cases_are_well_formed():
         assert {"name", "brief", "milestone", "notes"} <= set(case)
         assert case["milestone"] in ids and case["brief"]["specialist"] == "support-automation"
         assert (PKG / case["fixtures"]).is_dir()
+
+
+# --- review regressions ----------------------------------------------------------
+
+def _escalation_config(ws: Path, rules: list[dict]) -> str:
+    _m3(ws, rules=rules)
+    return f"{M3}/agent_config.json"
+
+
+def test_malformed_or_catch_all_escalation_rules_fail(ws):
+    _m1(ws)
+    base = [{"category": c, "keywords": [k]} for c, k in (
+        ("billing_dispute", "chargeback"), ("legal_threat", "attorney"), ("safety", "unsafe"),
+        ("account_security", "hacked"))]
+    recall = {"eval": f"{M1}/tickets_labeled.csv"}
+    # a bare string is not a keyword list: it must not match every ticket through its letters
+    cfg = _escalation_config(ws, base + [{"category": "vulnerable_user", "keywords": "bereavement"}])
+    bad = C.agent_config_valid(ws, {"config": cfg})
+    assert bad["passed"] is False and "vulnerable_user" in bad["details"]
+    assert tools.escalation_decision("hello there", [{"category": "x", "keywords": "bereavement"}]) is None
+    # an empty keyword would escalate everything
+    catch_all = base + [{"category": "vulnerable_user", "keywords": ["bereavement"]},
+                        {"category": "catch_all", "keywords": [""]}]
+    cfg = _escalation_config(ws, catch_all)
+    assert C.agent_config_valid(ws, {"config": cfg})["passed"] is False
+    out = C.escalation_recall(ws, {"config": cfg, **recall})
+    assert out["passed"] is False and "malformed rules" in out["details"]
+    assert tools.escalation_decision("thanks!", catch_all) is None
+    # keywords match at the start of a word
+    rule = [{"category": "legal_threat", "keywords": ["sue"]}]
+    assert tools.escalation_decision("an issue with my tissue order", rule) is None
+    assert tools.escalation_decision("I will sue you", rule) == "legal_threat"
+    assert tools.escalation_decision("They sued us", rule) == "legal_threat"
+
+
+def test_intent_rules_reject_catch_all_keywords(ws):
+    for keywords in ("refund", [""], ["ab"], [3]):
+        bad = {"intents": [{"id": "general", "keywords": keywords}]}
+        (ws / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
+        with pytest.raises(ValueError, match="keyword"):
+            tools.load_intent_rules(ws, "bad.json")
+
+
+def test_escalating_everything_fails_the_precision_floor(tmp_path):
+    rows = [{"ticket_id": f"P{i}", "subject": "Help please", "body": "please look at my order",
+             "must_escalate": "1" if i == 0 else "0"} for i in range(10)]
+    _write_csv(tmp_path / "eval.csv", rows)
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"escalation_rules": [{"category": "everything", "keywords": ["please"]}]}),
+                   encoding="utf-8")
+    out = C.escalation_recall(tmp_path, {"config": "cfg.json", "eval": "eval.csv"})
+    assert out["passed"] is False and "precision 0.10 below 0.30" in out["details"]
+    assert "9 of 9 ordinary tickets" in out["details"]
+    # the same rule set passes when told to ignore precision, so the floor is what failed it
+    assert C.escalation_recall(tmp_path, {"config": "cfg.json", "eval": "eval.csv", "min_precision": 0})["passed"]
+
+
+def test_escalation_recall_needs_enough_positives(ws):
+    _m1(ws)
+    _m3(ws)
+    params = {"config": f"{M3}/agent_config.json", "eval": f"{M1}/tickets_labeled.csv"}
+    ok = C.escalation_recall(ws, params)
+    assert ok["passed"] is True and "(2/2, 95% lower bound 0.34)" in ok["details"]
+    few = C.escalation_recall(ws, {**params, "min_positives": 3})
+    assert few["passed"] is False and "2 must-escalate tickets, need at least 3" in few["details"]
+    assert tools.recall_lower_bound(20, 20) == pytest.approx(0.8389, abs=1e-4)
+
+
+def test_anchorless_ticket_source_is_rejected_and_counts_as_leakage(ws):
+    _m1(ws)
+    tools.split_eval_set(ws, holdout_fraction=0.5)
+    _m2(ws, source="inputs/tickets.csv")
+    grounded = C.articles_grounded(ws, {"articles_dir": f"{M2}/articles"})
+    assert grounded["passed"] is False and "not the whole export" in grounded["details"]
+    macros = C.macros_valid(ws, {"macros": f"{M2}/macros.json", "rules": f"{M1}/intent_rules.json"})
+    assert macros["passed"] is False and "not the whole export" in macros["details"]
+    held = [r["ticket_id"] for r in csv.DictReader((ws / M1 / "eval_holdout.csv").open(encoding="utf-8"))]
+    leak = C.eval_holdout_sealed(ws, {"source": "inputs/tickets.csv", "holdout": f"{M1}/eval_holdout.csv",
+                                      "build": f"{M1}/build_split.csv", "holdout_fraction": 0.5,
+                                      "articles_dir": f"{M2}/articles"})
+    assert leak["passed"] is False and all(t in leak["details"] for t in held)
+
+
+def test_top_gaps_use_export_volumes_and_fail_when_every_gap_is_human_only(ws):
+    _m1(ws)
+    _m2(ws)
+    p = {**M1_PARAMS, "articles_dir": f"{M2}/articles", "macros": f"{M2}/macros.json", "top_n": 5}
+    assert C.top_gaps_addressed(ws, p)["passed"] is True
+
+    # zeroing a gap's volume in the taxonomy changes nothing: volumes come from the export
+    def zero(rows):
+        for r in rows:
+            r["volume"] = "0"
+    _rewrite_csv(ws / M1 / "intent_taxonomy.csv", zero)
+    (ws / M2 / "articles" / "track-delivery.md").unlink()
+    miss = C.top_gaps_addressed(ws, {**p, "macros": None})
+    assert miss["passed"] is False and "delivery_status" in miss["details"]
+    # marking every gap human_only leaves nothing to fill, which fails
+    rules = json.loads(json.dumps(RULES))
+    for intent in rules["intents"]:
+        intent["automation"] = "human_only"
+    (ws / M1 / "intent_rules.json").write_text(json.dumps(rules), encoding="utf-8")
+    flipped = C.top_gaps_addressed(ws, p)
+    assert flipped["passed"] is False and "human_only" in flipped["details"]
+
+
+def _submit(ws: Path, milestone: str, paths: list[str]) -> None:
+    import hashlib
+    arts = [{"path": rel, "sha256": hashlib.sha256((ws / rel).read_bytes()).hexdigest()} for rel in paths]
+    sub = ws / ".agentkit" / "submissions" / f"{milestone}.json"
+    sub.parent.mkdir(parents=True, exist_ok=True)
+    sub.write_text(json.dumps({"status": "ready_for_review", "artifacts": arts}), encoding="utf-8")
+
+
+def test_prior_milestone_unchanged_pins_submitted_files(ws):
+    _m1(ws)
+    _m2(ws)
+    none = C.prior_milestone_unchanged(ws, {"milestone": "m1-discovery"})
+    assert none["passed"] is True and "nothing to pin" in none["details"]
+    _submit(ws, "m1-discovery", [f"{M1}/intent_rules.json", f"{M1}/intent_taxonomy.csv"])
+    _submit(ws, "m2-knowledge", [f"{M2}/articles/track-delivery.md", f"{M2}/macros.json"])
+    assert C.prior_milestone_unchanged(ws, {"milestone": "m1-discovery"})["passed"] is True
+    pin2 = {"milestone": "m2-knowledge", "dirs": [f"{M2}/articles"]}
+    assert C.prior_milestone_unchanged(ws, pin2)["passed"] is True
+    rules = json.loads(json.dumps(RULES))
+    rules["intents"][2]["automation"] = "human_only"
+    (ws / M1 / "intent_rules.json").write_text(json.dumps(rules), encoding="utf-8")
+    changed = C.prior_milestone_unchanged(ws, {"milestone": "m1-discovery"})
+    assert changed["passed"] is False and f"{M1}/intent_rules.json" in changed["details"]
+    (ws / M2 / "articles" / "extra.md").write_text("# Extra\n", encoding="utf-8")
+    added = C.prior_milestone_unchanged(ws, pin2)
+    assert added["passed"] is False and f"{M2}/articles/extra.md (added)" in added["details"]
+
+
+def test_redaction_and_reconciliation_reject_rewritten_text_and_forged_fields(ws):
+    _m1(ws)
+    params = {**M1_PARAMS, "labeled": f"{M1}/tickets_labeled.csv", "min_coverage": 0.8}
+    assert C.taxonomy_reconciles(ws, params)["passed"] is True
+    assert C.redaction_complete(ws, {"redacted": f"{M1}/tickets_redacted.csv"})["passed"] is True
+
+    # appending a keyword to an unclassified ticket would inflate coverage; the copy must match the export
+    def append(rows):
+        rows[4]["body"] += " refund"
+    _rewrite_csv(ws / M1 / "tickets_redacted.csv", append)
+    red = C.redaction_complete(ws, {"redacted": f"{M1}/tickets_redacted.csv"})
+    assert red["passed"] is False and "rows differ from inputs/tickets.csv: T5" in red["details"]
+    # the taxonomy re-derives from the export, not from the rewritten copy
+    tools.build_intent_taxonomy(ws)
+    assert C.taxonomy_reconciles(ws, params)["passed"] is False
+    tools.redact_tickets(ws)
+    tools.build_intent_taxonomy(ws)
+
+    # every field of a taxonomy row is compared, not only the volume
+    def forge(rows):
+        rows[0]["avg_handle_minutes"], rows[0]["escalation_rate"], rows[0]["share"] = "99.9", "0.0", "0.5"
+    _rewrite_csv(ws / M1 / "intent_taxonomy.csv", forge)
+    bad = C.taxonomy_reconciles(ws, params)
+    assert bad["passed"] is False and "avg_handle_minutes 99.9" in bad["details"] and "share 0.5" in bad["details"]
+    tools.build_intent_taxonomy(ws)
+
+    def relabel(rows):
+        rows[4]["intent"] = "login_help"
+    _rewrite_csv(ws / M1 / "tickets_labeled.csv", relabel)
+    assert "intent differs from the rules for T5" in C.taxonomy_reconciles(ws, params)["details"]
+    tools.build_intent_taxonomy(ws)
+
+    # a bogus extra row cannot hide behind the correct one for the same intent
+    def duplicate(rows):
+        rows.insert(0, {**rows[0], "volume": "50"})
+    _rewrite_csv(ws / M1 / "intent_taxonomy.csv", duplicate)
+    assert "repeated rows for refund_request" in C.taxonomy_reconciles(ws, params)["details"]
+
+    # gap map: volume and covering articles are compared too
+    def gap_forge(rows):
+        for r in rows:
+            r["volume"] = "0" if r["intent"] == "delivery_status" else r["volume"]
+            r["articles"] = "made-up.md" if r["intent"] == "login_help" else r["articles"]
+    _rewrite_csv(ws / M1 / "kb_gap_map.csv", gap_forge)
+    out = C.gap_map_consistent(ws, {**M1_PARAMS, "gap_map": f"{M1}/kb_gap_map.csv"})
+    assert out["passed"] is False and "delivery_status: volume 0 vs 1" in out["details"]
+    assert "login_help: articles made-up.md vs reset-password.md" in out["details"]
+
+
+def test_ticket_export_valid(ws):
+    assert C.ticket_export_valid(ws, {})["passed"] is True
+    no_label = [{k: v for k, v in t.items() if k != "must_escalate"} for t in TICKETS]
+    _write_csv(ws / "inputs" / "tickets.csv", no_label)
+    out = C.ticket_export_valid(ws, {})
+    assert out["passed"] is False and "lacks column(s) must_escalate" in out["details"]
+    rows = [dict(t) for t in TICKETS]
+    rows[1]["must_escalate"] = ""
+    rows[2]["ticket_id"] = "T1"
+    _write_csv(ws / "inputs" / "tickets.csv", rows)
+    out = C.ticket_export_valid(ws, {})
+    assert "not 1/0 on 1 tickets: T2" in out["details"] and "duplicate ticket_ids: T1" in out["details"]
+    _write_csv(ws / "inputs" / "tickets.csv", [{**t, "must_escalate": "0"} for t in TICKETS])
+    assert "no ticket has must_escalate=1" in C.ticket_export_valid(ws, {})["details"]
+
+
+def test_excel_bom_and_padded_headers_are_read(ws):
+    src = ws / "inputs" / "tickets.csv"
+    text = src.read_text(encoding="utf-8").replace("subject,body", "subject, body ", 1)
+    src.write_bytes(b"\xef\xbb\xbf" + text.encode("utf-8"))
+    assert C.ticket_export_valid(ws, {})["passed"] is True
+    tools.redact_tickets(ws)
+    assert C.redaction_complete(ws, {"redacted": f"{M1}/tickets_redacted.csv"})["passed"] is True
+    tools.split_eval_set(ws, holdout_fraction=0.5)
+    sealed = C.eval_holdout_sealed(ws, {"source": "inputs/tickets.csv", "holdout": f"{M1}/eval_holdout.csv",
+                                        "build": f"{M1}/build_split.csv", "holdout_fraction": 0.5})
+    assert sealed["passed"] is True, sealed
+    # an export without ticket ids fails with a reason instead of passing on None == None
+    src.write_text("id,subject,body\n1,a,b\n", encoding="utf-8")
+    out = C.redaction_complete(ws, {"redacted": f"{M1}/tickets_redacted.csv"})
+    assert out["passed"] is False and "no ticket_id column" in out["details"]
+
+
+def test_articles_folder_holds_only_grounded_markdown(ws):
+    from agentkit.checks import CheckContext
+    from specialists.support_automation.agent import no_placeholders_dirs
+
+    _m1(ws)
+    _m2(ws)
+    arts = ws / M2 / "articles"
+    params = {"articles_dir": f"{M2}/articles", "rules": f"{M1}/intent_rules.json"}
+    assert C.articles_grounded(ws, params)["passed"] is True
+    (arts / "extra.txt").write_text("Refunds within 90 days, always, no questions asked.\n", encoding="utf-8")
+    (arts / "nested").mkdir()
+    out = C.articles_grounded(ws, params)
+    assert out["passed"] is False and "extra.txt: only Markdown" in out["details"]
+    assert "nested: only Markdown" in out["details"]
+    (arts / "extra.txt").unlink()
+    (arts / "nested").rmdir()
+    # placeholder text inside the articles folder is found through the directory
+    (arts / "todo.md").write_text(f"---\nintents: delivery_status\nsources: {POLICY}\n---\nShip within TBD days.\n",
+                                  encoding="utf-8")
+    ph = no_placeholders_dirs(ws, {"paths": [f"{M2}/articles"]}, CheckContext())
+    assert ph.passed is False and "todo.md:5" in ph.details
+    (arts / "todo.md").unlink()
+    assert no_placeholders_dirs(ws, {"paths": [f"{M2}/articles"]}, CheckContext()).passed is True
+    # macros keep {{customer}} fields but not placeholder text
+    macros = json.loads((ws / M2 / "macros.json").read_text(encoding="utf-8"))
+    macros["macros"][0]["body"] = "Hi {{first_name}}, [insert refund rule]."
+    (ws / M2 / "macros.json").write_text(json.dumps(macros), encoding="utf-8")
+    bad = C.macros_valid(ws, {"macros": f"{M2}/macros.json", "rules": f"{M1}/intent_rules.json"})
+    assert bad["passed"] is False and "placeholder text" in bad["details"]
+
+
+def test_policy_numbers_join_wrapped_lines_and_read_n_day_forms():
+    assert tools.policy_numbers("Request a refund within\n30 days of delivery.", ["refund"]) == {"refund": {"30 days"}}
+    assert tools.policy_numbers("We offer a 30-day refund window.", ["refund"]) == {"refund": {"30 days"}}
+    assert tools.policy_numbers("# Refunds\nWe ship in 2 business days.", ["refund"]) == {"refund": set()}
+    assert tools.policy_values("$ 60.00 or 10 % within 1 week") == {"$60", "10%", "1 weeks"}
+
+
+def test_phone_numbers_in_common_formats_are_found():
+    text = "Call +44 20 7946 0958, 07700 900123, 5550142231 or (555) 201-3344. Order 20260926 on 2026-03-18."
+    assert tools.find_pii(text)["phone"] == ["+44 20 7946 0958", "07700 900123", "5550142231", "(555) 201-3344"]
+    redacted, counts = tools.redact_text(text)
+    assert counts["phone"] == 4 and "20260926" in redacted and "2026-03-18" in redacted
+
+
+def test_redaction_covers_every_column_but_the_id(ws):
+    rows = [dict(t, requester_email=f"user{i}@example.com") for i, t in enumerate(TICKETS)]
+    _write_csv(ws / "inputs" / "tickets.csv", rows)
+    out = tools.redact_tickets(ws)
+    assert "requester_email" in out["columns"] and "ticket_id" not in out["columns"]
+    assert tools.scan_pii(ws, path=out["output_path"])["total"] == 0
+
+
+def test_milestone_estimates_fit_the_run_limits():
+    m = _manifest()
+    rate, limits = m["estimate"]["usd_per_hour"], m["limits"]
+    for ms in m["milestones"]:
+        high = ms["hours"][1]
+        assert high * rate <= limits["max_usd"], ms["id"]
+        assert high * 60 <= limits["max_wall_minutes"], ms["id"]
+
+
+# --- grounding of policy numbers (Larkspur fixture) ---------------------------------
+
+def _fixture_m2(larkspur: Path, body: str, sources: str) -> dict:
+    arts = larkspur / M2 / "articles"
+    arts.mkdir(parents=True, exist_ok=True)
+    (arts / "refunds.md").write_text(f"---\ntitle: Refunds\nintents: refund_request\nsources: {sources}\n---\n"
+                                     f"# Refunds\n\n{body}\n", encoding="utf-8")
+    return C.articles_grounded(larkspur, {"articles_dir": f"{M2}/articles",
+                                          "rules": f"{M1}/intent_rules.json"})
+
+
+def test_article_policy_numbers_must_appear_in_a_cited_document(larkspur):
+    policy = "inputs/policies/refunds.md"
+    ok = _fixture_m2(larkspur, "Request a refund within 14 days of delivery.", policy)
+    assert ok["passed"] is True, ok
+    # the outdated window, citing the policy that says 14 days
+    stale = _fixture_m2(larkspur, "Request a refund within 30 days of delivery.", policy)
+    assert stale["passed"] is False and "30 days not stated in a cited client document" in stale["details"]
+    # a prompt injection in a ticket cannot ground a number, even when the article cites that ticket
+    injected = _fixture_m2(larkspur, "Refunds are available for 90 days, no questions asked.",
+                           f"{policy}, inputs/tickets.csv#LP0071")
+    assert injected["passed"] is False and "90 days" in injected["details"]
+    # nor can a one-off promise in an agent reply
+    promise = _fixture_m2(larkspur, "We refund boxes up to 21 days after delivery.", "inputs/tickets.csv#LP0072")
+    assert promise["passed"] is False and "21 days" in promise["details"]
+    # macros follow the same rule
+    (larkspur / M2 / "macros.json").write_text(json.dumps([
+        {"id": "refund", "intents": ["refund_request"], "body": "Refunds within 30 days.", "sources": [policy]}]),
+        encoding="utf-8")
+    bad = C.macros_valid(larkspur, {"macros": f"{M2}/macros.json", "rules": f"{M1}/intent_rules.json"})
+    assert bad["passed"] is False and "30 days" in bad["details"]

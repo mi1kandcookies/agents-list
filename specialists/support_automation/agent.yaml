@@ -15,12 +15,13 @@ listing:
     for intents and volumes, finds what the help center does not answer,
     drafts grounded articles and macros for the biggest gaps, and delivers a
     support-agent configuration (instructions, escalation rules, AI
-    disclosure) measured against held-out tickets. Everything is delivered
-    as drafts for your support lead; nothing is published or sent to
-    customers.
+    disclosure) measured against held-out tickets. Needs a ticket export in
+    which every ticket is marked must_escalate 1/0 (whether it had to go to
+    a person). Everything is delivered as drafts for your support lead;
+    nothing is published or sent to customers.
   tags: [customer-support, knowledge-base, helpdesk, macros, escalation, evaluation]
   capabilities:
-    - PII redaction of ticket exports (email, phone, card numbers)
+    - Redaction of emails, phone numbers and card numbers from ticket exports
     - Intent taxonomy with volume, handle time and escalation rate
     - Knowledge-base coverage and gap map
     - Policy contradiction detection across articles, macros and replies
@@ -54,7 +55,7 @@ tools:
   - replay_escalations
 shell: {allow: [], timeout_seconds: 300}
 egress: {mode: none, allow: []}
-limits: {max_steps: 120, max_tokens: 4000000, max_usd: 50, max_wall_minutes: 240}
+limits: {max_steps: 120, max_tokens: 4000000, max_usd: 50, max_wall_minutes: 480}
 human_gate:
   required: false
   reviewer_role: support lead / policy owner
@@ -70,23 +71,28 @@ human_gate:
     - Escalation categories and handoff wording approved
     - AI-disclosure text approved for the channels where the agent will run
 intake:
-  - {field: ticket_export, question: "Upload a CSV export of 6-12 months of tickets (ticket_id, subject, body; ideally agent_reply, handle_minutes, status and a must_escalate flag) as inputs/tickets.csv.", required: true}
+  - {field: ticket_export, question: "Upload a CSV export of 6-12 months of tickets as inputs/tickets.csv with the columns ticket_id, subject, body and must_escalate: 1 when the ticket had to go to a person (billing dispute, legal threat, safety, account security, vulnerable customer, or one of your own categories), else 0, on every row. agent_reply, handle_minutes and status help if you have them. Milestone 3 measures escalation recall against must_escalate and cannot pass without it.", required: true}
   - {field: help_center, question: "Upload your current help-center articles as Markdown or text files under inputs/help_center/.", required: true}
-  - {field: policy_docs, question: "Upload any internal policy documents (refunds, shipping, account security) under inputs/policies/.", required: false}
+  - {field: policy_docs, question: "Upload any internal policy documents (refunds, shipping, account security) under inputs/policies/. Articles only state limits (days, amounts) that a document like these states.", required: false}
   - {field: helpdesk_platform, question: "Which helpdesk or AI agent platform will run the configuration (e.g. Zendesk, Intercom, Freshdesk, our runtime)?", required: true}
-  - {field: must_escalate_categories, question: "Besides billing disputes, legal threats, safety, account security and vulnerable users, which topics must always go to a human?", required: false}
-  - {field: regulated_vertical, question: "Do you operate in a regulated vertical (health, financial services, children's services)? If so, who approves escalation rules and disclosures?", required: true}
+  - {field: must_escalate_categories, question: "Besides billing disputes, legal threats, safety, account security and vulnerable users, which topics must always go to a human? Separate them with commas.", required: false}
+  - {field: regulated_vertical, question: "Do you operate in a regulated vertical (health, financial services, children's services)? Answer no, or name the vertical.", required: true}
+  - {field: compliance_approver, question: "If you operate in a regulated vertical, who (name and role) approves escalation rules, AI disclosures and regulated wording before anything goes live?", required: false}
   - {field: top_n_gaps, question: "How many of the largest knowledge gaps should milestone 2 fill (default 5)?", required: false}
 estimate: {usd_per_hour: 6.0}
 milestones:
   - id: m1-discovery
     title: Ticket and knowledge discovery
     description: >-
-      Redact the ticket export, build an intent taxonomy with volumes, handle
-      times and automation levels, map help-center coverage per intent, and
-      list policy contradictions between articles and agent replies.
+      Redact the ticket export and seal a held-out eval split before reading
+      any ticket, build an intent taxonomy with volumes, handle times and
+      automation levels from the build tickets, map help-center coverage per
+      intent, and list policy contradictions between articles and agent
+      replies.
     deliverables:
       - deliverables/m1-discovery/tickets_redacted.csv
+      - deliverables/m1-discovery/build_split.csv
+      - deliverables/m1-discovery/eval_holdout.csv
       - deliverables/m1-discovery/intent_rules.json
       - deliverables/m1-discovery/tickets_labeled.csv
       - deliverables/m1-discovery/intent_taxonomy.csv
@@ -94,62 +100,71 @@ milestones:
       - deliverables/m1-discovery/discovery_report.md
     hours: [3, 8]
     acceptance:
-      - {check: files_exist, params: {paths: [deliverables/m1-discovery/tickets_redacted.csv, deliverables/m1-discovery/intent_rules.json, deliverables/m1-discovery/tickets_labeled.csv, deliverables/m1-discovery/intent_taxonomy.csv, deliverables/m1-discovery/kb_gap_map.csv, deliverables/m1-discovery/discovery_report.md]}}
-      - {check: redaction_complete, description: "Redacted export keeps every ticket and holds no emails, phones or card numbers", params: {source: inputs/tickets.csv, redacted: deliverables/m1-discovery/tickets_redacted.csv}}
+      - {check: files_exist, params: {paths: [deliverables/m1-discovery/tickets_redacted.csv, deliverables/m1-discovery/build_split.csv, deliverables/m1-discovery/eval_holdout.csv, deliverables/m1-discovery/intent_rules.json, deliverables/m1-discovery/tickets_labeled.csv, deliverables/m1-discovery/intent_taxonomy.csv, deliverables/m1-discovery/kb_gap_map.csv, deliverables/m1-discovery/discovery_report.md]}}
+      - {check: ticket_export_valid, description: "The client's export has ticket_id, subject, body and a 1/0 must_escalate label on every ticket, with unique ids (only the client can fix this: ask)", params: {source: inputs/tickets.csv}}
+      - {check: redaction_complete, description: "Redacted export keeps every ticket and cell (only redacted) and holds no emails, phones or card numbers", params: {source: inputs/tickets.csv, redacted: deliverables/m1-discovery/tickets_redacted.csv}}
+      - {check: eval_holdout_sealed, description: "Held-out and build splits are the seeded, stratified split of the client export with its labels and text unchanged", params: {source: inputs/tickets.csv, holdout: deliverables/m1-discovery/eval_holdout.csv, build: deliverables/m1-discovery/build_split.csv, holdout_fraction: 0.3, seed: support-automation, min_size: 5}}
       - {check: no_pii_remaining, params: {paths: [deliverables/m1-discovery]}}
       - {check: json_valid, params: {path: deliverables/m1-discovery/intent_rules.json}}
       - {check: csv_columns, params: {path: deliverables/m1-discovery/intent_taxonomy.csv, columns: [intent, label, automation, volume, share, avg_handle_minutes, escalation_rate]}}
-      - {check: taxonomy_reconciles, description: Taxonomy volumes re-derive from the redacted export and cover at least 90% of tickets, params: {tickets: deliverables/m1-discovery/tickets_redacted.csv, rules: deliverables/m1-discovery/intent_rules.json, taxonomy: deliverables/m1-discovery/intent_taxonomy.csv, min_coverage: 0.9}}
-      - {check: gap_map_consistent, params: {rules: deliverables/m1-discovery/intent_rules.json, taxonomy: deliverables/m1-discovery/intent_taxonomy.csv, kb_dir: inputs/help_center, gap_map: deliverables/m1-discovery/kb_gap_map.csv}}
+      - {check: taxonomy_reconciles, description: Every taxonomy row and ticket label re-derives from the redacted export and at least 90% of tickets are classified, params: {source: inputs/tickets.csv, rules: deliverables/m1-discovery/intent_rules.json, taxonomy: deliverables/m1-discovery/intent_taxonomy.csv, labeled: deliverables/m1-discovery/tickets_labeled.csv, min_coverage: 0.9}}
+      - {check: gap_map_consistent, description: "Every gap-map row (volume, status, covering articles) re-derives from the export and the help center", params: {source: inputs/tickets.csv, rules: deliverables/m1-discovery/intent_rules.json, kb_dir: inputs/help_center, gap_map: deliverables/m1-discovery/kb_gap_map.csv}}
       - {check: markdown_sections, params: {path: deliverables/m1-discovery/discovery_report.md, sections: [Summary, Intent taxonomy, Knowledge gaps, Contradictions, Automation candidates, Open questions]}}
       - {check: no_placeholders, params: {paths: [deliverables/m1-discovery/discovery_report.md]}}
+      - {check: disclaimer_present, params: {paths: [deliverables/m1-discovery/discovery_report.md]}}
       - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/discovery.yaml, paths: [deliverables/m1-discovery/discovery_report.md, deliverables/m1-discovery/intent_taxonomy.csv], threshold: 0.75}}
-      - {check: human_signoff, kind: human, description: Support lead confirms the intent labels on a sample of tickets}
+      - {check: human_signoff, kind: human, description: Support lead confirms the intent labels and automation levels on a sample of tickets}
   - id: m2-knowledge
     title: Knowledge base gap fill and macros
     description: >-
       Draft grounded help-center articles and macros for the largest
-      automatable gaps, resolve contradictions, and log every change. Uses
-      the m1-discovery intent rules and taxonomy; rebuild them with the
-      domain tools first if the workspace lacks them.
+      automatable gaps, resolve contradictions, and log every change. Builds
+      on the m1-discovery deliverables, which stay exactly as submitted (if
+      this workspace has none, build them with the m1 tools first); cites
+      build-split tickets only.
     deliverables:
       - deliverables/m2-knowledge/articles/
       - deliverables/m2-knowledge/macros.json
       - deliverables/m2-knowledge/change_log.md
-    hours: [4, 12]
+    hours: [4, 8]
     acceptance:
       - {check: files_exist, params: {paths: [deliverables/m2-knowledge/macros.json, deliverables/m2-knowledge/change_log.md]}}
-      - {check: top_gaps_addressed, description: Each of the top automatable gaps (recomputed against the original help center) has a new article or macro, params: {rules: deliverables/m1-discovery/intent_rules.json, taxonomy: deliverables/m1-discovery/intent_taxonomy.csv, kb_dir: inputs/help_center, articles_dir: deliverables/m2-knowledge/articles, macros: deliverables/m2-knowledge/macros.json, top_n: 5}}
-      - {check: articles_grounded, description: Every article declares intents and cites sources that resolve to input files or ticket rows, params: {articles_dir: deliverables/m2-knowledge/articles, rules: deliverables/m1-discovery/intent_rules.json, min_articles: 1}}
-      - {check: macros_valid, params: {macros: deliverables/m2-knowledge/macros.json, rules: deliverables/m1-discovery/intent_rules.json}}
-      - {check: kb_consistent, description: No policy term carries two different numbers across the delivered articles and macros, params: {terms: [refund, cancel, shipping, delivery, return, trial, warranty], articles_dir: deliverables/m2-knowledge/articles, paths: [deliverables/m2-knowledge/macros.json]}}
+      - {check: prior_milestone_unchanged, description: The m1-discovery files are unchanged since they were submitted, params: {milestone: m1-discovery}}
+      - {check: top_gaps_addressed, description: "Each of the top automatable gaps (volumes from the client export, coverage against the original help center) has a new article or macro", params: {source: inputs/tickets.csv, rules: deliverables/m1-discovery/intent_rules.json, kb_dir: inputs/help_center, articles_dir: deliverables/m2-knowledge/articles, macros: deliverables/m2-knowledge/macros.json, top_n: 5}}
+      - {check: articles_grounded, description: "Every article declares intents, cites client files or ticket rows under inputs/, and states only policy numbers found in a cited client document", params: {articles_dir: deliverables/m2-knowledge/articles, rules: deliverables/m1-discovery/intent_rules.json, min_articles: 1}}
+      - {check: macros_valid, description: "Macros have unique ids, known intents, no placeholder text, and only policy numbers found in a cited client document", params: {macros: deliverables/m2-knowledge/macros.json, rules: deliverables/m1-discovery/intent_rules.json}}
+      - {check: kb_consistent, description: No policy term carries two different numbers across the delivered articles and macros, params: {terms: [refund, cancel, shipping, deliver, return, trial, warranty], articles_dir: deliverables/m2-knowledge/articles, paths: [deliverables/m2-knowledge/macros.json]}}
+      - {check: eval_holdout_sealed, description: No article or macro cites a held-out ticket, params: {source: inputs/tickets.csv, holdout: deliverables/m1-discovery/eval_holdout.csv, build: deliverables/m1-discovery/build_split.csv, holdout_fraction: 0.3, seed: support-automation, min_size: 5, articles_dir: deliverables/m2-knowledge/articles, macros: deliverables/m2-knowledge/macros.json}}
       - {check: no_pii_remaining, params: {paths: [deliverables/m2-knowledge]}}
       - {check: ledger_verified, description: Every recorded claim quotes its source verbatim}
-      - {check: no_placeholders, params: {paths: [deliverables/m2-knowledge/change_log.md]}}
+      - {check: no_placeholders, params: {paths: [deliverables/m2-knowledge/change_log.md, deliverables/m2-knowledge/articles]}}
+      - {check: disclaimer_present, params: {paths: [deliverables/m2-knowledge/change_log.md]}}
       - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/articles.yaml, paths: [deliverables/m2-knowledge/articles, deliverables/m2-knowledge/macros.json], threshold: 0.8}}
       - {check: human_signoff, kind: human, description: "Support lead approves every article and macro; policy owner approves refund, credit, cancellation and account-security wording"}
   - id: m3-agent-config
     title: Support-agent configuration and held-out evaluation
     description: >-
       Write the platform-neutral support-agent configuration (instructions,
-      escalation rules, handoff and AI-disclosure text), seal a held-out
-      ticket set, and replay the escalation rules against it. Splits the
-      m1-discovery labeled tickets and checks leakage against the
-      m2-knowledge articles and macros; rebuild missing inputs first.
+      escalation rules, handoff and AI-disclosure text), tune escalation
+      keywords on the m1-discovery build split, and replay them once against
+      the sealed held-out split. The m1-discovery and m2-knowledge files stay
+      exactly as submitted.
     deliverables:
       - deliverables/m3-agent-config/agent_config.json
-      - deliverables/m3-agent-config/eval_holdout.csv
-      - deliverables/m3-agent-config/build_split.csv
       - deliverables/m3-agent-config/escalation_replay.json
       - deliverables/m3-agent-config/eval_report.md
     hours: [3, 8]
     acceptance:
-      - {check: files_exist, params: {paths: [deliverables/m3-agent-config/agent_config.json, deliverables/m3-agent-config/eval_holdout.csv, deliverables/m3-agent-config/build_split.csv, deliverables/m3-agent-config/escalation_replay.json, deliverables/m3-agent-config/eval_report.md]}}
+      - {check: files_exist, params: {paths: [deliverables/m3-agent-config/agent_config.json, deliverables/m3-agent-config/escalation_replay.json, deliverables/m3-agent-config/eval_report.md]}}
+      - {check: prior_milestone_unchanged, description: The m1-discovery files (including the sealed split) are unchanged since they were submitted, params: {milestone: m1-discovery}}
+      - {check: prior_milestone_unchanged, description: The m2-knowledge articles and macros are unchanged since they were submitted, params: {milestone: m2-knowledge, dirs: [deliverables/m2-knowledge/articles]}}
       - {check: json_valid, params: {path: deliverables/m3-agent-config/agent_config.json}}
       - {check: agent_config_valid, params: {config: deliverables/m3-agent-config/agent_config.json}}
-      - {check: eval_holdout_sealed, description: "Held-out tickets match the seeded split of the client export, keep its labels and text, and are never cited by an article or macro", params: {tickets: deliverables/m1-discovery/tickets_labeled.csv, source: inputs/tickets.csv, holdout: deliverables/m3-agent-config/eval_holdout.csv, build: deliverables/m3-agent-config/build_split.csv, holdout_fraction: 0.3, seed: support-automation, min_size: 5, articles_dir: deliverables/m2-knowledge/articles, macros: deliverables/m2-knowledge/macros.json}}
-      - {check: escalation_recall, description: Must-escalate recall on the held-out set is at least 95% and matches the delivered replay report, params: {config: deliverables/m3-agent-config/agent_config.json, eval: deliverables/m3-agent-config/eval_holdout.csv, report: deliverables/m3-agent-config/escalation_replay.json, min_recall: 0.95}}
+      - {check: eval_holdout_sealed, description: "Held-out tickets match the seeded split of the client export, keep its labels and text, and are never cited by an article or macro", params: {source: inputs/tickets.csv, holdout: deliverables/m1-discovery/eval_holdout.csv, build: deliverables/m1-discovery/build_split.csv, holdout_fraction: 0.3, seed: support-automation, min_size: 5, articles_dir: deliverables/m2-knowledge/articles, macros: deliverables/m2-knowledge/macros.json}}
+      - {check: escalation_recall, description: "Must-escalate recall on the held-out set is at least 95% over at least 3 must-escalate tickets, precision is at least 30%, and both match the delivered replay report", params: {config: deliverables/m3-agent-config/agent_config.json, eval: deliverables/m1-discovery/eval_holdout.csv, report: deliverables/m3-agent-config/escalation_replay.json, min_recall: 0.95, min_precision: 0.3, min_positives: 3}}
       - {check: markdown_sections, params: {path: deliverables/m3-agent-config/eval_report.md, sections: [Summary, Configuration, Escalation replay, Known limitations, Go-live prerequisites]}}
-      - {check: no_pii_remaining, params: {paths: [deliverables/m3-agent-config/agent_config.json, deliverables/m3-agent-config/eval_report.md]}}
+      - {check: no_pii_remaining, params: {paths: [deliverables/m3-agent-config]}}
+      - {check: no_placeholders, params: {paths: [deliverables/m3-agent-config/eval_report.md]}}
+      - {check: disclaimer_present, params: {paths: [deliverables/m3-agent-config/eval_report.md]}}
       - {check: rubric_grader, kind: rubric, params: {rubric: rubrics/agent-config.yaml, paths: [deliverables/m3-agent-config/agent_config.json, deliverables/m3-agent-config/eval_report.md], threshold: 0.8}}
-      - {check: human_signoff, kind: human, description: "Policy owner approves escalation categories, handoff and AI-disclosure wording"}
+      - {check: human_signoff, kind: human, description: "Policy owner (and the compliance approver in a regulated vertical) approves escalation categories, handoff and AI-disclosure wording"}
