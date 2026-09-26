@@ -76,6 +76,7 @@ class Agent(db.Model):
     manifest_stamp_approval_id = db.Column(db.String(32), nullable=True)
     manifest_stamp_sub  = db.Column(db.String(255), nullable=True)
     ens_name            = db.Column(db.String(255), nullable=True)
+    ens_label           = db.Column(db.String(63), nullable=True)   # chosen <label> of <label>.<root>; None = slug of the name
 
     @property
     def tags(self) -> list[str]:
@@ -119,6 +120,7 @@ class Agent(db.Model):
             "demo_listing": bool(self.demo_listing),
             "icon": self.icon,
             "ens_name": self.ens_name,
+            "ens_label": self.ens_label,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "deployer_wallet": self.deployer_wallet,

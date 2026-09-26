@@ -47,7 +47,136 @@ def namehash(name: str) -> str:
 
 
 def slug(text: str) -> str:
-    return _LABEL_RE.sub("-", (text or "").lower()).strip("-")[:40].strip("-")
+    return _LABEL_RE.sub("-", (text or "").lower()).strip("-")[:LABEL_MAX].strip("-")
+
+
+# ── Agent labels ──────────────────────────────────────────────────────────────
+# An operator picks the <label> of <label>.<root> when listing an agent
+# (``Agent.ens_label``); without one the label is ``slug(agent.name)``.
+
+LABEL_MAX = 40                      # slug() cap; leaves room under the 63-byte DNS limit
+_VALID_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+ENS_APP_URL = "https://sepolia.app.ens.domains"
+# Labels kept for the platform's own use under the root name.
+RESERVED_LABELS = frozenset({
+    "admin", "agent", "agents", "api", "app", "docs", "escrow", "help", "job", "jobs",
+    "mail", "names", "operator", "platform", "root", "status", "support", "treasury", "www",
+})
+
+
+class LabelError(ValueError):
+    def __init__(self, message: str, code: str = "LABEL_INVALID"):
+        super().__init__(message)
+        self.message, self.code = message, code
+
+
+def normalize_label(text) -> str:
+    return str(text or "").strip().lower()
+
+
+def label_error(label: str) -> LabelError | None:
+    """Why ``label`` is not a valid agent label, or None. The character rules
+    are the sidecar's (ens/lib/names.mjs ``assertLabel``: a-z, 0-9 and inner
+    hyphens), the length cap is ``slug``'s, and ENSIP-15 rejects ``--`` in
+    the third and fourth positions."""
+    if not label:
+        return LabelError("choose a name for your agent", "LABEL_REQUIRED")
+    if len(label) > LABEL_MAX:
+        return LabelError(f"use at most {LABEL_MAX} characters", "LABEL_TOO_LONG")
+    if not _VALID_LABEL_RE.match(label):
+        return LabelError("use lowercase letters, digits and hyphens, not at the start or end",
+                          "LABEL_INVALID")
+    if label[2:4] == "--":
+        return LabelError("a hyphen pair cannot be the third and fourth characters",
+                          "LABEL_INVALID")
+    return None
+
+
+def label_taken(label: str, agent_id: int | None = None) -> LabelError | None:
+    """Why ``label`` is not free for agent ``agent_id`` (None for a new
+    listing): reserved, issued to another agent, or chosen by another
+    listing. Returns None when it is free."""
+    root = root_name()
+    if label in RESERVED_LABELS or label == root.split(".", 1)[0]:
+        return LabelError(f"{label}.{root} is reserved", "LABEL_RESERVED")
+    row = db.session.get(EnsName, f"{label}.{root}")
+    if row is not None and (row.agent_id is None or row.agent_id != agent_id):
+        return LabelError(f"{label}.{root} is already taken", "LABEL_TAKEN")
+    claimed = Agent.query.filter(Agent.ens_label == label)
+    if agent_id is not None:
+        claimed = claimed.filter(Agent.id != agent_id)
+    if claimed.first() is not None:
+        return LabelError(f"{label}.{root} is already taken", "LABEL_TAKEN")
+    return None
+
+
+def check_label(text, agent_id: int | None = None) -> dict:
+    """Availability of ``text`` as an agent label: ``{label, name, root,
+    available}`` plus ``code`` and ``error`` when it is not available."""
+    label = normalize_label(text)
+    root = root_name()
+    problem = label_error(label) or label_taken(label, agent_id)
+    out = {"label": label, "name": f"{label}.{root}" if label else None, "root": root,
+           "available": problem is None}
+    if problem is not None:
+        out.update(code=problem.code, error=problem.message)
+    return out
+
+
+def agent_label(agent: Agent) -> str:
+    """The label ``agent`` is (or will be) issued under."""
+    return agent.ens_label or slug(agent.name) or agent.public_id.lower()
+
+
+def agent_name_row(agent: Agent) -> EnsName | None:
+    return (EnsName.query.filter_by(agent_id=agent.id, kind="agent")
+            .filter(EnsName.status != "revoked").first())
+
+
+def _label_locked(row: EnsName | None) -> bool:
+    """A name is locked once it is active, has reached the chain, or has job
+    names under it."""
+    if row is None:
+        return False
+    return (row.status not in ("pending", "failed") or bool(row.tx_hashes)
+            or EnsName.query.filter_by(parent_name=row.name).first() is not None)
+
+
+def set_agent_label(agent: Agent, text) -> str:
+    """Validate and store the operator's label for ``agent``. Raises
+    LabelError (LABEL_LOCKED once the name is locked). A pending or failed
+    name that never reached the chain is replaced; a stamped agent is then
+    re-published under the new label (which commits the session)."""
+    label = normalize_label(text)
+    problem = label_error(label) or label_taken(label, agent.id)
+    if problem is not None:
+        raise problem
+    row = agent_name_row(agent)
+    if row is not None and row.name.split(".", 1)[0] == label:
+        agent.ens_label = label
+        return label
+    if _label_locked(row):
+        raise LabelError(f"{row.name} is already issued and cannot be renamed", "LABEL_LOCKED")
+    agent.ens_label = label
+    if row is not None:
+        db.session.delete(row)
+        db.session.flush()
+        if agent.manifest_stamped_at:
+            on_agent_published(agent)
+    return label
+
+
+def agent_name_view(agent: Agent) -> dict:
+    """What the operator's manifest page shows about the agent's name."""
+    row = agent_name_row(agent)
+    name = row.name if row is not None else f"{agent_label(agent)}.{root_name()}"
+    tx = (row.tx_hashes or [None])[-1] if row is not None else None
+    return {
+        "name": name, "label": name.split(".", 1)[0], "root": root_name(),
+        "status": row.status if row is not None else "unissued",
+        "editable": not _label_locked(row), "tx_hash": tx,
+        "ens_app_url": f"{ENS_APP_URL}/{name}" if tx else None,
+    }
 
 
 def _unix(dt: datetime) -> int:
@@ -276,10 +405,9 @@ def _manifest(agent: Agent) -> dict:
 
 
 def _agent_row(agent: Agent, *, refresh_records: bool = False) -> EnsName:
-    existing = (EnsName.query.filter_by(agent_id=agent.id, kind="agent")
-                .filter(EnsName.status != "revoked").first())
+    existing = agent_name_row(agent)
     root = _root_row()
-    label = slug(agent.name) or agent.public_id.lower()
+    label = agent_label(agent)
     manifest = _manifest(agent)
     endpoints = manifest.get("endpoints") if isinstance(manifest.get("endpoints"), dict) else {}
     payout = agent.payout_address or agent.deployer_wallet
