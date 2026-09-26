@@ -56,12 +56,11 @@
 
         <div class="escrow-notice mb-16">
           <span class="icon" style="font-size:.75rem; font-family:var(--font-mono); color:var(--blue); font-weight:700;">EIP</span>
-          <p>You sign an EIP-3009 USDC transfer authorization. The platform facilitator submits it and pays gas.</p>
+          <p>The protected flow resolves the payee, screens the exact x402 authorization, and requires approval before escrow is funded.</p>
         </div>
 
-        <button class="btn btn-gradient btn-full btn-lg mb-8" id="confirm-pay" type="button">Sign &amp; Pay</button>
-        <button class="btn btn-ghost btn-full btn-sm" id="request-only" type="button">Request without paying</button>
-        <pre id="checkout-log" style="display:none; margin-top:12px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--font-mono); font-size:.68rem; white-space:pre-wrap; word-break:break-word; color:var(--text-2);"></pre>
+        <a class="btn btn-gradient btn-full btn-lg mb-8" href="{{ url_for('engagements.jobs_new', agent=agent.id) }}">Start protected engagement</a>
+        <p class="text-xs text-muted">Legacy direct signing is disabled. Your exact scope and approval are required before payment.</p>
       </div>
     </div>
   </div>
@@ -71,9 +70,6 @@
 {% block scripts %}
 <script>
 (function () {
-  const agentId = {{ agent.id }};
-  const logEl = document.getElementById('checkout-log');
-  const log = (m) => { logEl.style.display = 'block'; logEl.textContent += m + '\n'; };
   const buyerFromCookie = () => (document.cookie.match(/(?:^|;\s*)buyer_wallet=(0x[a-fA-F0-9]{40})/) || [])[1];
 
   function sync() {
@@ -87,38 +83,6 @@
   document.addEventListener('DOMContentLoaded', sync);
   window.addEventListener('agentslist:connected', sync);
 
-  const task = () => document.getElementById('task-description').value.trim();
-  const amount = () => parseFloat(document.getElementById('amount-usdc').value || '0');
-
-  document.getElementById('confirm-pay').addEventListener('click', async () => {
-    const btn = document.getElementById('confirm-pay');
-    if (!(amount() > 0)) { showToast('Enter an amount greater than zero.', 'warning'); return; }
-    if (!window.ethereum) { showToast('A browser wallet is required to sign the payment.', 'error'); return; }
-    btn.disabled = true; btn.textContent = 'Waiting for signature…';
-    try {
-      log('Signing EIP-3009 authorization for ' + amount().toFixed(2) + ' USDC…');
-      const res = await window.AgentsList.payWithX402({ agentId, depositUSDC: amount(), task: task() });
-      log('Payment response: ' + JSON.stringify(res));
-      const oid = res.orderId || res.sessionId;
-      if (oid) window.location = '/order/' + oid;
-    } catch (e) {
-      log('Failed: ' + e.message);
-      showToast('Payment failed: ' + e.message, 'error');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Sign & Pay';
-    }
-  });
-
-  document.getElementById('request-only').addEventListener('click', async () => {
-    const buyer = (window.AgentsList && window.AgentsList.address) || buyerFromCookie();
-    if (!buyer) { showToast('Connect a wallet first.', 'warning'); return; }
-    try {
-      const res = await AgentsListAPI.post('/checkout/' + agentId, { task: task(), amount: amount(), buyer });
-      window.location = '/order/' + res.orderId;
-    } catch (e) {
-      showToast('Could not create request: ' + e.message, 'error');
-    }
-  });
 })();
 </script>
 {% endblock %}

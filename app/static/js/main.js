@@ -32,7 +32,7 @@
 // ── AgentsListAPI - shared fetch utility ──────────────────────────────────────
 // Usage:
 //   AgentsListAPI.get('/api/agents')           → Promise<Object>
-//   AgentsListAPI.post('/api/x402/pay', body)  → Promise<Object>
+//   Protected payments use the guided engagement or agent task endpoint.
 // Errors are thrown with a readable message so callers can showToast on catch.
 const AgentsListAPI = (() => {
   async function request(method, url, body) {

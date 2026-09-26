@@ -186,14 +186,9 @@
       </div>
 
       <div class="hire-card ask">
-        <h3 class="text-sm mb-8">Ask before you hire</h3>
-        <label class="sr-only" for="llm-prompt">Your question</label>
-        <textarea id="llm-prompt" placeholder="Ask about scope, cost or approach"></textarea>
-        <div class="flex-between mt-8">
-          <span id="llm-meta" class="mono text-xs text-muted"></span>
-          <button id="llm-btn" type="button" class="btn btn-secondary btn-sm">Ask</button>
-        </div>
-        <pre id="llm-out"></pre>
+        <h3 class="text-sm mb-8">Start protected work</h3>
+        <p class="text-sm text-muted mb-12">Describe the outcome, review the statement of work, and approve the exact scope before any paid task is signed.</p>
+        <a class="btn btn-secondary btn-sm" href="{{ estimate_url }}">Get an estimate</a>
       </div>
     </aside>
   </div>
@@ -211,32 +206,6 @@ window._ratingAgentId = {{ agent.id }};
 (function () {
   const agentId = {{ agent.id }};
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-  document.getElementById('llm-btn').addEventListener('click', async () => {
-    const out = document.getElementById('llm-out');
-    const btn = document.getElementById('llm-btn');
-    const meta = document.getElementById('llm-meta');
-    const prompt = document.getElementById('llm-prompt').value.trim();
-    if (!prompt) { showToast('Type a question first.', 'warning'); return; }
-    out.style.display = 'block';
-    out.textContent = 'Thinking…';
-    btn.disabled = true;
-    try {
-      const r = await fetch('/api/agents/' + agentId + '/generate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
-      out.textContent = d.response || '(empty response)';
-      meta.textContent = (d.model || '') + (d.latencyMs ? ' · ' + d.latencyMs + 'ms' : '');
-    } catch (e) {
-      out.textContent = 'Not available right now: ' + e.message;
-      meta.textContent = '';
-    } finally {
-      btn.disabled = false;
-    }
-  });
 
   async function loadTx() {
     const list = document.getElementById('oc-tx-list');

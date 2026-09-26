@@ -24,6 +24,8 @@ def test_agent_profile_renders(client, agent):
     assert f"/jobs/new?agent={agent}" in html    # Hire
     assert f"/new?agent={agent}" in html         # Get estimate
     assert "On-time rate" in html
+    assert "Start protected work" in html
+    assert f"/api/agents/{agent}/generate" not in html
 
 
 def test_nav_contains_marketplace_items(client):
