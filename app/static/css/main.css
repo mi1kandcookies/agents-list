@@ -435,6 +435,111 @@ tbody tr:hover { background: var(--surface-2); }
 .price-unit, .price-range { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); }
 .anim-on-scroll { opacity: 1; }
 
+/* ══ Shell: header, navigation, footer ═════════════════════════════════════ */
+.site-header {
+  position: sticky; top: 0; z-index: 100;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  -webkit-backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.site-header .shell { height: 64px; display: flex; align-items: center; gap: 32px; }
+
+/* Placeholder wordmark: square mark + name. Replace the .brand contents to
+   swap in a real logo. */
+.brand { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; color: var(--ink); }
+.brand-mark {
+  width: 22px; height: 22px; border-radius: 6px; background: var(--accent);
+  display: grid; place-items: center;
+}
+.brand-mark::after { content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--on-accent); }
+.brand-name { font-size: 1.0625rem; font-weight: 700; letter-spacing: -0.03em; }
+
+.primary-nav { display: flex; align-items: center; gap: 4px; list-style: none; }
+.primary-nav a {
+  display: inline-flex; align-items: center; height: 36px; padding: 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2);
+  transition: color var(--transition), background var(--transition);
+}
+.primary-nav a:hover { color: var(--ink); background: var(--surface-2); }
+.primary-nav a[aria-current="page"] { color: var(--ink); background: var(--surface-3); }
+
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.nav-signin { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-2); padding: 0 10px; height: 36px; display: inline-flex; align-items: center; border-radius: var(--radius-sm); }
+.nav-signin:hover { color: var(--ink); background: var(--surface-2); }
+.nav-toggle { display: none; }
+
+/* Wallet control + popovers */
+.wallet-wrap { position: relative; }
+.wallet-btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 500; color: var(--ink-2);
+  transition: border-color var(--transition), color var(--transition);
+}
+.wallet-btn:hover { border-color: var(--border-strong); color: var(--ink); }
+.wallet-btn[data-connected="true"]::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.popover {
+  display: none; position: absolute; top: calc(100% + 8px); right: 0; z-index: 900;
+  width: 290px; padding: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+}
+.popover-title { font-family: var(--font-mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 10px; }
+.popover-status { display: none; margin-bottom: 10px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--info-soft); border: 1px solid var(--info-line); font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.5; }
+.popover-options { display: flex; flex-direction: column; gap: 6px; }
+.wp-opt {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--ink); font-size: 0.8125rem; text-align: left; text-decoration: none;
+  transition: background var(--transition), border-color var(--transition);
+}
+.wp-opt:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.wp-icon { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0; background: var(--surface-3); color: var(--ink); font-weight: 600; font-size: var(--fs-xs); font-family: var(--font-mono); }
+.wp-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.wp-name { font-weight: 600; }
+.wp-sub { font-size: var(--fs-xs); color: var(--ink-3); }
+.wp-ok { color: var(--success); font-size: var(--fs-xs); font-weight: 500; margin-left: 4px; }
+.wm-addr { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 500; }
+.wm-kind { font-size: var(--fs-xs); color: var(--ink-3); margin-bottom: 12px; }
+.wm-link { display: block; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--link); font-size: 0.8125rem; }
+.wm-link:hover { background: var(--surface-2); }
+
+/* Operator sub-navigation (only on /seller pages) */
+.subnav { border-bottom: 1px solid var(--border); background: var(--surface); }
+.subnav .shell { display: flex; align-items: center; gap: 4px; height: 44px; overflow-x: auto; }
+.subnav-label { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin-right: 12px; white-space: nowrap; }
+.subnav a { padding: 0 10px; height: 44px; display: inline-flex; align-items: center; font-size: 0.8125rem; font-weight: 500; color: var(--ink-2); border-bottom: 2px solid transparent; white-space: nowrap; }
+.subnav a:hover { color: var(--ink); }
+.subnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.site-footer { border-top: 1px solid var(--border); margin-top: 72px; }
+.site-footer .shell { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-top: 24px; padding-bottom: 24px; }
+.site-footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
+.site-footer a, .site-footer small { font-size: 0.8125rem; color: var(--ink-3); }
+.site-footer a:hover { color: var(--ink); }
+
+/* ══ Page header (shared by inner pages) ════════════════════════════════════ */
+.page-head { padding: 40px 0 24px; }
+.page-head h1 { font-size: var(--fs-xl); letter-spacing: -0.025em; }
+.page-head p { margin-top: 6px; max-width: 640px; }
+.breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--ink-3); margin-bottom: 16px; }
+.breadcrumb a:hover { color: var(--ink); }
+
+/* ══ How it works / simple content pages ═══════════════════════════════════ */
+.steps-list { list-style: none; display: flex; flex-direction: column; }
+.steps-list li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 16px; padding: 20px 0; border-top: 1px solid var(--border); }
+.steps-list li:first-child { border-top: none; }
+.steps-list .n { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--accent); padding-top: 2px; }
+.steps-list h3 { font-size: var(--fs-base); margin-bottom: 4px; }
+.steps-list p { font-size: var(--fs-sm); line-height: 1.6; }
+
+.error-page { text-align: center; padding: 96px 0; }
+.error-page .code { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--ink-3); margin-bottom: 12px; }
+.error-page h1 { font-size: var(--fs-xl); margin-bottom: 8px; }
+.error-page p { margin-bottom: 24px; }
+
 /* ══ Components (app/templates/components) ═════════════════════════════════ */
 
 /* mono_stat */

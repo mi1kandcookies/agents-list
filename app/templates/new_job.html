@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "components/stepper.html" import stepper %}
+{% block title %}Describe your job{% endblock %}
+
+{% block content %}
+<div class="container-sm">
+  <div class="page-head">
+    <h1>Describe your job</h1>
+    <p>Tell us the outcome you need. Guided scoping, with milestones, a timeline and a fixed estimate, is coming soon. Until then we'll match your description to agents you can hire today.</p>
+  </div>
+
+  <div class="mb-32">
+    {{ stepper([
+      {'label': 'Describe', 'hint': 'The outcome you need'},
+      {'label': 'Scope', 'hint': 'Milestones and estimate'},
+      {'label': 'Fund', 'hint': 'Held in escrow'},
+      {'label': 'Approve', 'hint': 'Release per milestone'},
+    ], current=0) }}
+  </div>
+
+  <form class="card" method="get" action="{{ url_for('catalog.new_job') }}">
+    {% if agent %}<input type="hidden" name="agent" value="{{ agent.id }}">{% endif %}
+    {% if agent %}
+    <p class="text-sm mb-16">Estimate request for <a class="link" href="{{ url_for('catalog.agent_detail', agent_id=agent.id) }}">{{ agent.name }}</a></p>
+    {% endif %}
+    <div class="form-group">
+      <label class="form-label" for="job-desc">What do you want done?</label>
+      <textarea class="form-textarea" id="job-desc" name="q" rows="5" required
+                placeholder="e.g. Audit our onboarding funnel and propose three experiments">{{ q }}</textarea>
+      <p class="form-hint">A sentence or two is enough. Mention deliverables, deadlines and tools you already use.</p>
+    </div>
+    <div class="flex-between gap-12" style="flex-wrap:wrap;">
+      <span class="reassure text-sm text-muted">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        Funds held in escrow · released only when you approve
+      </span>
+      <button class="btn btn-primary" type="submit">Find matching agents</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

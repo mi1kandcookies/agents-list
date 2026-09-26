@@ -1,6 +1,7 @@
 """Buyer-facing pages: landing, marketplace, agent detail, checkout, orders."""
 from __future__ import annotations
 
+import re
 import time
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
@@ -143,6 +144,31 @@ def order_detail(order_id):
     if not agent:
         return render_template("404.html", missing=f"agent for order {order_id}"), 404
     return render_template("order.html", order=order, agent=agent)
+
+
+@bp.route("/new")
+def new_job():
+    """Start a job. The guided scoping flow will live here; for now it keeps
+    the buyer's description and suggests listed agents that match its words."""
+    agent = get_agent(request.args.get("agent")) if request.args.get("agent") else None
+    q = request.args.get("q", "").strip()[:500]
+    return render_template("new_job.html", q=q, agent=agent, matches=_keyword_matches(q))
+
+
+def _keyword_matches(text: str, limit: int = 6) -> list[dict]:
+    """Listed agents ranked by how many words of a free-text job description
+    appear in their name, description, category or tags."""
+    words = {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 3}
+    if not words:
+        return []
+    scored = []
+    for a in listed_agents_query().all():
+        hay = " ".join([a.name, a.description, a.category, a.use_case, " ".join(a.tags)]).lower()
+        hits = sum(1 for w in words if w in hay)
+        if hits:
+            scored.append((hits, a.rating, a.id, a))
+    scored.sort(key=lambda t: (-t[0], -t[1], t[2]))
+    return [a.to_dict() for *_, a in scored[:limit]]
 
 
 @bp.route("/how-it-works")

@@ -125,21 +125,6 @@ document.addEventListener('click', (e) => {
   if (content) content.classList.add('active');
 });
 
-// ── Role Switcher ─────────────────────────────────────────────────────────────
-const rolePaths = {
-  buyer:  '/marketplace',
-  seller: '/seller/earnings',
-  admin:  '/admin/dashboard',
-};
-document.querySelectorAll('.role-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const role = btn.dataset.role;
-    if (rolePaths[role]) window.location.href = rolePaths[role];
-  });
-});
-
 // ── Wallet Connect (delegates to web3.js AgentsList object) ───────────────────
 // web3.js already handles the wallet-btn click via its own DOMContentLoaded
 // listener. This block syncs the nav button state when the wallet connects
@@ -532,12 +517,26 @@ function runExecutionProgress(stages, containerId) {
 }
 
 // ── Chart helpers (called from page scripts) ───────────────────────────────────
+// Colours come from the CSS tokens so charts follow the active palette.
+const CHART = (() => {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => (css.getPropertyValue(name) || '').trim() || fallback;
+  return {
+    surface:   v('--c-surface', '#FFFFFF'),
+    grid:      v('--c-border', '#E7E5E4'),
+    tick:      v('--c-ink-3', '#78716C'),
+    tipBg:     v('--c-ink', '#1C1917'),
+    tipBorder: v('--c-ink', '#1C1917'),
+    tipTitle:  v('--c-surface', '#FFFFFF'),
+    tipBody:   v('--c-border', '#E7E5E4'),
+  };
+})();
 function makeLineChart(id, labels, datasets, options = {}) {
   const el = document.getElementById(id);
   if (!el || typeof Chart === 'undefined') return;
 
   const MONO = '"IBM Plex Mono", monospace';
-  const TICK = 'rgba(148,163,184,.45)';
+  const TICK = CHART.tick;
 
   // Gradient fill: created after layout so chartArea dimensions are correct
   const gradientPlugin = {
@@ -572,7 +571,7 @@ function makeLineChart(id, labels, datasets, options = {}) {
         ctx.arc(x, y, 4, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
-        ctx.strokeStyle = 'var(--card, #1E1E1E)';
+        ctx.strokeStyle = CHART.surface;
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.restore();
@@ -606,11 +605,11 @@ function makeLineChart(id, labels, datasets, options = {}) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: 'rgba(8,8,12,.97)',
-          borderColor: 'rgba(255,255,255,.08)',
+          backgroundColor: CHART.tipBg,
+          borderColor: CHART.tipBorder,
           borderWidth: 1,
-          titleColor: 'rgba(241,245,249,.9)',
-          bodyColor: 'rgba(148,163,184,.85)',
+          titleColor: CHART.tipTitle,
+          bodyColor: CHART.tipBody,
           padding: { top: 10, bottom: 10, left: 14, right: 14 },
           cornerRadius: 8,
           titleFont: { family: MONO, size: 10, weight: '700' },
@@ -642,7 +641,7 @@ function makeLineChart(id, labels, datasets, options = {}) {
       },
       elements: {
         line:  { tension: 0.42, borderWidth: 2 },
-        point: { radius: 0, hoverRadius: 4, hoverBorderWidth: 2, hoverBackgroundColor: '#fff' }
+        point: { radius: 0, hoverRadius: 4, hoverBorderWidth: 2, hoverBackgroundColor: CHART.surface }
       },
       layout: { padding: { top: 8, right: 4 } },
       ...options,
@@ -655,8 +654,8 @@ function makeBarChart(id, labels, datasets, options = {}) {
   if (!el || typeof Chart === 'undefined') return;
 
   const MONO = '"IBM Plex Mono", monospace';
-  const GRID = 'rgba(255,255,255,.045)';
-  const TICK = 'rgba(148,163,184,.50)';
+  const GRID = CHART.grid;
+  const TICK = CHART.tick;
 
   return new Chart(el, {
     type: 'bar',
@@ -670,11 +669,11 @@ function makeBarChart(id, labels, datasets, options = {}) {
           labels: { color: TICK, font: { family: MONO, size: 10 }, boxWidth: 12, padding: 16 }
         },
         tooltip: {
-          backgroundColor: 'rgba(10,10,16,.96)',
-          borderColor: 'rgba(255,255,255,.10)',
+          backgroundColor: CHART.tipBg,
+          borderColor: CHART.tipBorder,
           borderWidth: 1,
-          titleColor: '#f1f5f9',
-          bodyColor: 'rgba(148,163,184,.88)',
+          titleColor: CHART.tipTitle,
+          bodyColor: CHART.tipBody,
           padding: 14,
           cornerRadius: 8,
           titleFont: { family: MONO, size: 11 },
@@ -719,13 +718,13 @@ function makeDoughnutChart(id, labels, data, colors) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'right', labels: { color: '#94A3B8', font: { size: 12 }, padding: 16 } },
+        legend: { position: 'right', labels: { color: CHART.tick, font: { size: 12 }, padding: 16 } },
         tooltip: {
-          backgroundColor: '#161F2C',
-          borderColor: '#243041',
+          backgroundColor: CHART.tipBg,
+          borderColor: CHART.tipBorder,
           borderWidth: 1,
-          titleColor: '#F8FAFC',
-          bodyColor: '#94A3B8',
+          titleColor: CHART.tipTitle,
+          bodyColor: CHART.tipBody,
           padding: 12,
         }
       },
@@ -733,23 +732,3 @@ function makeDoughnutChart(id, labels, data, colors) {
     }
   });
 }
-
-// ── Theme Toggle ─────────────────────────────────────────────────────────────
-(function initTheme() {
-  const root  = document.documentElement;
-  const saved = localStorage.getItem('ah_theme') || 'dark';
-  root.setAttribute('data-theme', saved);
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('theme-toggle');
-    if (!btn) return;
-
-    btn.addEventListener('click', () => {
-      const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-      root.setAttribute('data-theme', next);
-      localStorage.setItem('ah_theme', next);
-    });
-  });
-})();
-
-
