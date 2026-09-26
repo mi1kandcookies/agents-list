@@ -10,7 +10,9 @@ with a real human approving on their phone (not run in CI).
 Steps: list agents -> create engagement -> hire (device flow) -> the human
 approves on their phone -> state + ledger -> replay attempts -> release
 milestone #1 (second approval) -> deny path -> expiry path (waits out the
-approval TTL) -> sub-hire (if the endpoint exists) -> pass/fail table.
+approval TTL) -> sub-hire under the hired agent's mandate (refused without
+one, refused over budget, then allowed; a human approves if screening asks)
+-> pass/fail table.
 
 Nothing is faked. Every approval is started on the server and finished (or
 not) by the human with World ID; the script only reads the result. Whether
@@ -18,7 +20,9 @@ money moves on Sepolia depends on the server: without escrow keys it records
 simulated ledger entries. The script itself holds no keys and signs nothing.
 
 Environment:
-    MCP_API_TOKEN          bearer token, if the server requires one
+    MCP_API_TOKEN          bearer token, if the server requires one; the server
+                           returns the hired agent's mandate token only to it
+    DEMO_MANDATE_TOKEN     mandate token to sub-hire with, if you have one
     DEMO_CHECK_CA_BUNDLE   CA file for a local HTTPS certificate (mkcert root CA)
     DEMO_CHECK_INSECURE=1  skip TLS verification (local testing only)
     REQUESTS_CA_BUNDLE     also honored, as in any requests-based tool
@@ -205,23 +209,25 @@ def hire_device(api: Api, eng: dict) -> tuple[int, dict]:
 
 # ── steps ───────────────────────────────────────────────────────────────────
 
-def step_list(api: Api, res: Results, wanted: str | None) -> dict | None:
+def step_list(api: Api, res: Results, wanted: str | None) -> tuple[dict | None, list[dict]]:
     heading("1. List agents")
     status, data = api.call("GET", "/api/agents?per_page=50")
     agents = data.get("agents") or []
     if not res.check("list agents", status == 200 and bool(agents), f"{len(agents)} listed"):
         say("  No agents. Run `flask --app wsgi seed-demo` on the server first.")
-        return None
+        return None, agents
     say(table([[a.get("agent_id"), a["name"][:34], a["category"],
                 f"${a['min_price']:.2f}-${a['max_price']:.2f}/min"
-                if a.get("billing") == "per_minute" else a.get("billing")]
-               for a in agents[:12]], ["agent id", "name", "category", "price"]))
+                if a.get("billing") == "per_minute" else a.get("billing"),
+                "yes" if a.get("operator_stamped") else "no"]
+               for a in agents[:12]], ["agent id", "name", "category", "price", "stamped"]))
     if wanted:
         agent = next((a for a in agents if a.get("agent_id") == wanted.upper()), None)
         if agent is None:
             res.add("pick agent", "FAIL", f"{wanted} not listed")
-        return agent
-    return agents[0]
+        return agent, agents
+    stamped = [a for a in agents if a.get("operator_stamped")]
+    return (stamped or agents)[0], agents
 
 
 def step_create(api: Api, res: Results, agent: dict, budget: str, label: str) -> dict | None:
@@ -346,39 +352,72 @@ def step_expire(api: Api, res: Results, agent: dict, budget: str) -> None:
               f"state={final.get('state')}")
 
 
-def step_subhire(api: Api, res: Results, eng: dict) -> None:
+def _as_mandate(api: Api, token: str | None, method: str, path: str, body: dict):
+    """One request with ``Authorization: Mandate <token>`` (or none)."""
+    http = api.http
+    saved = http.headers.pop("Authorization", None)
+    if token:
+        http.headers["Authorization"] = f"Mandate {token}"
+    try:
+        return api.call(method, path, body)
+    finally:
+        http.headers.pop("Authorization", None)
+        if saved:
+            http.headers["Authorization"] = saved
+
+
+def step_subhire(api: Api, res: Results, eng: dict, funded: bool, agents: list[dict]) -> None:
     heading("10. Sub-hire")
-    token = os.environ.get("DEMO_MANDATE_TOKEN")
     path = f"/api/engagements/{eng['engagement_id']}/subhire"
-    status, data = api.call("POST", path, {})
+    status, data = _as_mandate(api, None, "POST", path, {})
     if status in (404, 405) and data.get("code") in (None, "NOT_FOUND"):
         res.add("sub-hire", "SKIP", "endpoint not present on this server")
         return
-    res.check("sub-hire without a mandate is refused", status in (401, 403),
+    res.check("sub-hire without a mandate is refused", status == 401,
               f"{status} {data.get('code')}")
-    if not token:
-        res.add("sub-hire with mandate", "SKIP", "set DEMO_MANDATE_TOKEN to try one")
+    if not funded:
+        res.add("sub-hire with mandate", "SKIP", "hire was not approved")
         return
-    http = api.http
-    http.headers["Authorization"] = f"Mandate {token}"
-    try:
-        status, data = api.call("POST", path, {
-            "agent_id": eng["agent_id"], "outcome": "Demo check: sub-task", "budget_usdc": "0.50",
-            "category": eng.get("category") or "General"})
-    finally:
-        bearer = os.environ.get("MCP_API_TOKEN")
-        if bearer:
-            http.headers["Authorization"] = f"Bearer {bearer}"
-        else:
-            http.headers.pop("Authorization", None)
-    res.check("sub-hire within mandate", status in (201, 202), f"{status} {data.get('code', '')}")
+    _, parent = api.call("GET", f"/api/engagements/{eng['engagement_id']}")
+    token = os.environ.get("DEMO_MANDATE_TOKEN") or parent.get("mandate_token")
+    if not token:
+        res.add("sub-hire with mandate", "SKIP",
+                "no mandate token: set MCP_API_TOKEN (the server returns it only to token "
+                "holders) or DEMO_MANDATE_TOKEN")
+        return
+    child_agent = next((a for a in agents if a.get("agent_id") != eng["agent_id"]
+                        and a.get("operator_stamped", True)), None)
+    if child_agent is None:
+        res.add("sub-hire with mandate", "SKIP", "no second stamped agent listed")
+        return
+    body = {"agent_id": child_agent["agent_id"], "outcome": "Demo check: sub-task",
+            "category": eng.get("category")}
+    status, data = _as_mandate(api, token, "POST", path, {**body, "budget_usdc": "1000000"})
+    res.check("sub-hire over the mandate budget is refused",
+              status == 403 and data.get("code") == "MANDATE_EXCEEDED",
+              f"{status} {data.get('code')}")
+    say(f"  sub-hiring {child_agent['agent_id']} {child_agent['name']} for 0.50 USDC "
+        f"(category {body['category']})")
+    status, data = _as_mandate(api, token, "POST", path, {**body, "budget_usdc": "0.50"})
+    if status == 202:
+        show_approval_prompt(api, data, "Screening asked for a human: APPROVE this sub-hire "
+                                        "on your phone.")
+        final = wait_terminal(api, data["approval_id"])
+        res.check("sub-hire approved by the root human", final.get("state") == "consumed",
+                  f"state={final.get('state')}")
+    else:
+        res.check("sub-hire within the mandate", status == 201,
+                  f"{status} {data.get('code') or data.get('engagement_id')}")
+    _, chain = api.call("GET", f"/api/engagements/{eng['engagement_id']}/chain")
+    say(f"  custody chain now: {len(chain.get('nodes') or [])} nodes, "
+        f"{len(chain.get('edges') or [])} edges")
 
 
 # ── main ────────────────────────────────────────────────────────────────────
 
 def run(api: Api, args) -> Results:
     res = Results()
-    agent = step_list(api, res, args.agent)
+    agent, agents = step_list(api, res, args.agent)
     if agent is None:
         return res
     heading("2. Create engagement")
@@ -387,9 +426,10 @@ def run(api: Api, args) -> Results:
     if eng is None:
         return res
     approval = step_hire_and_approve(api, res, eng)
-    if approval and approval.get("state") == "consumed":
-        funded = step_state(api, res, eng["engagement_id"])
-        step_replay(api, res, funded, approval)
+    funded = bool(approval and approval.get("state") == "consumed")
+    if funded:
+        state = step_state(api, res, eng["engagement_id"])
+        step_replay(api, res, state, approval)
         step_release(api, res, eng["engagement_id"])
         _, chain = api.call("GET", f"/api/engagements/{eng['engagement_id']}/chain")
         say(f"  custody chain: {len(chain.get('nodes') or [])} nodes, "
@@ -402,7 +442,7 @@ def run(api: Api, args) -> Results:
         res.add("expiry path", "SKIP", "--skip-expire")
     else:
         step_expire(api, res, agent, args.budget)
-    step_subhire(api, res, eng)
+    step_subhire(api, res, eng, funded, agents)
     return res
 
 
