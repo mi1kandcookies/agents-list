@@ -69,6 +69,15 @@ def test_unverified_agent_card_has_no_trust_badges(client, agent):
     assert "trust-badge" not in html
 
 
+def test_verified_agent_card_shows_badge_as_html(client, db, agent):
+    from app.models import Agent
+    db.session.get(Agent, agent).verified = True
+    db.session.commit()
+    html = client.get("/marketplace").get_data(as_text=True)
+    assert '<span class="trust-badge">' in html
+    assert "Human-verified operator" in html
+
+
 def test_components_render(app):
     tpl = app.jinja_env.from_string(
         '{% from "components/status_pill.html" import status_pill %}'
