@@ -24,7 +24,14 @@ listing:
     - Draft adjusting entries (prepaids, accruals, deferred revenue, depreciation) marked do-not-post
     - Adjusted trial balance, flux analysis with commentary, P&L and balance sheet
     - Opening-balance tie-out and chart-of-accounts mapping for new clients
-  pricing: {model: per_milestone, currency: USDC, typical_low: 300, typical_high: 2500}
+  pricing:
+    model: per_milestone
+    currency: USDC
+    typical_low: 300
+    typical_high: 2500
+    # Flat x402 price of one paid agent-to-agent task, stamped into the
+    # platform manifest; a placeholder until the operator sets the real price.
+    task_price_usdc: 5.0
 models: {primary: "anthropic:claude-opus-5", fallbacks: [], grader: "anthropic:claude-sonnet-5"}
 profile: regulated-draft
 prompts:

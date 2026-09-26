@@ -100,7 +100,7 @@ def _errors(events):
 
 
 def _assert_submission(spec, ws, sub, milestone, deliverables):
-    """Everything a ready submission must carry, re-derived from disk."""
+    """Everything a ready submission must carry, recomputed from disk."""
     failing = [(r.check, r.passed, r.details) for r in sub.check_results
                if r.kind == "automated" and r.passed is not True]
     assert sub.status == "ready_for_review", failing
