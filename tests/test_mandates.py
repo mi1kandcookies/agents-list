@@ -100,14 +100,15 @@ def test_hum_is_sha256_of_sub_and_never_the_raw_sub(root, human):
 
 
 def test_kid_is_rfc7638_thumbprint():
-    from jwt.algorithms import ECAlgorithm
-    key = jwt.api_jwk.PyJWK.from_dict(json.loads(ECAlgorithm.to_jwk(
-        tokens._load_pem(tokens.generate_pem()).public_key())))
     import hashlib
-    jwk = {k: key._jwk_data[k] for k in ("crv", "kty", "x", "y")}
+
+    from jwt.algorithms import ECAlgorithm
+    public = tokens._load_pem(tokens.generate_pem()).public_key()
+    full = ECAlgorithm.to_jwk(public, as_dict=True)
+    jwk = {k: full[k] for k in ("crv", "kty", "x", "y")}
     expected = base64.urlsafe_b64encode(hashlib.sha256(
         json.dumps(jwk, separators=(",", ":"), sort_keys=True).encode()).digest()).rstrip(b"=").decode()
-    assert tokens.key_thumbprint(key.key) == expected
+    assert tokens.key_thumbprint(public) == expected
 
 
 def test_tampered_signature_fails(root):
