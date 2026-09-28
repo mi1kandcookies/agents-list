@@ -112,9 +112,11 @@ Every PR to `main` requires **all** of:
 | ✅ CI (`test`) passes | required status check |
 | ✅ `content-policy` passes (rule 7) | required status check |
 | ✅ `self-review` passes (agent PRs, §5.8) | required status check |
-| 👤 **1 approval from a code owner** (not the author) | branch protection + `.github/CODEOWNERS` |
+| 👤 **Approval from the maintainer** (@mi1kandcookies, the only code owner) of the latest push | branch protection + `.github/CODEOWNERS` |
+| ✅ Branch up to date with `main`, all review conversations resolved | branch protection |
 
-- New commits dismiss stale approvals — re-request review after pushing changes.
+- New commits dismiss stale approvals, and the most recent push must be approved — re-request review after pushing changes.
+- Collaborators with write access can open branches and PRs but cannot merge without the maintainer's approval; only the maintainer changes repository settings.
 - Reviewers: aim to respond within 1 business day. Use "Request changes" only for real blockers; prefix nits with `nit:`.
 - **Contracts (`contracts/`)** and **wallet/payment code (`chain/`)**: reviewer must actually run the tests locally, not just read the diff.
 - **Agent PRs:** when an orchestrating agent coordinates the work, it may merge agent-authored PRs once CI (`test`, `content-policy`, `self-review`) is green and it has reviewed the diff. PRs touching `chain/` or `contracts/` still need a human approval.
