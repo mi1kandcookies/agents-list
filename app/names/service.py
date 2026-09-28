@@ -479,7 +479,11 @@ def _agent_records(agent: Agent) -> dict:
         "web": _listing_url(agent),
         "payout": _advertised_payee(agent),
         "manifest_hash": stamp.stamped_hash if stamp.ok else None,
-        "erc8004_agent_id": manifest.get("erc8004_agent_id"),
+        # The registry token is authoritative in the dedicated columns. Keep
+        # the manifest fallback for older profiles that predate the columns.
+        "erc8004_agent_id": (str(agent.erc8004_agent_id)
+                              if agent.erc8004_agent_id is not None
+                              else manifest.get("erc8004_agent_id")),
     })
 
 
