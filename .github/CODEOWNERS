@@ -1,3 +1,4 @@
-# Every PR to main needs 1 approval from a code owner other than the author.
-# See AGENTS.md §6.
-*   @mi1kandcookies @tharune @J-Buchen
+# The maintainer reviews and approves every change to main.
+# Branch protection requires a code-owner approval of the latest push.
+# See CONTRIBUTING.md and AGENTS.md §6.
+*   @mi1kandcookies
